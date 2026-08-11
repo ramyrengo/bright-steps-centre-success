@@ -76,6 +76,13 @@ export interface ClientOptions {
 
     /** Default RequestInit to be used for the client */
     requestInit?: Omit<RequestInit, "headers"> & { headers?: Record<string, string> }
+
+    /**
+     * Allows you to set the authentication data to be used for each
+     * request either by passing in a static object or by passing in
+     * a function which returns a new object for each request.
+     */
+    auth?: authentication.AuthenticationParams | AuthDataGenerator
 }
 
 /**
@@ -91,12 +98,92 @@ export namespace foundation {
         checkedAt: string
     }
 
+    export interface FoundationMeResponse {
+        provisioningStatus: "provisioned" | "not_provisioned"
+        principal?: {
+            id: string
+            displayName: string
+        }
+        activeOrganisation?: {
+            id: string
+            name: string
+        }
+    }
+
     export class ServiceClient {
         private baseClient: BaseClient
 
         constructor(baseClient: BaseClient) {
             this.baseClient = baseClient
+            this.acknowledgeQuarterlyAudit = this.acknowledgeQuarterlyAudit.bind(this)
+            this.completeEvidenceUpload = this.completeEvidenceUpload.bind(this)
+            this.finaliseQuarterlyAudit = this.finaliseQuarterlyAudit.bind(this)
+            this.getAuditPreparation = this.getAuditPreparation.bind(this)
+            this.getComplianceOversight = this.getComplianceOversight.bind(this)
+            this.getCorrectiveAction = this.getCorrectiveAction.bind(this)
+            this.getEvidenceAccess = this.getEvidenceAccess.bind(this)
+            this.getQuarterlyAudit = this.getQuarterlyAudit.bind(this)
             this.health = this.health.bind(this)
+            this.listAssignedAuditCentres = this.listAssignedAuditCentres.bind(this)
+            this.listCorrectiveActionVerificationQueue = this.listCorrectiveActionVerificationQueue.bind(this)
+            this.listMyCorrectiveActions = this.listMyCorrectiveActions.bind(this)
+            this.markQuarterlyAuditReady = this.markQuarterlyAuditReady.bind(this)
+            this.me = this.me.bind(this)
+            this.requestEvidenceUpload = this.requestEvidenceUpload.bind(this)
+            this.returnCorrectiveAction = this.returnCorrectiveAction.bind(this)
+            this.saveQuarterlyAuditResponse = this.saveQuarterlyAuditResponse.bind(this)
+            this.startCorrectiveAction = this.startCorrectiveAction.bind(this)
+            this.startQuarterlyAudit = this.startQuarterlyAudit.bind(this)
+            this.submitCorrectiveActionEvidence = this.submitCorrectiveActionEvidence.bind(this)
+            this.verifyAndCloseCorrectiveAction = this.verifyAndCloseCorrectiveAction.bind(this)
+        }
+
+        public async acknowledgeQuarterlyAudit(auditId: string, params: quarterly_reviews.AcknowledgeAuditRequest): Promise<quarterly_reviews.AcknowledgeAuditResponse> {
+            // Now make the actual call to the API
+            const resp = await this.baseClient.callTypedAPI("POST", `/quarterly-reviews/audits/${encodeURIComponent(auditId)}/acknowledge`, JSON.stringify(params))
+            return await resp.json() as quarterly_reviews.AcknowledgeAuditResponse
+        }
+
+        public async completeEvidenceUpload(evidenceId: string): Promise<quarterly_reviews.CompleteEvidenceUploadResponse> {
+            // Now make the actual call to the API
+            const resp = await this.baseClient.callTypedAPI("POST", `/evidence/${encodeURIComponent(evidenceId)}/complete`)
+            return await resp.json() as quarterly_reviews.CompleteEvidenceUploadResponse
+        }
+
+        public async finaliseQuarterlyAudit(auditId: string, params: quarterly_reviews.AuditTransitionRequest): Promise<quarterly_reviews.FinaliseQuarterlyAuditResponse> {
+            // Now make the actual call to the API
+            const resp = await this.baseClient.callTypedAPI("POST", `/quarterly-reviews/audits/${encodeURIComponent(auditId)}/finalise`, JSON.stringify(params))
+            return await resp.json() as quarterly_reviews.FinaliseQuarterlyAuditResponse
+        }
+
+        public async getAuditPreparation(centreId: string): Promise<quarterly_reviews.AuditPreparationResponse> {
+            // Now make the actual call to the API
+            const resp = await this.baseClient.callTypedAPI("GET", `/quarterly-reviews/centres/${encodeURIComponent(centreId)}/preparation`)
+            return await resp.json() as quarterly_reviews.AuditPreparationResponse
+        }
+
+        public async getComplianceOversight(): Promise<quarterly_reviews.ComplianceOversightResponse> {
+            // Now make the actual call to the API
+            const resp = await this.baseClient.callTypedAPI("GET", `/compliance/quarterly-reviews`)
+            return await resp.json() as quarterly_reviews.ComplianceOversightResponse
+        }
+
+        public async getCorrectiveAction(actionId: string): Promise<quarterly_reviews.CorrectiveActionDetail> {
+            // Now make the actual call to the API
+            const resp = await this.baseClient.callTypedAPI("GET", `/corrective-actions/${encodeURIComponent(actionId)}`)
+            return await resp.json() as quarterly_reviews.CorrectiveActionDetail
+        }
+
+        public async getEvidenceAccess(evidenceId: string): Promise<quarterly_reviews.GetEvidenceAccessResponse> {
+            // Now make the actual call to the API
+            const resp = await this.baseClient.callTypedAPI("GET", `/evidence/${encodeURIComponent(evidenceId)}/access`)
+            return await resp.json() as quarterly_reviews.GetEvidenceAccessResponse
+        }
+
+        public async getQuarterlyAudit(auditId: string): Promise<quarterly_reviews.QuarterlyAuditView> {
+            // Now make the actual call to the API
+            const resp = await this.baseClient.callTypedAPI("GET", `/quarterly-reviews/audits/${encodeURIComponent(auditId)}`)
+            return await resp.json() as quarterly_reviews.QuarterlyAuditView
         }
 
         /**
@@ -108,6 +195,404 @@ export namespace foundation {
             const resp = await this.baseClient.callTypedAPI("GET", `/foundation/health`)
             return await resp.json() as FoundationHealthResponse
         }
+
+        public async listAssignedAuditCentres(): Promise<quarterly_reviews.ListAuditCentresResponse> {
+            // Now make the actual call to the API
+            const resp = await this.baseClient.callTypedAPI("GET", `/quarterly-reviews/centres`)
+            return await resp.json() as quarterly_reviews.ListAuditCentresResponse
+        }
+
+        public async listCorrectiveActionVerificationQueue(): Promise<quarterly_reviews.ListCorrectiveActionsResponse> {
+            // Now make the actual call to the API
+            const resp = await this.baseClient.callTypedAPI("GET", `/corrective-actions/verification-queue`)
+            return await resp.json() as quarterly_reviews.ListCorrectiveActionsResponse
+        }
+
+        public async listMyCorrectiveActions(): Promise<quarterly_reviews.ListCorrectiveActionsResponse> {
+            // Now make the actual call to the API
+            const resp = await this.baseClient.callTypedAPI("GET", `/corrective-actions/mine`)
+            return await resp.json() as quarterly_reviews.ListCorrectiveActionsResponse
+        }
+
+        public async markQuarterlyAuditReady(auditId: string, params: quarterly_reviews.AuditTransitionRequest): Promise<quarterly_reviews.AuditStatusTransitionResponse> {
+            // Now make the actual call to the API
+            const resp = await this.baseClient.callTypedAPI("POST", `/quarterly-reviews/audits/${encodeURIComponent(auditId)}/ready`, JSON.stringify(params))
+            return await resp.json() as quarterly_reviews.AuditStatusTransitionResponse
+        }
+
+        /**
+         * Minimal protected proof of Entra -> internal principal -> PostgreSQL
+         * authorisation context. It intentionally returns no grants or Entra claims.
+         */
+        public async me(): Promise<FoundationMeResponse> {
+            // Now make the actual call to the API
+            const resp = await this.baseClient.callTypedAPI("GET", `/foundation/me`)
+            return await resp.json() as FoundationMeResponse
+        }
+
+        public async requestEvidenceUpload(params: quarterly_reviews.RequestEvidenceUploadRequest): Promise<quarterly_reviews.RequestEvidenceUploadResponse> {
+            // Now make the actual call to the API
+            const resp = await this.baseClient.callTypedAPI("POST", `/evidence/uploads`, JSON.stringify(params))
+            return await resp.json() as quarterly_reviews.RequestEvidenceUploadResponse
+        }
+
+        public async returnCorrectiveAction(actionId: string, params: quarterly_reviews.ReturnCorrectiveActionRequest): Promise<quarterly_reviews.ActionTransitionResponse> {
+            // Now make the actual call to the API
+            const resp = await this.baseClient.callTypedAPI("POST", `/corrective-actions/${encodeURIComponent(actionId)}/return`, JSON.stringify(params))
+            return await resp.json() as quarterly_reviews.ActionTransitionResponse
+        }
+
+        public async saveQuarterlyAuditResponse(auditId: string, itemId: string, params: quarterly_reviews.SaveAuditResponseRequest): Promise<quarterly_reviews.SaveAuditResponseResponse> {
+            // Now make the actual call to the API
+            const resp = await this.baseClient.callTypedAPI("PUT", `/quarterly-reviews/audits/${encodeURIComponent(auditId)}/responses/${encodeURIComponent(itemId)}`, JSON.stringify(params))
+            return await resp.json() as quarterly_reviews.SaveAuditResponseResponse
+        }
+
+        public async startCorrectiveAction(actionId: string, params: quarterly_reviews.StartCorrectiveActionRequest): Promise<quarterly_reviews.ActionTransitionResponse> {
+            // Now make the actual call to the API
+            const resp = await this.baseClient.callTypedAPI("POST", `/corrective-actions/${encodeURIComponent(actionId)}/start`, JSON.stringify(params))
+            return await resp.json() as quarterly_reviews.ActionTransitionResponse
+        }
+
+        public async startQuarterlyAudit(params: quarterly_reviews.StartQuarterlyAuditRequest): Promise<quarterly_reviews.StartQuarterlyAuditResponse> {
+            // Now make the actual call to the API
+            const resp = await this.baseClient.callTypedAPI("POST", `/quarterly-reviews/audits`, JSON.stringify(params))
+            return await resp.json() as quarterly_reviews.StartQuarterlyAuditResponse
+        }
+
+        public async submitCorrectiveActionEvidence(actionId: string, params: quarterly_reviews.SubmitCorrectiveActionRequest): Promise<quarterly_reviews.ActionTransitionResponse> {
+            // Now make the actual call to the API
+            const resp = await this.baseClient.callTypedAPI("POST", `/corrective-actions/${encodeURIComponent(actionId)}/submit`, JSON.stringify(params))
+            return await resp.json() as quarterly_reviews.ActionTransitionResponse
+        }
+
+        public async verifyAndCloseCorrectiveAction(actionId: string, params: quarterly_reviews.VerifyCorrectiveActionRequest): Promise<quarterly_reviews.ActionTransitionResponse> {
+            // Now make the actual call to the API
+            const resp = await this.baseClient.callTypedAPI("POST", `/corrective-actions/${encodeURIComponent(actionId)}/verify`, JSON.stringify(params))
+            return await resp.json() as quarterly_reviews.ActionTransitionResponse
+        }
+    }
+}
+
+export namespace authentication {
+    export interface AuthenticationParams {
+        authorization: string
+    }
+}
+
+export namespace quarterly_reviews {
+    export interface AcknowledgeAuditRequest {
+        comment?: string
+    }
+
+    export interface AcknowledgeAuditResponse {
+        acknowledgementId: string
+        acknowledgedAt: string
+    }
+
+    export interface ActionTransitionResponse {
+        actionId: string
+        status: CorrectiveActionStatus
+        lockVersion: number
+    }
+
+    export interface AuditCentreSummary {
+        id: string
+        name: string
+        previousAuditDate?: string
+        previousScore?: number
+        openCorrectiveActions: number
+    }
+
+    export interface AuditItemView {
+        id: string
+        lineageKey: string
+        wording: string
+        instructions?: string
+        weight: number
+        scored: boolean
+        critical: boolean
+        evidenceRequirement: "none" | "optional" | "required"
+        allowedOutcomes: AuditOutcome[]
+        response?: {
+            id: string
+            outcome: AuditOutcome
+            comment?: string
+            locationContext?: string
+            selectedOwnerPrincipalId?: string
+            lockVersion: number
+        }
+        finding?: {
+            id: string
+            severity: FindingSeverity
+            status: FindingStatus
+            repeatCount: number
+            actionId?: string
+        }
+    }
+
+    export type AuditOutcome = "COMPLIANT" | "PARTIALLY_COMPLIANT" | "NON_COMPLIANT" | "NOT_APPLICABLE" | "NOT_OBSERVED" | "IMMEDIATE_ACTION_REQUIRED" | "POSITIVE_PRACTICE"
+
+    export interface AuditOwnerCandidate {
+        principalId: string
+        displayName: string
+    }
+
+    export interface AuditPreparationResponse {
+        centre: {
+            id: string
+            name: string
+        }
+        activeTemplate: {
+            id: string
+            title: string
+            version: number
+            synthetic: boolean
+        }
+        previousAudit?: {
+            id: string
+            finalisedAt: string
+            score?: number
+        }
+        openCorrectiveActions: number
+    }
+
+    export type AuditRiskStatus = "STRONG" | "IMPROVEMENT_REQUIRED" | "AT_RISK" | "PRIORITY_INTERVENTION" | "HIGH" | "CRITICAL"
+
+    export interface AuditSectionView {
+        id: string
+        title: string
+        instructions?: string
+        items: AuditItemView[]
+        score?: number
+    }
+
+    export type AuditStatus = "DRAFT" | "IN_PROGRESS" | "READY_FOR_REVIEW" | "FINALISED"
+
+    export interface AuditStatusTransitionResponse {
+        status: AuditStatus
+        lockVersion: number
+    }
+
+    export interface AuditTransitionRequest {
+        lockVersion: number
+    }
+
+    export interface AuditTransitionRequest {
+        lockVersion: number
+    }
+
+    export interface CompleteEvidenceUploadResponse {
+        evidenceId: string
+        scanStatus: "not_scanned" | "clean" | "rejected"
+        availabilityStatus: string
+        warning?: string
+    }
+
+    export interface ComplianceOversightResponse {
+        counts: {
+            completed: number
+            inProgress: number
+            outstanding: number
+            centresBelowInternalThreshold: number
+            criticalFindings: number
+            highFindings: number
+            openCorrectiveActions: number
+            overdueCorrectiveActions: number
+            awaitingVerification: number
+        }
+        centres: {
+            centreId: string
+            centreName: string
+            latestAuditId?: string
+            latestScore?: number
+            riskStatus?: AuditRiskStatus
+            openActions: number
+            overdueActions: number
+        }[]
+    }
+
+    export interface CorrectiveActionDetail {
+        finding: {
+            id: string
+            description: string
+            originatingAuditId: string
+            originatingAuditStatus: AuditStatus
+            originatingAuditAcknowledged: boolean
+            itemLineageKey: string
+            repeatCount: number
+        }
+        requiredRemediation: string
+        evidenceRequirement: "none" | "optional" | "required"
+        lockVersion: number
+        evidence: {
+            id: string
+            filename: string
+            mediaType: string
+            byteSize?: number
+            scanStatus: "not_scanned" | "clean" | "rejected"
+            availabilityStatus: string
+        }[]
+        history: {
+            eventType: string
+            fromStatus?: string
+            toStatus: string
+            reason?: string
+            occurredAt: string
+        }[]
+        id: string
+        centreId: string
+        centreName: string
+        title: string
+        severity: FindingSeverity
+        dueAt: string
+        status: CorrectiveActionStatus
+        ownerPrincipalId?: string
+        verificationRequired: boolean
+        submittedAt?: string
+    }
+
+    export type CorrectiveActionStatus = "OPEN" | "IN_PROGRESS" | "VERIFICATION_REQUIRED" | "CLOSED" | "MORE_INFORMATION_REQUIRED" | "REJECTED" | "WITHDRAWN"
+
+    export interface CorrectiveActionSummary {
+        id: string
+        centreId: string
+        centreName: string
+        title: string
+        severity: FindingSeverity
+        dueAt: string
+        status: CorrectiveActionStatus
+        ownerPrincipalId?: string
+        verificationRequired: boolean
+        submittedAt?: string
+    }
+
+    export interface FinaliseQuarterlyAuditResponse {
+        auditId: string
+        status: "FINALISED"
+        score: number | null
+        riskStatus: AuditRiskStatus
+    }
+
+    export type FindingSeverity = "LOW" | "MEDIUM" | "HIGH" | "CRITICAL"
+
+    export type FindingStatus = "OPEN" | "RESOLVED" | "WITHDRAWN"
+
+    export interface GetEvidenceAccessResponse {
+        downloadUrl: string
+        expiresInSeconds: number
+        scanStatus: "not_scanned" | "clean"
+        warning?: string
+    }
+
+    export interface ListAuditCentresResponse {
+        centres: AuditCentreSummary[]
+    }
+
+    export interface ListCorrectiveActionsResponse {
+        actions: CorrectiveActionSummary[]
+    }
+
+    export interface QuarterlyAuditView {
+        id: string
+        centre: {
+            id: string
+            name: string
+        }
+        template: {
+            id: string
+            title: string
+            version: number
+            synthetic: boolean
+            sourceClassification: string
+        }
+        status: AuditStatus
+        reviewPeriodStart: string
+        lockVersion: number
+        progress: {
+            answered: number
+            total: number
+        }
+        score?: number
+        coveragePercent?: number
+        riskStatus?: AuditRiskStatus
+        performanceBand?: {
+            code: string
+            label: string
+        }
+        previousComparison?: {
+            auditId: string
+            score?: number
+            difference?: number
+        }
+        ownerCandidates: AuditOwnerCandidate[]
+        sections: AuditSectionView[]
+        positivePractices: {
+            id: string
+            description: string
+        }[]
+        acknowledged: boolean
+    }
+
+    export interface RequestEvidenceUploadRequest {
+        targetType: "AUDIT_RESPONSE" | "CORRECTIVE_ACTION"
+        targetId: string
+        filename: string
+        mediaType: "image/jpeg" | "image/png" | "application/pdf"
+    }
+
+    export interface RequestEvidenceUploadResponse {
+        evidenceId: string
+        uploadUrl: string
+        expiresInSeconds: number
+    }
+
+    export interface ReturnCorrectiveActionRequest {
+        lockVersion: number
+        reason: string
+        disposition?: "MORE_INFORMATION_REQUIRED" | "REJECTED"
+    }
+
+    export interface SaveAuditResponseRequest {
+        outcome: AuditOutcome
+        comment?: string
+        locationContext?: string
+        selectedOwnerPrincipalId?: string
+        responseLockVersion?: number
+        responseCorrectionReason?: string
+    }
+
+    export interface SaveAuditResponseResponse {
+        responseId: string
+        lockVersion: number
+        auditStatus: AuditStatus
+        immediateFindingCreated: boolean
+        immediateActionCreated: boolean
+        ownerResolutionRequired: boolean
+    }
+
+    export interface StartCorrectiveActionRequest {
+        lockVersion: number
+    }
+
+    export interface StartQuarterlyAuditRequest {
+        centreId: string
+    }
+
+    export interface StartQuarterlyAuditResponse {
+        auditId: string
+        status: AuditStatus
+        created: boolean
+    }
+
+    export interface SubmitCorrectiveActionRequest {
+        lockVersion: number
+        remediationNote: string
+    }
+
+    export interface VerifyCorrectiveActionRequest {
+        lockVersion: number
+        verificationNote?: string
     }
 }
 
@@ -315,6 +800,11 @@ type CallParameters = Omit<RequestInit, "method" | "body" | "headers"> & {
     query?: Record<string, string | string[]>
 }
 
+// AuthDataGenerator is a function that returns a new instance of the authentication data required by this API
+export type AuthDataGenerator = () =>
+  | authentication.AuthenticationParams
+  | Promise<authentication.AuthenticationParams | undefined>
+  | undefined;
 
 // A fetcher is the prototype for the inbuilt Fetch function
 export type Fetcher = typeof fetch;
@@ -326,6 +816,7 @@ class BaseClient {
     readonly fetcher: Fetcher
     readonly headers: Record<string, string>
     readonly requestInit: Omit<RequestInit, "headers"> & { headers?: Record<string, string> }
+    readonly authGenerator?: AuthDataGenerator
 
     constructor(baseURL: string, options: ClientOptions) {
         this.baseURL = baseURL
@@ -345,9 +836,41 @@ class BaseClient {
         } else {
             this.fetcher = boundFetch
         }
+
+        // Setup an authentication data generator using the auth data token option
+        if (options.auth !== undefined) {
+            const auth = options.auth
+            if (typeof auth === "function") {
+                this.authGenerator = auth
+            } else {
+                this.authGenerator = () => auth
+            }
+        }
     }
 
     async getAuthData(): Promise<CallParameters | undefined> {
+        let authData: authentication.AuthenticationParams | undefined;
+
+        // If authorization data generator is present, call it and add the returned data to the request
+        if (this.authGenerator) {
+            const mayBePromise = this.authGenerator();
+            if (mayBePromise instanceof Promise) {
+                authData = await mayBePromise;
+            } else {
+                authData = mayBePromise;
+            }
+        }
+
+        if (authData) {
+            const data: CallParameters = {};
+
+            data.headers = makeRecord<string, string>({
+                authorization: authData.authorization,
+            });
+
+            return data;
+        }
+
         return undefined;
     }
 

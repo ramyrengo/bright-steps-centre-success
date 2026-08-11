@@ -5,3 +5,8 @@ encore.gen.cue
 node_modules
 /encore.gen
 *.tsbuildinfo
+.DS_Store
+
+# Root-local environment files. Keep only an intentionally safe example.
+/.env*
+!/.env.example

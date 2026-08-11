@@ -1,12 +1,16 @@
 # Architecture Decision Records
 
-This directory records material foundation decisions. Later decisions receive a
+This directory records material architecture decisions. Later decisions receive a
 new numbered record; accepted records are not silently rewritten to describe a
 different architecture.
 
 A record with status **Deferred** is a decision the product owner has not made
-yet. It states what Milestone 1 must not do while the decision is open, and what
-would unblock it. Deferred records are as binding as accepted ones.
+yet. It states what the current authorised delivery gate must not do while the
+decision is open, and what would unblock it. Deferred records are as binding as
+accepted ones.
+
+A record under **Superseded** is retained unchanged as engineering history but
+no longer governs the current architecture; its replacement record is normative.
 
 ## Accepted
 
@@ -17,6 +21,13 @@ would unblock it. Deferred records are as binding as accepted ones.
 - [ADR-0005: Committed generated Encore client](0005-committed-generated-encore-client.md)
 - [ADR-0006: Canonical role templates provisioned per organisation](0006-canonical-role-template-provisioning.md)
 - [ADR-0007: Forward-only migrations and recovery posture](0007-forward-only-migrations.md)
+- [ADR-0012: Microsoft Entra ID single-tenant authentication](0012-microsoft-entra-id-single-tenant-authentication.md)
+- [ADR-0013: Milestone 2B quarterly review vertical slice](0013-milestone-2b-quarterly-review-vertical-slice.md) — architecture accepted; delivery implemented with acceptance remediation in progress
+- [ADR-0014: People & Access invitation architecture](0014-people-and-access-invitation-architecture.md) — architecture accepted; implementation gated
+
+## Superseded
+
+- [ADR-0011: Clerk authentication with Centre Success-owned authorisation](0011-clerk-authentication-centre-success-authorisation.md) — superseded by ADR-0012; retained as decision history
 
 ## Deferred
 

@@ -76,6 +76,15 @@ The workflow supports annual and directed review without assuming one national s
 8. The Centre Director acknowledges the result and may add a response without changing the finalised audit.
 9. Follow-through flows through the corrective-action lifecycle and the next-quarter comparison.
 
+### Approved Milestone 2B state detail
+
+- Audit runs follow `DRAFT -> IN_PROGRESS -> READY_FOR_REVIEW -> FINALISED`. A finalised run, its pinned template/methodology, responses, score inputs, and score snapshots are immutable.
+- A configured `IMMEDIATE_ACTION_REQUIRED` response creates or escalates its finding and action immediately. Ordinary partial/non-compliant results are reconciled at finalisation; retry is idempotent.
+- Correcting an in-progress response so the active finding/action is no longer required needs an explicit reason and moves both records to historical `WITHDRAWN` state; later qualifying responses reactivate the same IDs.
+- Remediation submission persists and records the single truthful `IN_PROGRESS -> VERIFICATION_REQUIRED` transition. Successful verification persists and records `VERIFICATION_REQUIRED -> CLOSED`; no ceremonial intermediate state is emitted.
+- Corrective actions follow `OPEN -> IN_PROGRESS -> VERIFICATION_REQUIRED -> CLOSED`, with `MORE_INFORMATION_REQUIRED` or `REJECTED` returning the work to `IN_PROGRESS` through explicit events. `WITHDRAWN` is the non-active historical state for a pre-finalisation response correction.
+- Critical/immediate remediation must be verified by another currently authorised principal, never its submitter.
+
 ## 7. Area Manager spot check
 
 1. An authorised trigger or documented risk rationale selects a narrow approved template.
@@ -125,6 +134,20 @@ The workflow supports annual and directed review without assuming one national s
 4. An independent authorised reviewer approves, rejects, or requests changes.
 5. Activation is effective-dated. The system identifies impacted future and open instances and applies an explicit migration policy.
 6. Historical tasks, audits, evidence, and scores retain the version originally applied.
+
+## 13. People & Access invitation and lifecycle — architecture only
+
+1. A current, appropriately scoped System Administrator creates a 72-hour invitation with intended delivery/correlation email, an approved role/scope package, explicit centres where required, and a reason. Pending proposals grant nothing.
+2. The invitation and transactional outbox intent commit together. An Encore Pub/Sub-backed worker later sends through an approved transactional provider; Microsoft Graph is not used.
+3. The recipient presents the current one-time token and authenticates through the exact BSA Entra tenant. Centre Success validates the API token and correlation evidence; permanent identity is `tid + oid`, never email or UPN.
+4. A standard Educator, Assistant Director, Centre Director, or explicit-portfolio Area Manager package may activate atomically when the authorised System Administrator's unchanged invitation and all current checks pass.
+5. System Administrator, Executive, Finance, Compliance Manager, organisation-wide Operations Leadership, and future policy-designated privileged packages wait for a distinct current System Administrator to approve the exact package. The inviter/requester cannot self-approve.
+6. Activation consumes the token generation and atomically creates the mapping, membership, independent assignments/scopes, audit events, and active principal state. Capabilities and scopes from separate assignments never recombine.
+7. Resend rotates and invalidates the prior generation; cancel and expiry prevent activation. Identity mismatch, ambiguous guest/member evidence, mapping conflict, or package drift enters administrator review without automatically changing email or identity.
+8. Movers receive effective-dated replacements without temporary widening. Leavers are suspended or revoked in Centre Success independently of Microsoft account actions. `revoked` is terminal; reactivation from `suspended` is an authorised audited command.
+9. No operation may remove the final reachable active System Administrator; operations target at least two.
+
+Approved conceptual routes and the full invitation state machine, threat model, APIs, tests, and remaining decisions are in `PEOPLE_AND_ACCESS.md`. This section does not authorise implementation before the Milestone 2C gate.
 
 ## Failure and recovery rules
 

@@ -1,4 +1,5 @@
 import { randomUUID } from "node:crypto";
+import type { Transaction } from "encore.dev/storage/sqldb";
 import { centreSuccessDB } from "../db";
 
 export type AuditScopeType =
@@ -47,10 +48,13 @@ const TENANT_FOUNDATION_RESOURCE_TYPES = new Set([
   "organisational_unit",
   "centre",
   "principal",
+  "external_identity_mapping",
   "organisation_membership",
   "role_definition",
   "role_assignment",
 ]);
+
+export type AuditEventExecutor = Pick<Transaction, "exec">;
 
 function assertOptionalUuid(value: string | undefined, field: string): void {
   if (value !== undefined && !CANONICAL_UUID.test(value)) {
@@ -90,20 +94,31 @@ function assertScopeIntegrity(input: RecordAuditEventInput): void {
  * Writes an immutable business/security audit event. Operational logs and
  * traces are intentionally separate from this durable record.
  *
- * Milestone 1 has no production caller by design. The milestone exposes no
- * protected business API and performs no material state change, so there is no
- * write path to attribute; the synthetic tests exercise the seam instead.
+ * Milestone 2A's local-only identity linker is the first material caller. It
+ * appends the mapping write and its event in one transaction. Routine
+ * authentication requests remain operational telemetry rather than durable
+ * audit rows.
  *
  * The public health endpoint must not become that caller. `/foundation/health`
  * is unauthenticated, so recording a row per request would make an append-only
  * table an unauthenticated write-amplification target and would fill it with
  * routine liveness polling that carries no accountability value.
  *
- * The first real callers arrive with Milestone 2 write paths, where each
- * material state change, permission change, and evidence access is attributable
- * under an authenticated principal.
+ * Later approved write paths must similarly attribute material state changes,
+ * permission changes, and evidence access under a trusted principal.
  */
 export async function recordAuditEvent(
+  input: RecordAuditEventInput,
+): Promise<RecordedAuditEvent> {
+  return recordAuditEventWithExecutor(centreSuccessDB, input);
+}
+
+/**
+ * Appends an audit event through an existing transaction when a material write
+ * and its audit record must commit atomically.
+ */
+export async function recordAuditEventWithExecutor(
+  executor: AuditEventExecutor,
   input: RecordAuditEventInput,
 ): Promise<RecordedAuditEvent> {
   if (!SAFE_EVENT_NAME.test(input.action)) {
@@ -122,7 +137,7 @@ export async function recordAuditEvent(
   const occurredAt = input.occurredAt ?? new Date();
   const context = input.context ?? {};
 
-  await centreSuccessDB.exec`
+  await executor.exec`
     INSERT INTO system_audit_events (
       id,
       organisation_id,

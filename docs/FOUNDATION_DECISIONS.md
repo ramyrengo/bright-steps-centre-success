@@ -1,10 +1,10 @@
-# Milestone 1 Foundation Decisions
+# Foundation and Authentication-Gate Decisions
 
 ## Status and boundary
 
-These decisions are approved for **Milestone 1 — Centre Success foundation**. They resolve the minimum technical and authorisation choices needed to build the foundation without approving later business modules or production access.
+The foundation decisions were accepted with **Milestone 1 — Centre Success foundation**. The identity/runtime additions in this document are approved only for **Milestone 2A — Authentication Gate**. Together they establish the minimum technical, authentication, and authorisation boundary without approving later business modules or production access.
 
-Milestone 1 contains no compliance, internal-audit, QIP, coaching, wellbeing, budget workflow, notification, AI, or integration functionality.
+Milestone 2A contains no compliance, internal-audit, QIP, daily-success, coaching, wellbeing, budget workflow, notification, AI, HR synchronisation, Microsoft Graph, or other business functionality.
 
 ## Deployment and persistence boundary
 
@@ -15,16 +15,28 @@ Milestone 1 contains no compliance, internal-audit, QIP, coaching, wellbeing, bu
 
 ## Identity and runtime API boundary
 
-The database represents a minimal internal principal independently from authentication. A future approved identity provider will map its stable subject to that principal; the provider proves identity, while Centre Success loads current membership, capabilities, and scopes and decides access.
+The database represents a minimal internal principal independently from authentication. Microsoft Entra ID tenant `27026100-3522-48b5-8e95-80230afc4127` is approved in Milestone 2A to prove who signed in. The verified Entra `tid + oid` pair maps through `external_identity_mappings` to that principal as `provider_key = 'microsoft_entra:27026100-3522-48b5-8e95-80230afc4127'` and the raw `oid` provider subject. Centre Success—not Entra—loads current membership, assignment-bound capabilities, and scopes and decides access.
 
-No external identity provider, password flow, temporary login, trusted test header, or runtime authentication handler is approved in Milestone 1. Consequently:
+Two single-tenant Entra app registrations separate Centre Success Web client `b490189d-37c1-422c-a54a-b12d55646947` from Centre Success API client `5e8ce11c-ade3-4baa-82f6-351919b444ca`. The Next.js application uses MSAL Authorization Code with PKCE and the `/redirect` bridge to obtain a delegated Centre Success API access token for `api://5e8ce11c-ade3-4baa-82f6-351919b444ca/access_as_user`; it never sends an ID token or Microsoft Graph token to Encore. The connected smoke proves the current Web registration accepts the exact `/redirect` SPA URI; the confirmed root URI remains the post-logout landing. One central Encore auth handler resolves rotating signing keys through the BSA tenant OIDC/JWKS metadata and strictly validates RS256, `kid`, the exact v2 issuer, `tid`, API-client-ID `aud`, Web-client-ID `azp`, `ver`, time claims, and scope. It resolves an active mapping and active principal and returns minimum AuthData containing only the internal principal UUID as Encore `userID`.
 
-- pure policy and PostgreSQL context/hierarchy loading are exercised with synthetic principals in automated tests;
-- no client-supplied principal, role, organisation, or centre is trusted;
-- no protected business endpoint is publicly exposed; and
-- the only public API is a minimal, non-sensitive health endpoint.
+The Product Owner's final local proof on 11 August 2026 exercised that complete chain with a real BSA Microsoft session and Centre Success API access token. After the approved local `tid + oid` mapping was created, protected `/foundation/me` resolved the synthetic Local System Administrator principal and its active synthetic organisation context; the browser displayed Connected and Ready. The synthetic records and explicit local mapping are evidence of the seam only and are not a production provisioning mechanism.
 
-Adding a protected runtime endpoint requires the identity-provider/session/MFA decision and an approved Encore authentication handler.
+Consequently:
+
+- no client-supplied principal, user, role, capability, organisation, centre, or ancestry is trusted;
+- a valid unmapped Entra identity and an inactive mapping or internal principal receive no Centre Success access;
+- Entra groups, app roles, claims, and authentication methods grant no Centre Success business authority;
+- zero active organisation memberships return only `provisioningStatus: "not_provisioned"`, exactly one is resolved server-side, and multiple fail closed for Milestone 2A;
+- the protected self-context endpoint reloads `PrincipalAuthorisationContext` from PostgreSQL for every request; and
+- the public health API remains minimal and non-sensitive.
+
+No temporary login, trusted test identity header, public self-registration, auto-provisioning, Microsoft Graph permission, or business endpoint is approved. MFA, recovery, Conditional Access, step-up, multi-organisation selection, and future business API decisions remain separately gated. See ADR-0012.
+
+### Approved People & Access architecture boundary
+
+ADR-0014 supersedes the earlier operational recommendation to require Entra enterprise-application user assignment. The approved setting is **User assignment required = No**. An exact-tenant Entra identity may authenticate, but authentication creates no internal principal mapping, membership, capability, scope, or application access; unmapped and uninvited identities remain `not_provisioned`.
+
+Milestone 2C architecture is approved, but implementation remains gated behind Milestone 2B acceptance and a separate Product Owner authorisation. The future workflow uses System-Administrator-created invitations, 72-hour one-time token generations, pending proposals outside active authorisation tables, permanent `tid + oid` identity, standard atomic activation, independent approval for privileged packages, non-recombining assignments, and at least one reachable active System Administrator. Microsoft Graph, Entra groups/app roles, email identity, HR synchronisation, and a permanent production bootstrap remain outside the approved boundary. See `docs/PEOPLE_AND_ACCESS.md` and ADR-0014.
 
 ## Authorisation model
 
@@ -87,20 +99,26 @@ Pure and database-backed tests cover:
 
 Database integration evidence also covers nested state/region ancestry, centre moves, effective portfolio removal, future assignments, overlapping valid grants, canonical role provisioning, and append-only audit records.
 
-## Local frontend/backend contract
+## Environment frontend/backend contract
 
-- Local browser calls are uncredentialed and allowed only from `http://localhost:3000`.
-- Do not enable wildcard or credentialed CORS.
-- The frontend calls the real local Encore public health endpoint.
+- Local browser calls to protected Encore APIs carry only a Centre Success API access token as a Bearer header. The committed authenticated CORS origin is exactly `http://localhost:3000`; Encore's all-origin local-development convenience does not change the deployed allowlist.
+- The confirmed staging backend/API origin is `https://staging-bright-steps-centre-success-uwhi.encr.app`. It is an API transport origin only, not an Entra SPA redirect URI, post-logout URI, or authentication audience.
+- No staging frontend has been approved or deployed. Its browser origin, CORS entry, Entra redirect URI, and post-logout URI remain unconfigured until separately approved.
+- The API app registration defines authentication trust: Application ID URI `api://5e8ce11c-ade3-4baa-82f6-351919b444ca`, delegated scope `api://5e8ce11c-ade3-4baa-82f6-351919b444ca/access_as_user`, and exact version 2 token `aud = 5e8ce11c-ade3-4baa-82f6-351919b444ca`. Never derive these from an Encore deployment URL.
+- Do not enable wildcard origins or cookie-based cross-origin credentials.
+- The frontend calls the real local Encore public health and protected self-context endpoints.
+- One central frontend adapter obtains the Entra API token from MSAL and configures the generated client; React components do not acquire tokens independently or construct identity headers.
 - Use Encore's official generated TypeScript client rather than duplicating API contracts.
 - Commit the generated frontend client. Regenerate it whenever an Encore API contract changes and review the generated diff.
 - Generated output is not hand-edited.
 
 ## Deferred decisions
 
-- identity provider, auth handler, session/cookie-or-token model, MFA, recovery, and step-up;
-- protected organisation/centre APIs and any authenticated frontend experience;
+- MFA, recovery, session-revocation expectations, authentication assurance, and step-up;
+- multi-organisation active-context selection/persistence beyond the exact-one Milestone 2A gate;
+- protected organisation/centre business APIs beyond the minimal self-context proof;
 - authoritative organisation/portfolio source integration, hierarchy ownership, and propagation SLA;
 - break-glass or support impersonation;
 - production CORS origins and deployment/security operations; and
 - capabilities, data policies, and workflows for later business modules.
+- People & Access implementation details still enumerated in `docs/PEOPLE_AND_ACCESS.md`, including the email provider, correlation evidence, retention, JML operating source/SLA, production first-administrator mechanism, and break-glass/recovery policy.

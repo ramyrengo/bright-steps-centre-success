@@ -59,23 +59,17 @@ The system should reduce duplicate evidence collection and show freshness. It mu
 
 ## Item outcomes
 
-The exact labels require business approval. The architecture supports outcomes such as:
+Milestone 2B supports `COMPLIANT`, `PARTIALLY_COMPLIANT`, `NON_COMPLIANT`, `NOT_APPLICABLE`, `NOT_OBSERVED`, `IMMEDIATE_ACTION_REQUIRED`, and `POSITIVE_PRACTICE`. `NOT_OBSERVED` is non-scored, requires a reason, never means compliant, and cannot make an unresolved critical requirement disappear from risk.
 
-- `met`;
-- `partially_met`;
-- `not_met`;
-- `not_applicable` with required rationale; and
-- `not_assessed` with required reason.
-
-Each response records observation, evidence, author, timestamps, and confidence/information gap where needed. A negative outcome requires factual notes. A critical item cannot be neutralised by optional positive items.
+Each response records observation, evidence, author, timestamps, and confidence/information gap where needed. Draft response creation/update is auditable without duplicating comment or file content into the security ledger. A negative outcome requires factual notes. A critical item cannot be neutralised by optional positive items.
 
 ## Scoring model
 
-Scoring is a versioned internal methodology. A candidate calculation is:
+Scoring is a versioned internal methodology. The approved calculation is:
 
 `weighted achieved points / weighted eligible points x 100`
 
-The approved template defines outcome points, weights, eligibility, rounding, and section roll-up. The result also includes:
+The synthetic development configuration uses factors of `1.0` for `COMPLIANT` and `POSITIVE_PRACTICE`, `0.5` for `PARTIALLY_COMPLIANT`, and `0` for `NON_COMPLIANT` and `IMMEDIATE_ACTION_REQUIRED`. These are versioned template data, not permanent BSA policy. `NOT_APPLICABLE`, `NOT_OBSERVED`, and configured non-scored items are excluded from the denominator. Performance bands form a complete, non-overlapping partition: `[minimum, maximum)` for every band except the last band, whose maximum `100` is inclusive. A policy cannot become active with a gap or overlap. The versioned band also records whether it is below the internal oversight threshold, so historical interpretation follows the policy pinned to the audit rather than an application constant. The approved template defines outcome points, weights, eligibility, rounding, and section roll-up. The result also includes:
 
 - critical-item flags and score caps/gates;
 - count of not assessed and information gaps;
@@ -90,14 +84,16 @@ No threshold may use ACECQA rating names. The UI shows factor-level explanations
 
 When an approved item mapping is triggered:
 
-1. Create or link a draft finding using a stable audit/item key.
+1. Create or link a finding using a stable audit/item key.
 2. Pre-fill factual source, centre, audit, item, outcome, and evidence links.
 3. Propose severity only from approved explicit rules.
 4. Create a draft corrective action with expected outcome and default timing where configured.
 5. Require an authorised Area/Compliance Manager to confirm severity, owner, due date, and verification method.
 6. Notify the Centre Director after confirmation, avoiding sensitive detail in the notification.
 
-Retries must not duplicate findings or actions. The audit can be finalised only when required action mappings are resolved or explicitly waived by authorised policy.
+`IMMEDIATE_ACTION_REQUIRED` creates or escalates its configured finding/action immediately while the audit is in progress. Ordinary partial/non-compliant mappings are persisted atomically at finalisation. Finalisation reconciles existing immediate records idempotently and never duplicates them. Exactly one eligible centre remediation owner may be selected automatically; zero or multiple candidates require the Area Manager to choose from server-validated candidates. The audit can be finalised only when required action mappings and owners are resolved.
+
+If an in-progress response correction means an already-created finding/action is no longer required, the auditor must give an explicit correction reason. The original records and creation history remain, both records transition to `WITHDRAWN`, and append-only history/security events record the correction without copying its narrative into the security ledger. Withdrawn records do not count as active risk or appear in the Centre Director's active action list. A later qualifying response reactivates the same finding/action IDs; finalisation reconciles them without duplication. Critical or immediate action configurations must require independent verification in both the application and PostgreSQL.
 
 ## Finalisation, response, and amendment
 
@@ -148,8 +144,8 @@ Auditors can record a strength with observed practice, evidence, related Quality
 
 ## Open decisions
 
-- Quarterly and spot-check templates, outcomes, weights, thresholds, and critical gates.
-- Which audit types require moderation and independent verification.
+- Production quarterly/spot-check content and production scoring thresholds after the synthetic development pilot.
+- Whether non-critical audit types require moderation beyond Milestone 2B. Critical and immediate actions already require independent verification.
 - Target cadence and rescheduling authority.
 - Comparison policy across template releases.
 - Centre Director challenge and dispute-resolution process.

@@ -4,11 +4,11 @@ Bright Steps Centre Success is a proposed operational success system for Austral
 
 ## Current status
 
-**Milestone 1: Centre Success foundation implementation is complete and awaiting product-owner acceptance.**
+**Milestone 1 and Milestone 2A — Authentication Gate are accepted and complete. Milestone 2B — Area Manager Audit to Corrective Action remains in acceptance remediation. Milestone 2C — People & Access + User Invitations is approved as architecture only and is not authorised for implementation until Milestone 2B is accepted.**
 
-Milestone 0 architecture is complete. The starter endpoint has been replaced by one Encore `foundation` service with the organisation/centre/principal/access/audit foundation, a public health endpoint, a responsive Next.js shell, generated client communication, database-backed authorisation tests, and automated foundation checks. No later business module has started.
+Milestone 0 architecture, Milestone 1 foundation, and Milestone 2A authentication are complete. The repository contains one Encore `foundation` service with the organisation/centre/principal/access/audit foundation, Microsoft Entra authentication, a responsive Next.js application, generated client communication, database-backed authorisation tests, and automated quality checks. Milestone 2B adds the first approved business vertical slice without changing the authentication boundary. People & Access decisions are documented for planning, but no Milestone 2C code or infrastructure is authorised.
 
-The external identity provider is still an approved deferral. Milestone 1 proves an identity-provider-neutral principal and internal PostgreSQL-to-policy authorisation seam, but adds no runtime authentication or protected business endpoint. See [Foundation Decisions](docs/FOUNDATION_DECISIONS.md) and [MVP Build Plan](docs/MVP_BUILD_PLAN.md).
+Microsoft Entra ID in the single Bright Steps Australia tenant is the approved authentication provider. The Next.js SPA uses MSAL Authorization Code with PKCE to obtain an access token for the Centre Success API. Encore strictly validates that token and maps its `tid + oid` identity to the existing provider-neutral internal principal, after which Centre Success reloads current membership, assignment-bound capabilities, and scopes from PostgreSQL. Entra user assignment is set to **No**, but authentication still grants no Centre Success access: unmapped or uninvited identities remain `not_provisioned`. Entra is not the business-authorisation source, users are not auto-provisioned, and Microsoft Graph is not integrated. See [Foundation Decisions](docs/FOUNDATION_DECISIONS.md), [People & Access Architecture](docs/PEOPLE_AND_ACCESS.md), [ADR-0012](docs/adr/0012-microsoft-entra-id-single-tenant-authentication.md), [ADR-0013](docs/adr/0013-milestone-2b-quarterly-review-vertical-slice.md), [ADR-0014](docs/adr/0014-people-and-access-invitation-architecture.md), and [MVP Build Plan](docs/MVP_BUILD_PLAN.md).
 
 ## Confirmed architecture
 
@@ -25,12 +25,13 @@ The external identity provider is still an approved deferral. Milestone 1 proves
 
 | Document | Decision area |
 | --- | --- |
-| [Foundation Decisions](docs/FOUNDATION_DECISIONS.md) | Approved Milestone 1 implementation constraints and role baseline |
-| [Architecture Decision Records](docs/adr/README.md) | Material accepted foundation decisions and consequences |
-| [Developer Setup](docs/DEVELOPER_SETUP.md) | Local prerequisites, startup, tests, database, and client generation |
+| [Foundation Decisions](docs/FOUNDATION_DECISIONS.md) | Accepted foundation constraints, role baseline, and authentication boundary |
+| [Architecture Decision Records](docs/adr/README.md) | Material accepted foundation and authentication decisions |
+| [Developer Setup](docs/DEVELOPER_SETUP.md) | Local prerequisites, Microsoft Entra configuration, startup, tests, database, and client generation |
 | [Product Vision](docs/PRODUCT_VISION.md) | Outcomes, boundaries, principles, success measures |
 | [Personas](docs/PERSONAS.md) | User needs, risks, and contexts |
 | [User Roles](docs/USER_ROLES.md) | Operational responsibilities and separation of duties |
+| [People & Access Architecture](docs/PEOPLE_AND_ACCESS.md) | Approved, implementation-gated invitation, access lifecycle, approval, and security design |
 | [Workflows](docs/WORKFLOWS.md) | End-to-end journeys and lifecycle states |
 | [NQS Framework](docs/NQS_FRAMEWORK.md) | NQF/NQS/QIP modelling and source governance |
 | [Compliance Engine](docs/COMPLIANCE_ENGINE.md) | Configurable controls, tasks, evidence, and corrective actions |

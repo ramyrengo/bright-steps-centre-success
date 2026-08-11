@@ -89,7 +89,7 @@ describe("canonical foundation role templates", () => {
       WHERE role.organisation_id = ${organisationId}
         AND role.status = 'active'
         AND role.source_template_key = role.role_key
-        AND role.source_template_version = 1
+        AND role.source_template_version = role.version
       ORDER BY role.role_key, role_capability.capability_code
     `;
 

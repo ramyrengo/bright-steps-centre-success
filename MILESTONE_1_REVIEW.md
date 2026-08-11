@@ -1,10 +1,13 @@
 # Milestone 1 foundation — gap review
 
-> **Status: remediated on 11 August 2026.** This is retained as the historical
-> review input; its issue evidence describes the pre-remediation baseline and
-> must not be read as the current repository state. Current decisions and gates
-> are recorded in `docs/FOUNDATION_DECISIONS.md`, `docs/adr/`, and
-> `docs/DEVELOPER_SETUP.md`.
+> **STATUS: REMEDIATED**
+>
+> The findings in this document were addressed before Milestone 1 acceptance.
+> Milestone 1 was subsequently accepted and merged through pull request #1 with
+> Foundation CI green on `main`. This review remains as engineering history;
+> its evidence describes the pre-remediation baseline and must not be read as
+> the current repository state. Current decisions and gates are recorded in
+> `docs/FOUNDATION_DECISIONS.md`, `docs/adr/`, and `docs/DEVELOPER_SETUP.md`.
 
 **Reviewed:** 11 August 2026, 15:20 AEST, against the working tree on `milestone-1/foundation` (uncommitted).
 **Scope of review:** the Milestone 1 exit criteria in `docs/MVP_BUILD_PLAN.md`, the approved constraints in `docs/FOUNDATION_DECISIONS.md`, the authorisation requirements in `docs/PERMISSIONS.md`, and the invariants in `AGENTS.md` — checked against `foundation/`, `frontend/`, `encore.app`, and the migration set.

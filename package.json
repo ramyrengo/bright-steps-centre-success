@@ -15,16 +15,21 @@
     "test:backend": "npm run test:unit && npm run test:integration",
     "test:frontend": "npm --prefix frontend test",
     "test:all": "npm run test:backend && npm run test:frontend",
-    "typecheck": "tsc --noEmit",
-    "lint": "npm --prefix frontend run lint"
+    "typecheck": "encore gen wrappers && tsc --noEmit",
+    "lint": "npm --prefix frontend run lint",
+    "identity:link:local": "encore exec -- npx --no-install tsx scripts/link-entra-identity.ts",
+    "identity:bootstrap:local": "encore exec -- npx --no-install tsx scripts/bootstrap-local-system-administrator.ts",
+    "quarterly-review:seed:local": "encore exec -- npx --no-install tsx scripts/seed-quarterly-review-development.ts"
   },
   "devDependencies": {
     "@types/node": "^20.5.7",
+    "tsx": "4.23.12",
     "typescript": "^5.2.2",
     "vitest": "^4.1.10"
   },
   "dependencies": {
-    "encore.dev": "^1.57.13"
+    "encore.dev": "^1.57.13",
+    "jose": "6.2.8"
   },
   "optionalDependencies": {
     "@rollup/rollup-linux-x64-gnu": "^4.13.0"
