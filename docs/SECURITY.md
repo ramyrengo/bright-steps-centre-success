@@ -143,7 +143,7 @@ Audit records cover permission changes, privileged access, evidence/export activ
 - Encore Cloud and GitHub-connected deployment are the confirmed deployment path; production cloud/provider/region and account ownership require approval.
 - Protect the default branch, require reviewed pull requests and passing checks, and restrict environment/deployment permissions.
 - Separate local, test, preview/staging, and production data/secrets. Never copy production personal data into lower environments without an approved minimisation process.
-- Pin and review dependencies. The Milestone 1 GitHub Actions definition performs frozen installs, dependency audits, backend and authorization tests, frontend lint/tests/build, generated-client verification, and repository consistency checks without deployment credentials or production automation.
+- Pin and review dependencies. The Milestone 1 GitHub Actions definition performs frozen installs, dependency audits, backend and authorization tests, frontend lint/tests/build, generated-client verification, and repository consistency checks. It authenticates the Encore CLI with a least-privilege, repository-secret-backed application auth key but performs no deployment or production automation.
 - Treat `.encore` and `encore.gen` as generated, not hand-edited product source.
 - OrbStack is only the local Docker-compatible runtime where Encore infrastructure requires it; it is not the production architecture.
 - Limit Encore dashboard, service catalog, logs, and cloud-console access by environment and job need.

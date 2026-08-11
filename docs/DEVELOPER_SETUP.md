@@ -128,12 +128,16 @@ dashboard or replace the local connected smoke test.
 ## Continuous integration
 
 `.github/workflows/foundation-ci.yml` performs frozen root/frontend installs,
-pins the Encore CLI, verifies Docker, runs backend type checks and both test
-suites, runs frontend lint/typecheck/tests/build, audits dependencies, regenerates
-the Encore client, and fails on tracked repository drift. It has read-only
-repository permission and contains no deployment, cloud credential, or
-production automation. A remote GitHub run is evidence only after the workflow
-is committed and executed by GitHub.
+pins the Encore CLI, authenticates it with the required `ENCORE_AUTH_KEY`
+GitHub Actions repository secret, verifies Docker, runs backend type checks and
+both test suites, runs frontend lint/typecheck/tests/build, audits dependencies,
+regenerates the Encore client, and fails on tracked repository drift. The auth
+key must be a least-privilege Encore machine credential for this application;
+never place its value in workflow YAML, source, logs, or a pull-request
+variable. The workflow has read-only GitHub repository permission and contains
+no deployment or production automation. A remote GitHub run is evidence only
+after the workflow is committed, the secret is configured, and GitHub executes
+the workflow.
 
 ## Generated API client
 
