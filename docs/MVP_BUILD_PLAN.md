@@ -2,9 +2,9 @@
 
 ## Delivery status and stop gate
 
-**Milestone 0 — architecture documentation: complete pending product-owner review.**
+**Milestone 0 — architecture documentation: complete and approved.**
 
-No Milestone 1 implementation may begin until the product owner explicitly approves this architecture and resolves or accepts the blocking decisions below. The current Encore.ts Hello World starter remains unchanged as product code. This plan creates no authorisation to scaffold Next.js, add packages, create migrations/tables, implement APIs/authentication/UI, configure integrations, or provision infrastructure.
+**Milestone 1 — Centre Success foundation: implementation complete; awaiting product-owner acceptance.** The Encore application and Cloud connection were preserved. Later business modules remain outside this authorisation, and Milestone 2 must not begin without explicit approval.
 
 ## MVP objective
 
@@ -50,36 +50,27 @@ Include only after business decisions, privacy/security review, and capacity val
 - data warehouse, public benchmarking, native mobile apps, and arbitrary custom workflow builder;
 - service/database extraction without measured need.
 
-## Blocking decisions before Milestone 1
+## Approved foundation decisions and later gates
 
-1. Named product, compliance, security/privacy, finance, people/wellbeing, and technical owners.
-2. First jurisdiction(s), service types, and approved authoritative-source process.
-3. Organisation hierarchy, centre identifiers, Area Manager assignment source, and joiner/mover/leaver process.
-4. Identity provider, session/MFA/recovery model, and access-review policy.
-5. Final role/capability/scope matrix, separation of duties, delegation, and exceptional access.
-6. Control taxonomy, evidence classes, risk/severity, corrective-action verification, and escalation policy.
-7. Quarterly audit/spot-check templates, scoring, critical gates, moderation, and comparison policy.
-8. Privacy/data inventory, retention/deletion/legal hold, evidence and child/staff data policy.
-9. Encore Cloud provider/region/environment, backup/recovery, GitHub, deployment, and support access.
-10. MVP choice for budget, coaching, Centre Health, wellbeing, and AI.
+The product owner approved the canonical foundation role/scope baseline, one Encore service/database, an identity-provider-neutral principal, data-driven capabilities, synthetic authorisation tests, a public health endpoint, the local uncredentialed CORS origin, and a committed generated frontend client.
 
-Unresolved items must be documented as explicit limits, not silently assumed by implementation.
+The identity provider and runtime session/MFA/recovery design are intentionally deferred. Milestone 1 must not expose a protected business endpoint or invent temporary authentication while that decision is open. Broader organisation hierarchy, assignment sources, access review, privacy/retention, cloud production operations, and all business-module decisions remain gates before the affected capability or production release; they do not authorise scope expansion during the synthetic foundation.
 
-## Proposed delivery milestones after approval
+## Delivery milestones
 
 ### Milestone 1 — secure foundation
 
 **Goal:** Prove tenant and centre isolation before adding sensitive workflows.
 
-Deliver organisation/hierarchy/centre identity, approved authentication, memberships, role/scope assignments, policy enforcement, audit-event foundation, environment strategy, and a minimal responsive shell. Keep one Encore business service and one PostgreSQL database.
+Deliver organisation/hierarchy/centre identity, an identity-provider-neutral internal principal, memberships, data-driven role/scope assignments, synthetic policy enforcement, audit-event foundation, environment strategy, and a minimal responsive shell. Keep one Encore business service and one PostgreSQL database. Runtime authentication and protected business APIs wait for provider approval; only the public health endpoint connects the shell to Encore in this milestone.
 
 Exit evidence:
 
 - architecture decision records for open foundation decisions;
-- cross-organisation, cross-centre, expired delegation, deactivation, and admin-without-content tests;
+- cross-organisation, cross-centre, assigned/unassigned scope, multi-role, deactivation, and System-Administrator-without-business-content tests;
 - threat/privacy review and data classification;
 - CI quality/security checks and controlled deployment path;
-- observable authenticated request with safe logs/traces; and
+- observable public health request with safe logs/traces and no protected data;
 - no business module can bypass the authorisation interface.
 
 ### Milestone 2 — compliance work vertical slice
@@ -126,6 +117,8 @@ Budget, coaching, Centre Health, AI, wellbeing, and additional integrations each
 - **Operations:** Encore secrets, auth handler, API schemas/docs, service calls if later extracted, traces, structured logs, metrics, and local developer dashboard.
 - **Local/cloud:** Encore CLI and OrbStack where local Docker compatibility is required; Encore Cloud with GitHub-connected environments.
 - **Supabase:** no Supabase Auth, RLS, Storage, Edge Functions, or database architecture.
+
+The official Encore-generated TypeScript client used by `frontend/` is committed so a checkout has the reviewed contract. Developers regenerate it whenever an Encore API contract changes and review the generated diff; backend request/response types are not manually duplicated in frontend source.
 
 ## Module boundaries
 
@@ -189,6 +182,7 @@ Every milestone requires:
 - [x] Backend authorisation and security architecture.
 - [x] Centre Health, coaching, wellbeing, budget, AI, and integration boundaries.
 - [x] Cross-document terminology and invariant review.
-- [ ] Product-owner architecture approval.
-- [ ] Business/security decisions listed above.
-- [ ] Explicit authorisation to begin Milestone 1.
+- [x] Product-owner architecture approval.
+- [x] Foundation role/scope clarification and identity-provider deferral recorded.
+- [x] Explicit authorisation to begin Milestone 1.
+- [ ] Later business/security decisions before affected modules or production release.

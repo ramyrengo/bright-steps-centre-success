@@ -2,9 +2,11 @@
 
 ## Current delivery gate
 
-This repository is in **Milestone 0: architecture**. Do not begin Milestone 1 or alter the Encore starter until the product owner explicitly approves implementation.
+**Milestone 1: Centre Success foundation is implemented and awaiting product-owner acceptance.** Preserve the Encore application and Cloud connection. Do not begin Milestone 2 or any later business module without explicit approval.
 
-Until that approval, do not scaffold Next.js, add packages, create migrations or tables, implement APIs or authentication, create UI, configure integrations, add secrets, or provision infrastructure. Architecture work is limited to `README.md`, `AGENTS.md`, and `docs/*.md`.
+Milestone 1 may add one Encore business service/database, the minimum organisation/centre/principal/access/audit schema, data-driven authorisation policy and synthetic tests, a public health endpoint, a responsive Next.js shell, a generated Encore client, and local developer documentation. Do not implement compliance workflows, audits, QIP, coaching, wellbeing, budget functionality, notifications, AI, or other later business modules.
+
+The external identity provider remains unapproved. Do not add runtime authentication, credentials, client-supplied identity headers, or an insecure temporary login. Until an approved provider establishes trusted identity, expose no protected business API; the only public Milestone 1 API is a minimal non-sensitive health endpoint.
 
 ## Confirmed technical baseline
 
@@ -17,6 +19,8 @@ Until that approval, do not scaffold Next.js, add packages, create migrations or
 - Supabase is not part of the baseline. Do not introduce Supabase Auth, RLS, Storage, Edge Functions, or another Supabase dependency without an approved, documented architecture decision showing a material need.
 
 The MVP default is one cohesive Encore deployable business service with internal domain modules and one application database. Do not create a service or database per logical domain. Extract a boundary only when ownership, scaling, reliability, security, or deployment evidence justifies it.
+
+Canonical foundation role names are **Educator**, **Assistant Director**, **Centre Director**, **Area Manager**, **Compliance Manager**, **Operations Leadership**, **Finance**, **Executive**, and **System Administrator**. Do not create `Operations` or `Super Admin` as separate roles. Operations Leadership is scoped business oversight. System Administrator is technical administration and receives no business-content access unless separately assigned a business capability and scope.
 
 ## Required invariants
 
@@ -36,7 +40,7 @@ The MVP default is one cohesive Encore deployable business service with internal
 - Keep domain language consistent: **organisation**, **state/region**, **centre**, **user**, **assignment**, **finding**, **corrective action**, **evidence**, **QIP improvement**, **internal audit**, and **Centre Health**.
 - Record unresolved business decisions as explicit open decisions; do not silently turn assumptions into requirements.
 - When implementation is approved, deliver vertical slices with tests for happy path, denied cross-scope access, audit recording, and failure/retry behaviour.
-- Preserve the existing starter and user changes unless a later approved milestone explicitly replaces them.
+- Preserve the implemented foundation and user changes unless a later approved milestone explicitly replaces them. The sample Hello World service was removed only after the replacement service, database, API, tests, frontend connection, and local traces were verified.
 
 ## Source and legal safety
 

@@ -59,7 +59,7 @@ The UI must never call a campaign anonymous if the data model, logs, unique link
 
 Where one-response enforcement is required, eligibility/participation tokens should be separated from response content as far as practicable. Operational telemetry must not re-create the link. Campaign administrators see completion counts only at an approved aggregation level.
 
-If a confidential identified model is used, named access and use restrictions are explicit. A System Admin role alone never grants response access.
+If a confidential identified model is used, named access and use restrictions are explicit. A System Administrator role alone never grants response access.
 
 ## Aggregate protection
 

@@ -48,11 +48,11 @@ Priority threats include:
 
 ## Identity and session architecture
 
-The identity provider is an open decision. Before implementation Bright Steps must approve authentication assurance, MFA, recovery, invitation, federation, and joiner/mover/leaver processes.
+The identity provider is an open decision. Milestone 1 may create the identity-provider-neutral internal principal, external-identity mapping seam, data-driven assignments, and synthetic authorisation tests. It must not implement passwords, a temporary login, client-supplied identity headers, or runtime authentication.
 
-Encore authentication handlers will validate credentials and establish minimal trusted identity context. Current membership, capability, and scope are loaded by the backend. Sessions require secure transport, expiry, rotation/revocation, browser protections appropriate to the chosen token/cookie model, and reauthentication for approved high-risk actions.
+After Bright Steps approves authentication assurance, MFA, recovery, invitation, federation, and joiner/mover/leaver processes, an Encore authentication handler will validate credentials and establish minimal trusted identity context. Current membership, capability, and scope will be loaded by the backend. Sessions require secure transport, expiry, rotation/revocation, browser protections appropriate to the chosen token/cookie model, and reauthentication for approved high-risk actions.
 
-No authentication implementation is authorised in Milestone 0.
+Until then, no protected business API is exposed. The sole public Milestone 1 endpoint is a minimal health check that returns no tenant, centre, user, configuration, dependency, version, or diagnostic detail beyond the approved operational contract.
 
 ## Authorisation
 
@@ -61,7 +61,8 @@ No authentication implementation is authorised in Milestone 0.
 - deny by default and fail closed;
 - organisation and object scope checked on every protected read/write;
 - assignment-aware Area Manager access;
-- explicit Compliance, Finance, Executive, export, and wellbeing capabilities;
+- explicitly scoped Compliance Manager, Operations Leadership, Finance, Executive, export, and wellbeing capabilities;
+- System Administrator technical access without implicit business-content access;
 - field/attachment classification in addition to record access;
 - time-bounded delegation and reviewed exceptional access;
 - server-side filtering for search, aggregation, count, object download, and exports; and
@@ -74,7 +75,7 @@ Supabase RLS is not used. PostgreSQL RLS is not assumed as the primary control; 
 - Type and schema validation at API boundaries with size, range, enum, and normalisation constraints.
 - Parameterised database access and explicit response schemas.
 - Output encoding and sanitised rich text; never render imported or AI content as trusted executable markup.
-- CSRF protection if cookie authentication is selected; restrictive CORS based on approved frontend origins.
+- CSRF protection if cookie authentication is selected; restrictive CORS based on approved frontend origins. Milestone 1 local CORS allows only uncredentialed requests from `http://localhost:3000`; wildcard or credentialed CORS is not enabled.
 - Rate limits and abuse controls by endpoint, identity, organisation, and IP where appropriate.
 - Idempotency for retried commands, webhook events, Pub/Sub subscribers, imports, and action generation.
 - Optimistic concurrency and state-machine validation for material workflows.
@@ -123,7 +124,7 @@ Use Encore secrets for credentials and keys when implementation is approved. Sec
 
 ## Logging, audit, and observability
 
-Encore tracing, structured logging, and metrics support debugging and reliability. Business audit events are a separate durable record.
+Encore tracing, structured logging, and metrics support debugging and reliability. Business audit events are a separate durable record. Foundation events are append-only and enforce that every non-system scope, actor, and known foundation resource belongs to the recorded organisation; system events cannot claim tenant scope. Each future domain must add equivalent resource-target validation before emitting its first event type.
 
 Logs and traces:
 
@@ -166,16 +167,17 @@ Define and exercise:
 
 The product may support workflow evidence but does not autonomously decide whether a regulatory or privacy notification is required.
 
-## Security gates before Milestone 1
+## Milestone 1 foundation constraints and deferred gates
 
-- Approved data inventory/classification and privacy assessment plan.
-- Identity provider and session/MFA decision.
-- Final role/scope/capability model and negative-access test plan.
-- Evidence storage, malware scanning, retention, and legal-hold design.
-- Cloud region/provider, environment, backup, and support-access decision.
-- Secure delivery/branch/deployment controls.
-- Incident response owners and escalation routes.
-- AI and wellbeing privacy decisions before either capability handles real data.
+Milestone 1 foundation work is authorised with synthetic, non-sensitive data and the approved role/scope baseline. Its release boundary is deliberately narrow:
+
+- no protected runtime endpoint before the identity provider and session/MFA model are approved;
+- no real personal, child, finance, evidence, coaching, or wellbeing data;
+- no business module beyond organisation/centre/access/audit foundations;
+- no production deployment or support-access path merely because local foundation work runs; and
+- no break-glass behaviour.
+
+Before the relevant later capability or production release, Bright Steps must still approve the data inventory/privacy plan; evidence and retention/legal-hold design; cloud region, backup, deployment, and support access; incident owners; and AI/wellbeing privacy decisions.
 
 ## Open decisions
 

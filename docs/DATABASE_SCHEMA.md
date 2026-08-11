@@ -2,7 +2,7 @@
 
 ## Status
 
-This is a logical data architecture, not SQL, a migration plan, or permission to create tables. Names and cardinalities must be validated in Milestone 1 before physical design.
+This document remains the logical data architecture for the whole product. Only the explicitly approved Milestone 1 physical subset below has been implemented; later conceptual modules are not permission to create their tables.
 
 ## Persistence strategy
 
@@ -11,6 +11,26 @@ The MVP default is one Encore-managed PostgreSQL database owned by one cohesive 
 Binary evidence and generated exports belong in private Encore Object Storage. PostgreSQL stores metadata, checksums, classification, retention, and relationships. Encore-managed infrastructure is the confirmed baseline; Supabase is not used.
 
 A separate database or service requires demonstrated security, operational ownership, scaling, availability, or deployment independence—not merely a new domain noun.
+
+## Implemented Milestone 1 physical subset
+
+The source-controlled migrations in `foundation/migrations/` create one Encore-managed PostgreSQL database named `centre_success`. The first migration contains only the organisation, centre, principal, authorisation, and system-audit foundation. Small follow-up migrations make audit events append-only, enforce tenant/scope integrity, require attributable privileged grants, and add optimistic-concurrency tokens to mutable foundation records.
+
+| Physical table | Foundation purpose |
+| --- | --- |
+| `organisations` | Tenant root and default timezone |
+| `organisational_units` | Effective-dated state, region, or centre-group hierarchy nodes |
+| `centres` | Organisation-owned service locations and jurisdiction/timezone metadata |
+| `centre_organisational_unit_memberships` | Effective-dated centre-to-unit relationships |
+| `principals` | Identity-provider-neutral internal user identity |
+| `external_identity_mappings` | Future provider-key/subject mapping seam; no credentials or provider integration |
+| `organisation_memberships` | Effective-dated tenant membership that grants no content capability by itself |
+| `capabilities` | Canonical foundation capability catalogue |
+| `role_definitions`, `role_capabilities` | Organisation-owned, versioned, data-driven role bundles |
+| `role_assignments`, `assignment_scopes` | Effective-dated grants with organisation, organisational-unit, or centre scope, an explicit grant source/actor, and nonblank reason |
+| `system_audit_events` | Generic append-only security/system events with tenant-consistent scope, actor, and known foundation target; separate from future Area Manager audits |
+
+Application-owned identifiers are UUIDs. Composite foreign keys prevent an assignment or scope from linking records across organisations. Mutable foundation aggregates carry `lock_version`; the first approved mutation repositories must compare and increment it and record the actor/source in the audit ledger. Capability bundles and role assignments are intentionally not seeded because no production users, organisation, or authentication provider are approved. The synthetic role matrix exists only in automated policy tests. No business-module table, development seed, child record, employee record, compliance score, or production data is created.
 
 ## Global conventions
 
@@ -254,7 +274,7 @@ Start with transactional PostgreSQL and carefully designed read models/materiali
 
 If analytics needs later justify a warehouse, feed it through minimised, classified, versioned events with an independently reviewed authorisation model.
 
-## Decisions required before physical schema
+## Decisions required before future domain schemas or production use
 
 - Retention and deletion schedule by record/classification/jurisdiction.
 - Organisation hierarchy and source identifiers.

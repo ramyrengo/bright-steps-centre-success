@@ -4,11 +4,11 @@ Bright Steps Centre Success is a proposed operational success system for Austral
 
 ## Current status
 
-**Milestone 0: architecture documentation complete; implementation is not approved.**
+**Milestone 1: Centre Success foundation implementation is complete and awaiting product-owner acceptance.**
 
-The repository contains a working Encore.ts Hello World starter. It is retained as a technical starting point only and is not Centre Success production functionality. No product database, migrations, authentication, integrations, Next.js frontend, or product APIs have been designed in code.
+Milestone 0 architecture is complete. The starter endpoint has been replaced by one Encore `foundation` service with the organisation/centre/principal/access/audit foundation, a public health endpoint, a responsive Next.js shell, generated client communication, tests, and a local workflow. No later business module has started.
 
-Milestone 1 must not begin without explicit product-owner approval. See [MVP Build Plan](docs/MVP_BUILD_PLAN.md).
+The external identity provider is still an approved deferral. Milestone 1 builds an identity-provider-neutral principal and synthetic authorisation policy, but no runtime authentication or protected business endpoint. See [Foundation Decisions](docs/FOUNDATION_DECISIONS.md) and [MVP Build Plan](docs/MVP_BUILD_PLAN.md).
 
 ## Confirmed architecture
 
@@ -25,6 +25,8 @@ Milestone 1 must not begin without explicit product-owner approval. See [MVP Bui
 
 | Document | Decision area |
 | --- | --- |
+| [Foundation Decisions](docs/FOUNDATION_DECISIONS.md) | Approved Milestone 1 implementation constraints and role baseline |
+| [Developer Setup](docs/DEVELOPER_SETUP.md) | Local prerequisites, startup, tests, database, and client generation |
 | [Product Vision](docs/PRODUCT_VISION.md) | Outcomes, boundaries, principles, success measures |
 | [Personas](docs/PERSONAS.md) | User needs, risks, and contexts |
 | [User Roles](docs/USER_ROLES.md) | Operational responsibilities and separation of duties |

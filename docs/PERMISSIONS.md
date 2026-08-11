@@ -21,15 +21,35 @@ Effective access is evaluated per request from server-side records. Claims may i
 
 | Scope | Meaning | Typical use |
 | --- | --- | --- |
-| Organisation | All permitted resources in one tenant, still limited by classification/capability | Compliance Manager or Executive |
-| State/region | Current centres within an effective-dated organisational unit | Regional leader |
-| Assigned centres | Explicit portfolio set from current assignment data | Area Manager |
+| Organisation | All permitted resources in one tenant, still limited by classification/capability | Compliance Manager, Operations Leadership, Finance, or Executive |
+| State/region | Current centres within an effective-dated organisational unit | Operations Leadership |
+| Assigned centres | Explicit portfolio or centre-group set from current assignment data | Area Manager or Operations Leadership |
 | Centre | One or more named centres | Centre Director or contributor |
 | Record | A named task, audit, action, coaching cycle, or support request | Contributor/reviewer |
 | Self | User’s own low-risk profile/preferences | All users |
 | Aggregate-only | Approved de-identified/suppressed aggregate, no drill-through | Wellbeing or Executive view |
 
 An organisation scope does not override sensitive-data rules. A user with several organisations must operate within one explicit active tenant context resolved by the backend.
+
+## Approved Milestone 1 role bundles
+
+Roles are data-driven convenience bundles. The authoriser evaluates capability plus the scope of the assignment that granted it; it does not contain role-name shortcuts.
+
+| Canonical role | Foundation capabilities | Normal scope for synthetic tests | Required negative boundary |
+| --- | --- | --- | --- |
+| Educator | `centre.read` | Assigned centre | Other centres and organisation administration |
+| Assistant Director | `centre.read`; additional management only by explicit grant | Assigned centre | Other centres; no implied Centre Director equivalence |
+| Centre Director | `centre.read`, `centre.manage` | Assigned centre(s) | Unrelated centres |
+| Area Manager | `centre.read` | Effective-dated assigned centres | Unassigned centres |
+| Compliance Manager | `organisation.read`, `centre.read` | Assigned organisation | Other organisations; no Finance, wellbeing, or system administration |
+| Operations Leadership | `organisation.read`, `centre.read`, `assignment.read` | Explicit organisation, state/region, or assigned-centres group | Anything outside assignment; no technical or sensitive-domain privilege |
+| Finance | `organisation.read`, `centre.read`, synthetic `budget.summary.read` | Explicitly assigned organisation/region/centres | No compliance, coaching, wellbeing, or system administration |
+| Executive | `organisation.read`, `centre.read` | Explicit organisation strategic/read scope | No mutation or administration merely from the role |
+| System Administrator | `principal.read`, `principal.manage`, `identity.mapping.manage`, `assignment.read`, `assignment.manage`, `system.configure`, `system.health.read` | Authorised technical scope | No business-content read through technical privilege |
+
+`budget.summary.read` proves that a scoped financial capability can be represented; it does not authorise a budget module in Milestone 1. The same applies to future business capabilities: they require their own domain approval and resource/classification policy.
+
+When a principal has multiple roles, access is the union of complete valid grants. Each allow path must independently supply both the requested capability and a matching current scope. Capabilities and scopes from unrelated assignments cannot be recombined to manufacture broader access.
 
 ## Data classes
 
@@ -57,11 +77,11 @@ For every protected endpoint or internal command:
 
 Bulk endpoints authorise every resource, not just the filter. Search results and counts are filtered before return. File access is authorised at URL issuance and uses short expiry.
 
-## Role capability summary
+## Future domain capability summary
 
 Legend: `M` manage/perform in scope; `R` read in scope; `A` aggregate/summary only; `—` none by default. Fine-grained capabilities and record-state rules still apply.
 
-| Domain | Centre Director | Area Manager | Compliance | Finance | Executive | Contributor | Wellbeing Admin | System Admin |
+| Domain | Centre Director | Area Manager | Compliance | Finance | Executive | Educator | Wellbeing Admin | System Administrator |
 | --- | --- | --- | --- | --- | --- | --- | --- | --- |
 | Centre/daily work | M centre | R/M assigned | R authorised | — | A/R authorised | Assigned records | — | Config only |
 | Controls/tasks | M centre tasks, R controls | M assigned | M authorised, approve by duty | — | A | Assigned tasks | — | — |
@@ -76,13 +96,13 @@ Legend: `M` manage/perform in scope; `R` read in scope; `A` aggregate/summary on
 | Identity/access | — | — | — | — | — | — | — | M assignments without content read |
 | Audit log/export | Own/centre limited | Assigned limited | Authorised | Finance limited | Authorised | — | Wellbeing audit limited | Security/technical limited |
 
-This matrix is a design baseline requiring Bright Steps approval; it is not an implementation shortcut.
+This broader-domain matrix remains a design baseline for later milestones. It does not add Milestone 1 capabilities. Assistant Director never inherits every Centre Director capability automatically, and Operations Leadership receives future operational/quality summary capabilities only when they are explicitly added and scoped.
 
 ## Sensitive wellbeing scope
 
 - Participation eligibility does not grant response read access.
 - Anonymous/confidential campaign configuration defines whether identity is collected at all.
-- Raw individual responses are excluded from Area Manager, Centre Director, Executive, Compliance, Finance, System Admin, AI, audit, and Centre Health access by default.
+- Raw individual responses are excluded from Area Manager, Centre Director, Operations Leadership, Executive, Compliance, Finance, System Administrator, AI, audit, and Centre Health access by default.
 - Aggregate reads require minimum cohort and anti-reidentification rules; filtered slices that fall below threshold are suppressed.
 - An identified support request is a separate record visible only to the requestor and explicitly authorised support recipients.
 - Emergency/support workflows disclose only under an approved process and applicable law; no architecture document assumes such a basis.
@@ -91,12 +111,13 @@ This matrix is a design baseline requiring Bright Steps approval; it is not an i
 
 Finance capabilities distinguish summary, permitted category detail, import/reconciliation, configuration, forecast, and export. Centre Directors see only their centres and allowed categories. Area Managers and executives receive the exact scope explicitly assigned. Restricted payroll, individual remuneration, bank, tax, or vendor-sensitive detail is excluded unless separately approved.
 
-## Area and Compliance Manager scope
+## Area, Compliance, and Operations Leadership scope
 
 - Area Manager access derives from effective-dated centre assignments, not from a client-provided region filter.
 - Moving a centre changes future portfolio access promptly; historical audit authorship remains.
-- Compliance scope can be organisation-wide or restricted by jurisdiction/region and data class.
-- Neither role automatically gains wellbeing or finance access.
+- Compliance Manager foundation scope is organisation-wide Quality & Compliance access for the explicitly assigned organisation, still limited by capability and data class.
+- None of these roles automatically gains individual wellbeing access; Area Manager and Compliance Manager do not gain Finance access by default.
+- Operations Leadership is business oversight within an explicit organisation, state/region, or assigned-centres group. It gains neither unassigned-centre access nor technical administration and must receive Finance or future domain capabilities separately.
 
 ## Delegation and exceptional access
 
@@ -123,6 +144,10 @@ Break-glass, if approved, requires strong re-authentication, reason, incident/re
 
 PostgreSQL row-level security is not assumed. If evaluated later as defence in depth, it would supplement—not replace—Encore application authorisation and require an approved architecture decision.
 
+### Milestone 1 authentication seam
+
+The external identity provider, session, and MFA model remain unapproved. Milestone 1 therefore tests policy with synthetic internal principals but does not accept a principal, role, organisation, or centre asserted by an untrusted HTTP client. No protected business API is exposed until an approved runtime authentication handler can establish trusted identity. The only public endpoint is a minimal non-sensitive health check.
+
 ## Audit and monitoring
 
 Always audit privileged assignment changes, control/template approval, audit finalisation/reopening, high-risk closure, evidence export/restriction changes, finance import/configuration, wellbeing administration/access, AI administrative changes, and break-glass activity. Monitor repeated denials, identifier probing, unusual export volume, cross-centre access patterns, and stale privileged accounts without logging sensitive payloads.
@@ -130,20 +155,26 @@ Always audit privileged assignment changes, control/template approval, audit fin
 ## Required authorisation tests
 
 - User from organisation A cannot infer or access organisation B by ID, search, count, file, export, or event.
+- Educator and Assistant Director can read their assigned centre but not another centre; neither receives organisation administration.
 - Centre Director cannot access another centre by changing a route/body/filter.
 - Area Manager loses an unassigned centre promptly and gains only approved new scope.
+- Compliance Manager can read centres in the assigned organisation but not another organisation and receives no Finance or system-administration capability.
+- Operations Leadership can read centres in an assigned state/region or organisation, cannot read outside that scope, and receives nothing without an assignment.
+- Finance has its explicitly scoped financial capability and necessary centre metadata but no Compliance Manager capability.
+- Executive read scope does not imply mutation, administration, or unrestricted drill-through.
+- System Administrator can perform authorised principal/assignment administration but cannot read business content through technical privilege.
+- A multi-role principal receives the union of complete scoped grants without borrowing capability or scope between assignments.
+- An unassigned principal is denied by default.
 - Expired delegation and deactivated membership are rejected on the next request.
-- System Admin cannot read business content through administration capabilities.
-- Executive aggregate access does not imply drill-through.
 - Wellbeing suppression cannot be bypassed through filters, exports, AI, or repeated queries.
 - Evidence access is denied when target access exists but evidence classification/purpose does not.
 - Bulk operations do not partially process unauthorised resources unless the API contract safely and explicitly supports it.
 - Pub/Sub replay cannot apply a transition under a stale or wrong-tenant context.
 
-## Decisions required before implementation
+## Decisions deferred beyond the authorised foundation
 
-- Identity provider, session model, MFA and step-up policy.
-- Final capability catalogue and role bundles.
+- Identity provider, session model, MFA and step-up policy before any protected runtime endpoint.
+- Future domain capability catalogues and role-bundle changes beyond the approved Milestone 1 set.
 - Organisation hierarchy, assignment owner, and propagation SLA.
 - Wellbeing aggregation thresholds and support roles.
 - Finance category visibility.
