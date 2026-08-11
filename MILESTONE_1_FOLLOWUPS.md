@@ -1,51 +1,87 @@
 # Milestone 1 — open follow-ups
 
-**Raised:** 11 August 2026, 16:35 AEST, against commit `4d0de01` on
-`milestone-1/foundation`.
+**Raised:** 11 August 2026, 16:35 AEST. **Updated:** 17:00 AEST against
+`9360de8` on `milestone-1/foundation`, after the first CI run.
 
-Both issues in `MILESTONE_1_REVIEW.md` are closed and that file is historical.
-These two items are new, are not regressions, and are the only things I would
-resolve before Milestone 1 is presented for product-owner acceptance.
+All twelve issues in `MILESTONE_1_REVIEW.md` are closed and that file is
+historical. These two items are new and are not regressions. They are the only
+things I would resolve before Milestone 1 is presented for product-owner
+acceptance.
 
-Verified state at `4d0de01`: 20 unit, 19 integration, and 3 frontend tests pass;
-`npm run typecheck` is clean.
+F1 was raised as a prediction and is now **confirmed** — Foundation CI ran on
+pull request #1 and failed. The evidence below is the actual failure, not the
+anticipated one.
+
+Verified locally at `9360de8`: 20 unit, 19 integration, and 3 frontend tests
+pass; `npm run typecheck` is clean. The CI failure is environmental — the Encore
+CLI is unauthenticated on the runner — and does not indicate a code defect.
 
 ---
 
-## F1 — Foundation CI has never executed
+## F1 — Foundation CI fails: the Encore CLI is unauthenticated on the runner
 
-**Severity:** Medium
+**Severity:** High — CI is red on every pull request
 
-**Evidence:** `.github/workflows/foundation-ci.yml` was added in `4d0de01` and
-no run exists, because the branch has not been pushed. The workflow is
-well-formed — actions are SHA-pinned, `persist-credentials: false`, Node comes
-from `.nvmrc`, the Encore CLI is pinned to 1.57.13 — but "CI quality/security
-checks" is Milestone 1 **exit evidence** in `docs/MVP_BUILD_PLAN.md`, and an
-unexecuted workflow is not evidence.
+**Status:** Confirmed by [run 31466996792][run] on pull request #1, which failed
+in 34 seconds.
 
-**Why it matters:** Two steps are the likely first failures, and neither can be
-confirmed locally.
+**Evidence:** The *Encore database integration tests* step runs
+`npm run test:integration`, which resolves to
+`encore test --config vitest.integration.config.ts`. It exits 1 with:
 
-1. *Verify generated Encore client* (lines 84–87) runs
-   `npm --prefix frontend run client:generate`, which resolves to
-   `encore gen client --env=local --services=foundation`. Whether `--env=local`
-   resolves on a runner with no local Encore environment, no linked app, and no
-   authenticated CLI session is unproven. If it needs app linkage or auth, this
-   step fails on every pull request.
-2. *Verify repository consistency* (lines 89–92) ends with
-   `git diff --exit-code`. Any step that legitimately rewrites a tracked file —
-   `npm ci` touching a lockfile, `next typegen` emitting types, the client
-   regeneration above — turns a clean run red.
+```
+error: fetch secrets for bright-steps-centre-success-uwhi:
+GET /apps/bright-steps-centre-success-uwhi/secrets:values?kind=development:
+not logged in: run 'encore auth login' first
+```
+
+Everything before it passes — checkout, Node from `.nvmrc`, both lockfile
+installs, Encore CLI 1.57.13, toolchain verification, backend typecheck, and the
+20 pure authorization tests. The failure is environmental, not a code defect.
+
+**Why it happens:** `encore.app` carries the App ID
+`bright-steps-centre-success-uwhi`, so the CLI treats the application as linked
+to Encore Cloud and fetches development secrets before running tests. On a CI
+runner there is no authenticated session, so the fetch fails and the command
+aborts. Milestone 1 defines no secrets — the fetch is incidental to the app
+being linked, not to anything the tests need.
+
+**Do not "fix" this by unlinking the app or changing the App ID.**
+`docs/DEVELOPER_SETUP.md` line 21 already prohibits that, and
+`docs/FOUNDATION_DECISIONS.md` requires the existing Encore application, App ID,
+and Cloud connection be preserved.
 
 **Acceptance:**
-- Push the branch and let the workflow run to completion at least once.
-- If `encore gen client --env=local` cannot run unauthenticated in CI, either
-  replace the drift check with one that does not require the CLI (for example,
-  regenerate only when an exposed API file changed, or compare against a
-  checked-in contract hash), or document why the step is skipped.
-- Confirm no step leaves the tree dirty, so `git diff --exit-code` fails only on
-  genuine drift.
-- Record the first green run as Milestone 1 exit evidence.
+- Create an Encore auth key for CI and store it as the repository secret
+  `ENCORE_AUTH_KEY`. Authenticate after the CLI install step and before any
+  `encore` invocation:
+
+  ```yaml
+  - name: Authenticate Encore CLI
+    run: encore auth login --auth-key="$ENCORE_AUTH_KEY"
+    env:
+      ENCORE_AUTH_KEY: ${{ secrets.ENCORE_AUTH_KEY }}
+  ```
+
+  `encore auth login --auth-key=<KEY>` is supported by CLI 1.57.13 — verified
+  against `encore auth login --help`.
+- The workflow currently declares `permissions: contents: read`, which does not
+  cover secret access patterns beyond the default; confirm the secret resolves
+  on a pull-request trigger. Note that `secrets` are **not** available to
+  `pull_request` runs from forks, so if outside contributors are ever expected,
+  this step needs a `pull_request_target` or self-hosted strategy instead.
+- Consider whether the integration step should degrade gracefully rather than
+  hard-fail when no auth key is configured, so a fork PR reports "integration
+  tests skipped" instead of a red build.
+
+**Still unproven:** the four steps after the failure never ran. In particular
+*Verify generated Encore client* (lines 84–87) invokes
+`encore gen client --env=local`, which may hit the same authentication path, and
+*Verify repository consistency* (lines 89–92) ends with `git diff --exit-code`,
+which turns red if any earlier step rewrites a tracked file. Both need a green
+run before Milestone 1 can claim CI as exit evidence.
+
+[run]: https://github.com/ramyrengo/bright-steps-centre-success/actions/runs/31466996792
 
 ---
 
