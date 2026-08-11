@@ -9,8 +9,14 @@
   },
   "type": "module",
   "scripts": {
-    "test": "vitest run --passWithNoTests",
-    "typecheck": "tsc --noEmit"
+    "test": "vitest run",
+    "test:unit": "vitest run",
+    "test:integration": "encore test --config vitest.integration.config.ts",
+    "test:backend": "npm run test:unit && npm run test:integration",
+    "test:frontend": "npm --prefix frontend test",
+    "test:all": "npm run test:backend && npm run test:frontend",
+    "typecheck": "tsc --noEmit",
+    "lint": "npm --prefix frontend run lint"
   },
   "devDependencies": {
     "@types/node": "^20.5.7",

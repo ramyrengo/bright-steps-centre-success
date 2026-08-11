@@ -42,6 +42,15 @@ export interface RecordedAuditEvent {
 const SAFE_EVENT_NAME = /^[a-z][a-z0-9_.-]{0,99}$/;
 const CANONICAL_UUID =
   /^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
+const TENANT_FOUNDATION_RESOURCE_TYPES = new Set([
+  "organisation",
+  "organisational_unit",
+  "centre",
+  "principal",
+  "organisation_membership",
+  "role_definition",
+  "role_assignment",
+]);
 
 function assertOptionalUuid(value: string | undefined, field: string): void {
   if (value !== undefined && !CANONICAL_UUID.test(value)) {
@@ -54,6 +63,11 @@ function assertScopeIntegrity(input: RecordAuditEventInput): void {
     if (input.organisationId !== undefined || input.scopeId !== undefined) {
       throw new Error("system audit scope cannot include organisation or scope IDs");
     }
+
+    if (TENANT_FOUNDATION_RESOURCE_TYPES.has(input.resourceType)) {
+      throw new Error("system audit scope cannot claim a tenant resource");
+    }
+
     return;
   }
 
@@ -75,6 +89,19 @@ function assertScopeIntegrity(input: RecordAuditEventInput): void {
 /**
  * Writes an immutable business/security audit event. Operational logs and
  * traces are intentionally separate from this durable record.
+ *
+ * Milestone 1 has no production caller by design. The milestone exposes no
+ * protected business API and performs no material state change, so there is no
+ * write path to attribute; the synthetic tests exercise the seam instead.
+ *
+ * The public health endpoint must not become that caller. `/foundation/health`
+ * is unauthenticated, so recording a row per request would make an append-only
+ * table an unauthenticated write-amplification target and would fill it with
+ * routine liveness polling that carries no accountability value.
+ *
+ * The first real callers arrive with Milestone 2 write paths, where each
+ * material state change, permission change, and evidence access is attributable
+ * under an authenticated principal.
  */
 export async function recordAuditEvent(
   input: RecordAuditEventInput,

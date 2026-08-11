@@ -1,0 +1,25 @@
+# Architecture Decision Records
+
+This directory records material foundation decisions. Later decisions receive a
+new numbered record; accepted records are not silently rewritten to describe a
+different architecture.
+
+A record with status **Deferred** is a decision the product owner has not made
+yet. It states what Milestone 1 must not do while the decision is open, and what
+would unblock it. Deferred records are as binding as accepted ones.
+
+## Accepted
+
+- [ADR-0001: Encore modular monolith](0001-encore-modular-monolith.md)
+- [ADR-0002: Provider-neutral principal and runtime identity boundary](0002-provider-neutral-principal.md)
+- [ADR-0003: Assignment, capability, and scope authorization](0003-assignment-capability-scope-authorisation.md)
+- [ADR-0004: Effective-dated hierarchy resolution](0004-effective-dated-hierarchy-resolution.md)
+- [ADR-0005: Committed generated Encore client](0005-committed-generated-encore-client.md)
+- [ADR-0006: Canonical role templates provisioned per organisation](0006-canonical-role-template-provisioning.md)
+- [ADR-0007: Forward-only migrations and recovery posture](0007-forward-only-migrations.md)
+
+## Deferred
+
+- [ADR-0008: Production CORS, deployment, and security operations](0008-production-cors-and-deployment.md)
+- [ADR-0009: Break-glass and support impersonation](0009-break-glass-and-support-access.md)
+- [ADR-0010: Authoritative hierarchy and assignment source](0010-authoritative-hierarchy-and-assignment-source.md)

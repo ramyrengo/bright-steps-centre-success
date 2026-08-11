@@ -4,7 +4,7 @@
 
 **Milestone 0 — architecture documentation: complete and approved.**
 
-**Milestone 1 — Centre Success foundation: implementation complete; awaiting product-owner acceptance.** The Encore application and Cloud connection were preserved. Later business modules remain outside this authorisation, and Milestone 2 must not begin without explicit approval.
+**Milestone 1 — Centre Success foundation: implementation and architecture-review remediation complete; awaiting product-owner acceptance.** The Encore application and Cloud connection were preserved. Later business modules remain outside this authorisation, and Milestone 2 must not begin without explicit approval.
 
 ## MVP objective
 
@@ -52,9 +52,9 @@ Include only after business decisions, privacy/security review, and capacity val
 
 ## Approved foundation decisions and later gates
 
-The product owner approved the canonical foundation role/scope baseline, one Encore service/database, an identity-provider-neutral principal, data-driven capabilities, synthetic authorisation tests, a public health endpoint, the local uncredentialed CORS origin, and a committed generated frontend client.
+The product owner approved the canonical foundation role/scope baseline, one Encore service/database, an identity-provider-neutral principal, persisted and evolvable role templates, database-backed capability/scope authorization tests, a public health endpoint, the local uncredentialed CORS origin, and a committed generated frontend client.
 
-The identity provider and runtime session/MFA/recovery design are intentionally deferred. Milestone 1 must not expose a protected business endpoint or invent temporary authentication while that decision is open. Broader organisation hierarchy, assignment sources, access review, privacy/retention, cloud production operations, and all business-module decisions remain gates before the affected capability or production release; they do not authorise scope expansion during the synthetic foundation.
+The identity provider and runtime session/MFA/recovery design are intentionally deferred. Milestone 1 must not expose a protected business endpoint or invent temporary authentication while that decision is open. The effective hierarchy resolver is implemented, while the authoritative organisation/portfolio source and propagation process remain deferred. Access review, privacy/retention, cloud production operations, and all business-module decisions remain gates before the affected capability or production release; they do not authorise scope expansion during the synthetic foundation.
 
 ## Delivery milestones
 
@@ -62,14 +62,14 @@ The identity provider and runtime session/MFA/recovery design are intentionally 
 
 **Goal:** Prove tenant and centre isolation before adding sensitive workflows.
 
-Deliver organisation/hierarchy/centre identity, an identity-provider-neutral internal principal, memberships, data-driven role/scope assignments, synthetic policy enforcement, audit-event foundation, environment strategy, and a minimal responsive shell. Keep one Encore business service and one PostgreSQL database. Runtime authentication and protected business APIs wait for provider approval; only the public health endpoint connects the shell to Encore in this milestone.
+Deliver organisation/hierarchy/centre identity, an identity-provider-neutral internal principal, memberships, data-driven role/scope assignments, pure and database-backed policy enforcement, audit-event foundation, environment strategy, and a minimal tested responsive shell. Keep one Encore business service and one PostgreSQL database. Runtime authentication and protected business APIs wait for provider approval; only the public health endpoint connects the shell to Encore in this milestone.
 
 Exit evidence:
 
-- architecture decision records for open foundation decisions;
-- cross-organisation, cross-centre, assigned/unassigned scope, multi-role, deactivation, and System-Administrator-without-business-content tests;
+- concise architecture decision records for accepted foundation decisions;
+- cross-organisation, cross-centre, ancestor/portfolio scope, effective-date, multi-role, ambiguity, deactivation, and System-Administrator-without-business-content tests;
 - threat/privacy review and data classification;
-- CI quality/security checks and controlled deployment path;
+- a non-deploying CI definition for quality/security checks, with the existing controlled Encore Cloud deployment path unchanged;
 - observable public health request with safe logs/traces and no protected data;
 - no business module can bypass the authorisation interface.
 

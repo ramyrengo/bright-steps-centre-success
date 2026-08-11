@@ -7,18 +7,50 @@
 - Encore CLI 1.57.13 or newer.
 - OrbStack, or another Docker-compatible runtime supported by Encore, running locally.
 
-Confirm the active binaries before setup:
+Diagnose every matching binary and confirm the active toolchain before setup:
 
 ```sh
+type -a node npm encore
+command -v node
+command -v npm
+command -v encore
 node --version
 npm --version
 encore version
 docker version
 ```
 
-If nvm is installed, run `nvm use` before npm commands. Matching `.nvmrc` files at the repository root and in `frontend/` select the verified runtime from either working directory.
+If nvm is installed, matching `.nvmrc` files at the repository root and in
+`frontend/` select the verified runtime from either working directory:
 
-If `encore version` resolves an older standalone installation while Homebrew has a newer security release, correct the shell `PATH` so the supported CLI is selected. On the verification workstation, `~/.encore/bin/encore` still resolves 1.57.5 while `/opt/homebrew/bin/encore` resolves the installed 1.57.13 security release; the latter was used for every final Encore gate. Do not work around an old CLI by changing the Encore App ID or recreating the application.
+```sh
+nvm use
+node --version
+```
+
+If `encore version` resolves an older standalone installation while Homebrew has
+the verified version, keep the nvm-selected Node binary ahead of Homebrew while
+selecting Homebrew's Encore for the current shell:
+
+```sh
+nvm use
+verified_node_bin="$(dirname "$(command -v node)")"
+export PATH="$verified_node_bin:/opt/homebrew/bin:$PATH"
+hash -r
+command -v node
+node --version
+command -v encore
+encore version
+```
+
+On the verification workstation, `~/.encore/bin/encore` resolves 1.57.5 while
+`/opt/homebrew/bin/encore` resolves the verified 1.57.13 release. Homebrew also
+contains Node 18.20.8 on that workstation, so prepending Homebrew without first
+preserving the nvm Node directory is unsafe for this project. The commands above
+resolve Node 24.16.0 and Encore 1.57.13 and change only the current shell.
+Persistent shell-profile changes are user-owned and should be reviewed before
+editing. Do not work around an old CLI by changing the Encore App ID or
+recreating the application.
 
 ## Install reviewed dependencies
 
@@ -61,24 +93,47 @@ Local CORS permits `http://localhost:3000` only. No wildcard origin, production 
 
 ## Tests and quality checks
 
-Run backend checks from the repository root:
+The repository separates pure policy tests from tests that require Encore's
+isolated PostgreSQL infrastructure. Run from the repository root:
 
 ```sh
+npm test
+npm run test:unit
+npm run test:integration
+npm run test:backend
+npm run test:frontend
+npm run test:all
 npm run typecheck
-encore test
+npm run lint
 npm audit
+npm --prefix frontend audit
 ```
 
-`encore test` supplies the Encore test infrastructure, applies migrations to an isolated database, and runs the API, audit-event, and pure authorisation tests.
+`npm test` and `npm run test:unit` run the pure authorization policy without infrastructure. `npm run test:integration` invokes Encore with the integration Vitest configuration; Encore provisions an isolated PostgreSQL test database and applies every migration before running API, context/hierarchy, role, assignment, and audit tests. `npm run test:backend` runs both backend suites. `npm run test:all` adds frontend tests. Use these scripts rather than bare Vitest or an unconfigured `encore test`, so the intended suite and infrastructure are unambiguous.
 
 Run frontend checks from `frontend/`:
 
 ```sh
 npm run lint
 npm run typecheck
+npm test
 npm run build
 npm audit
 ```
+
+The frontend tests cover only the foundation page and accessible
+loading/success/error status behaviour. They do not simulate a business
+dashboard or replace the local connected smoke test.
+
+## Continuous integration
+
+`.github/workflows/foundation-ci.yml` performs frozen root/frontend installs,
+pins the Encore CLI, verifies Docker, runs backend type checks and both test
+suites, runs frontend lint/typecheck/tests/build, audits dependencies, regenerates
+the Encore client, and fails on tracked repository drift. It has read-only
+repository permission and contains no deployment, cloud credential, or
+production automation. A remote GitHub run is evidence only after the workflow
+is committed and executed by GitHub.
 
 ## Generated API client
 
@@ -98,7 +153,7 @@ The database is declared in `foundation/db.ts`; migrations are in `foundation/mi
 encore db shell centre_success
 ```
 
-Encore can use a containerised `psql` client when one is not installed locally. The repository contains no development seed, production data, credentials, Supabase configuration, or business-module tables.
+Encore can use a containerised `psql` client when one is not installed locally. Migrations contain the foundation capability catalogue and canonical role templates; creating an organisation provisions role definitions but no principal, membership, assignment, employee, or access grant. The repository contains no development employee seed, production data, credentials, Supabase configuration, or business-module tables.
 
 ## Current boundary
 
@@ -109,4 +164,6 @@ The only exposed API is the non-sensitive health endpoint. The principal, member
 - [Next.js installation and supported Node.js baseline](https://nextjs.org/docs/app/getting-started/installation)
 - [Encore SQL databases and migrations](https://encore.dev/docs/ts/primitives/databases)
 - [Encore testing](https://encore.dev/docs/ts/develop/testing)
+- [Encore CI/CD](https://encore.dev/docs/ts/self-host/ci-cd)
 - [Encore CORS configuration](https://encore.dev/docs/ts/frontend/cors)
+- [Next.js Vitest testing](https://nextjs.org/docs/app/guides/testing/vitest)

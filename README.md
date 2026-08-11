@@ -6,9 +6,9 @@ Bright Steps Centre Success is a proposed operational success system for Austral
 
 **Milestone 1: Centre Success foundation implementation is complete and awaiting product-owner acceptance.**
 
-Milestone 0 architecture is complete. The starter endpoint has been replaced by one Encore `foundation` service with the organisation/centre/principal/access/audit foundation, a public health endpoint, a responsive Next.js shell, generated client communication, tests, and a local workflow. No later business module has started.
+Milestone 0 architecture is complete. The starter endpoint has been replaced by one Encore `foundation` service with the organisation/centre/principal/access/audit foundation, a public health endpoint, a responsive Next.js shell, generated client communication, database-backed authorisation tests, and automated foundation checks. No later business module has started.
 
-The external identity provider is still an approved deferral. Milestone 1 builds an identity-provider-neutral principal and synthetic authorisation policy, but no runtime authentication or protected business endpoint. See [Foundation Decisions](docs/FOUNDATION_DECISIONS.md) and [MVP Build Plan](docs/MVP_BUILD_PLAN.md).
+The external identity provider is still an approved deferral. Milestone 1 proves an identity-provider-neutral principal and internal PostgreSQL-to-policy authorisation seam, but adds no runtime authentication or protected business endpoint. See [Foundation Decisions](docs/FOUNDATION_DECISIONS.md) and [MVP Build Plan](docs/MVP_BUILD_PLAN.md).
 
 ## Confirmed architecture
 
@@ -26,6 +26,7 @@ The external identity provider is still an approved deferral. Milestone 1 builds
 | Document | Decision area |
 | --- | --- |
 | [Foundation Decisions](docs/FOUNDATION_DECISIONS.md) | Approved Milestone 1 implementation constraints and role baseline |
+| [Architecture Decision Records](docs/adr/README.md) | Material accepted foundation decisions and consequences |
 | [Developer Setup](docs/DEVELOPER_SETUP.md) | Local prerequisites, startup, tests, database, and client generation |
 | [Product Vision](docs/PRODUCT_VISION.md) | Outcomes, boundaries, principles, success measures |
 | [Personas](docs/PERSONAS.md) | User needs, risks, and contexts |

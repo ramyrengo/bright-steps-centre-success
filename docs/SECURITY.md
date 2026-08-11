@@ -48,9 +48,9 @@ Priority threats include:
 
 ## Identity and session architecture
 
-The identity provider is an open decision. Milestone 1 may create the identity-provider-neutral internal principal, external-identity mapping seam, data-driven assignments, and synthetic authorisation tests. It must not implement passwords, a temporary login, client-supplied identity headers, or runtime authentication.
+The identity provider is an open decision. Milestone 1 implements the identity-provider-neutral internal principal, external-identity mapping seam, persisted role baseline, data-driven assignments, pure policy tests, and a database-backed internal authorization-context seam. It does not implement passwords, a temporary login, client-supplied identity headers, or runtime authentication.
 
-After Bright Steps approves authentication assurance, MFA, recovery, invitation, federation, and joiner/mover/leaver processes, an Encore authentication handler will validate credentials and establish minimal trusted identity context. Current membership, capability, and scope will be loaded by the backend. Sessions require secure transport, expiry, rotation/revocation, browser protections appropriate to the chosen token/cookie model, and reauthentication for approved high-risk actions.
+After Bright Steps approves authentication assurance, MFA, recovery, invitation, federation, and joiner/mover/leaver processes, an Encore authentication handler will validate credentials and establish the trusted internal principal and active organisation. The implemented loader then reads current membership, assignment-bound capability, effective scope, and resource ancestry from one PostgreSQL snapshot. Sessions require secure transport, expiry, rotation/revocation, browser protections appropriate to the chosen token/cookie model, and reauthentication for approved high-risk actions.
 
 Until then, no protected business API is exposed. The sole public Milestone 1 endpoint is a minimal health check that returns no tenant, centre, user, configuration, dependency, version, or diagnostic detail beyond the approved operational contract.
 
@@ -67,6 +67,8 @@ Until then, no protected business API is exposed. The sole public Milestone 1 en
 - time-bounded delegation and reviewed exceptional access;
 - server-side filtering for search, aggregation, count, object download, and exports; and
 - negative tests for cross-tenant and cross-centre access.
+
+Milestone 1's composed database authorizer is internal-only. It receives no client identity or hierarchy claims and is not exposed through the public API.
 
 Supabase RLS is not used. PostgreSQL RLS is not assumed as the primary control; Encore backend policy enforcement is mandatory.
 
@@ -134,14 +136,14 @@ Logs and traces:
 - alert on error rates, suspicious denials, export anomalies, auth changes, job backlog, and integration failures; and
 - never use centre or user names as high-cardinality metric labels.
 
-Audit records cover permission changes, privileged access, evidence/export activity, source/control/template releases, audit finalisation/amendment, high-risk action closure, budget import/config, wellbeing administration/access, and AI-assisted material actions.
+Audit records cover permission changes, privileged access, evidence/export activity, source/control/template releases, audit finalisation/amendment, high-risk action closure, budget import/config, wellbeing administration/access, and AI-assisted material actions. Runtime authorization allow/deny audit policy is deferred until an authenticated protected endpoint exists; the public health route is not logged into the durable audit ledger to manufacture traffic. Integration tests instead prove tenant event attribution and append-only update/delete rejection directly at the approved audit seam.
 
 ## Infrastructure and delivery
 
 - Encore Cloud and GitHub-connected deployment are the confirmed deployment path; production cloud/provider/region and account ownership require approval.
 - Protect the default branch, require reviewed pull requests and passing checks, and restrict environment/deployment permissions.
 - Separate local, test, preview/staging, and production data/secrets. Never copy production personal data into lower environments without an approved minimisation process.
-- Pin and review dependencies; scan source, dependencies, generated artifacts, and secrets in CI when implementation begins.
+- Pin and review dependencies. The Milestone 1 GitHub Actions definition performs frozen installs, dependency audits, backend and authorization tests, frontend lint/tests/build, generated-client verification, and repository consistency checks without deployment credentials or production automation.
 - Treat `.encore` and `encore.gen` as generated, not hand-edited product source.
 - OrbStack is only the local Docker-compatible runtime where Encore infrastructure requires it; it is not the production architecture.
 - Limit Encore dashboard, service catalog, logs, and cloud-console access by environment and job need.

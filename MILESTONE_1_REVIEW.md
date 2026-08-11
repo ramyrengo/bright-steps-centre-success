@@ -1,11 +1,18 @@
 # Milestone 1 foundation — gap review
 
+> **Status: remediated on 11 August 2026.** This is retained as the historical
+> review input; its issue evidence describes the pre-remediation baseline and
+> must not be read as the current repository state. Current decisions and gates
+> are recorded in `docs/FOUNDATION_DECISIONS.md`, `docs/adr/`, and
+> `docs/DEVELOPER_SETUP.md`.
+
 **Reviewed:** 11 August 2026, 15:20 AEST, against the working tree on `milestone-1/foundation` (uncommitted).
 **Scope of review:** the Milestone 1 exit criteria in `docs/MVP_BUILD_PLAN.md`, the approved constraints in `docs/FOUNDATION_DECISIONS.md`, the authorisation requirements in `docs/PERMISSIONS.md`, and the invariants in `AGENTS.md` — checked against `foundation/`, `frontend/`, `encore.app`, and the migration set.
 
 The repository was being actively modified during the review. Migrations `003`–`005` and `foundation/authorization/role-assignment-schema.test.ts` landed mid-review and are accounted for below. Items already resolved are listed at the end.
 
-**This file is a transient review artifact.** Delete it once the issues are closed or triaged; it is deliberately not added to the `README.md` documentation map.
+The original findings remain below unchanged for traceability and are
+deliberately not added to the `README.md` documentation map.
 
 ---
 

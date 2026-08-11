@@ -15,3 +15,12 @@ export const FOUNDATION_CAPABILITIES = {
 export type FoundationCapability =
   (typeof FOUNDATION_CAPABILITIES)[keyof typeof FOUNDATION_CAPABILITIES];
 
+const foundationCapabilityCodes = new Set<string>(
+  Object.values(FOUNDATION_CAPABILITIES),
+);
+
+export function isFoundationCapability(
+  value: string,
+): value is FoundationCapability {
+  return foundationCapabilityCodes.has(value);
+}

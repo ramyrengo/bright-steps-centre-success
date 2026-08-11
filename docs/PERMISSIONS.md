@@ -22,8 +22,8 @@ Effective access is evaluated per request from server-side records. Claims may i
 | Scope | Meaning | Typical use |
 | --- | --- | --- |
 | Organisation | All permitted resources in one tenant, still limited by classification/capability | Compliance Manager, Operations Leadership, Finance, or Executive |
-| State/region | Current centres within an effective-dated organisational unit | Operations Leadership |
-| Assigned centres | Explicit portfolio or centre-group set from current assignment data | Area Manager or Operations Leadership |
+| State/region | Current descendant centres resolved through an effective-dated organisational-unit hierarchy | Operations Leadership |
+| Assigned centres | Explicit effective-dated portfolio or centre-group set from current assignment data | Area Manager or Operations Leadership |
 | Centre | One or more named centres | Centre Director or contributor |
 | Record | A named task, audit, action, coaching cycle, or support request | Contributor/reviewer |
 | Self | User’s own low-risk profile/preferences | All users |
@@ -33,9 +33,9 @@ An organisation scope does not override sensitive-data rules. A user with severa
 
 ## Approved Milestone 1 role bundles
 
-Roles are data-driven convenience bundles. The authoriser evaluates capability plus the scope of the assignment that granted it; it does not contain role-name shortcuts.
+Roles are data-driven convenience bundles. Versioned canonical templates are stored in PostgreSQL and provision organisation-owned role definitions without creating memberships or assignments. The authoriser evaluates capability plus the effective scope of the assignment that granted it; it does not contain role-name shortcuts.
 
-| Canonical role | Foundation capabilities | Normal scope for synthetic tests | Required negative boundary |
+| Canonical role | Foundation capabilities | Normal foundation test scope | Required negative boundary |
 | --- | --- | --- | --- |
 | Educator | `centre.read` | Assigned centre | Other centres and organisation administration |
 | Assistant Director | `centre.read`; additional management only by explicit grant | Assigned centre | Other centres; no implied Centre Director equivalence |
@@ -136,6 +136,8 @@ Break-glass, if approved, requires strong re-authentication, reason, incident/re
 ## Enforcement architecture
 
 - Centralise policy evaluation and typed scope helpers in the modular monolith.
+- Construct principal context from PostgreSQL in one consistent read snapshot, using a trusted internal principal and independently established active organisation.
+- Resolve a centre's effective organisational-unit ancestry through the one canonical recursive data-layer query; callers never submit ancestor IDs.
 - Keep domain-specific rules beside the owning module, invoked through one consistent decision interface.
 - Require organisation predicates in repository/query interfaces so accidental unscoped access is difficult.
 - Return only authorised fields through explicit response models; avoid serialising database rows directly.
@@ -146,7 +148,7 @@ PostgreSQL row-level security is not assumed. If evaluated later as defence in d
 
 ### Milestone 1 authentication seam
 
-The external identity provider, session, and MFA model remain unapproved. Milestone 1 therefore tests policy with synthetic internal principals but does not accept a principal, role, organisation, or centre asserted by an untrusted HTTP client. No protected business API is exposed until an approved runtime authentication handler can establish trusted identity. The only public endpoint is a minimal non-sensitive health check.
+The external identity provider, session, and MFA model remain unapproved. Milestone 1 therefore exercises the pure policy and database-backed context/hierarchy loaders with synthetic internal principals. The loaders are internal functions, not APIs, and do not accept a principal, role, organisation, centre, or ancestry asserted by an untrusted HTTP client. No protected business API is exposed until an approved runtime authentication handler can establish trusted identity and active tenant. The only public endpoint is a minimal non-sensitive health check.
 
 ## Audit and monitoring
 
@@ -160,6 +162,7 @@ Always audit privileged assignment changes, control/template approval, audit fin
 - Area Manager loses an unassigned centre promptly and gains only approved new scope.
 - Compliance Manager can read centres in the assigned organisation but not another organisation and receives no Finance or system-administration capability.
 - Operations Leadership can read centres in an assigned state/region or organisation, cannot read outside that scope, and receives nothing without an assignment.
+- Effective portfolio removal and centre moves change access at their half-open effective-date boundary.
 - Finance has its explicitly scoped financial capability and necessary centre metadata but no Compliance Manager capability.
 - Executive read scope does not imply mutation, administration, or unrestricted drill-through.
 - System Administrator can perform authorised principal/assignment administration but cannot read business content through technical privilege.
@@ -175,7 +178,7 @@ Always audit privileged assignment changes, control/template approval, audit fin
 
 - Identity provider, session model, MFA and step-up policy before any protected runtime endpoint.
 - Future domain capability catalogues and role-bundle changes beyond the approved Milestone 1 set.
-- Organisation hierarchy, assignment owner, and propagation SLA.
+- Authoritative organisation/portfolio source, assignment owner, and propagation SLA; recursive foundation hierarchy evaluation is implemented.
 - Wellbeing aggregation thresholds and support roles.
 - Finance category visibility.
 - Break-glass and external-review access.

@@ -19,7 +19,7 @@ The database represents a minimal internal principal independently from authenti
 
 No external identity provider, password flow, temporary login, trusted test header, or runtime authentication handler is approved in Milestone 1. Consequently:
 
-- policy is exercised with synthetic principals in automated tests;
+- pure policy and PostgreSQL context/hierarchy loading are exercised with synthetic principals in automated tests;
 - no client-supplied principal, role, organisation, or centre is trusted;
 - no protected business endpoint is publicly exposed; and
 - the only public API is a minimal, non-sensitive health endpoint.
@@ -32,7 +32,9 @@ Roles are data-driven bundles. Runtime policy evaluates:
 
 `active principal + server-resolved active organisation + principal-owned active membership + capability + matching active scope + resource attributes + conditions`
 
-Missing, stale, ambiguous, cross-organisation, target-selected-tenant, other-principal, or unassigned context is denied. An organisation membership alone grants no business content. A complete valid grant may allow a request; capabilities and scopes from separate assignments cannot be recombined to create wider access.
+Missing, stale, ambiguous, conflicting, cross-organisation, target-selected-tenant, other-principal, or unassigned context is denied. An organisation membership alone grants no business content. A complete valid grant may allow a request; capabilities and scopes from separate assignments cannot be recombined to create wider access. The internal loader reads principal, active membership, active role definition, capabilities, and effective assignment scopes from one repeatable PostgreSQL snapshot. It is not an API.
+
+Centre resources obtain their effective organisational-unit ancestry from one tenant-constrained recursive PostgreSQL query. API callers do not construct ancestry. Membership, role assignment, assignment scope, and centre placement windows use `effective_from <= at < effective_to`; simultaneous centre placements, inactive lineage, or hierarchy cycles deny access.
 
 The canonical foundation roles are:
 
@@ -47,6 +49,8 @@ The canonical foundation roles are:
 9. System Administrator
 
 Do not create `Operations` or `Super Admin`. Future roles or capability changes require a documented decision.
+
+The versioned nine-role template baseline and capability mappings are persisted by migration. New organisations receive linked organisation-owned role definitions so later changes can create a new version; this provisioning creates no principal, membership, assignment, or access grant. Automated tests keep the database mappings and TypeScript capability model in exact agreement.
 
 ### Approved foundation access
 
@@ -66,9 +70,9 @@ Individual wellbeing data is never implied by Educator, Assistant Director, Cent
 
 Multiple roles remain separate grants. For example, Operations Leadership for one state plus Centre Director for one centre grants each capability only within its own assignment. System Administrator plus Compliance Manager is different from System Administrator alone.
 
-## Required synthetic policy evidence
+## Required foundation policy evidence
 
-Tests cover:
+Pure and database-backed tests cover:
 
 - Educator and Centre Director own-centre allow and other-centre deny;
 - Area Manager assigned-centres allow and unassigned-centre deny;
@@ -80,6 +84,8 @@ Tests cover:
 - multi-role grants without cross-scope capability borrowing;
 - cross-organisation denial and unassigned-principal denial; and
 - deactivated, expired, missing, ambiguous, and conflicting context denial.
+
+Database integration evidence also covers nested state/region ancestry, centre moves, effective portfolio removal, future assignments, overlapping valid grants, canonical role provisioning, and append-only audit records.
 
 ## Local frontend/backend contract
 
@@ -94,8 +100,7 @@ Tests cover:
 
 - identity provider, auth handler, session/cookie-or-token model, MFA, recovery, and step-up;
 - protected organisation/centre APIs and any authenticated frontend experience;
-- detailed hierarchy nesting and authoritative assignment integration;
-- the server-side database context loader that will filter current role definitions, assignments, and effective hierarchy before the first protected API;
+- authoritative organisation/portfolio source integration, hierarchy ownership, and propagation SLA;
 - break-glass or support impersonation;
 - production CORS origins and deployment/security operations; and
 - capabilities, data policies, and workflows for later business modules.

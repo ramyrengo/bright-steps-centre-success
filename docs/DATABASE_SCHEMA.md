@@ -14,7 +14,7 @@ A separate database or service requires demonstrated security, operational owner
 
 ## Implemented Milestone 1 physical subset
 
-The source-controlled migrations in `foundation/migrations/` create one Encore-managed PostgreSQL database named `centre_success`. The first migration contains only the organisation, centre, principal, authorisation, and system-audit foundation. Small follow-up migrations make audit events append-only, enforce tenant/scope integrity, require attributable privileged grants, and add optimistic-concurrency tokens to mutable foundation records.
+The source-controlled migrations in `foundation/migrations/` create one Encore-managed PostgreSQL database named `centre_success`. The first migration contains only the organisation, centre, principal, authorisation, and system-audit foundation. Small forward migrations make audit events append-only, enforce tenant/scope integrity, require attributable privileged grants, add optimistic-concurrency tokens, persist and provision the canonical role baseline, and effective-date assignment scopes.
 
 | Physical table | Foundation purpose |
 | --- | --- |
@@ -26,18 +26,20 @@ The source-controlled migrations in `foundation/migrations/` create one Encore-m
 | `external_identity_mappings` | Future provider-key/subject mapping seam; no credentials or provider integration |
 | `organisation_memberships` | Effective-dated tenant membership that grants no content capability by itself |
 | `capabilities` | Canonical foundation capability catalogue |
-| `role_definitions`, `role_capabilities` | Organisation-owned, versioned, data-driven role bundles |
-| `role_assignments`, `assignment_scopes` | Effective-dated grants with organisation, organisational-unit, or centre scope, an explicit grant source/actor, and nonblank reason |
+| `canonical_role_templates`, `canonical_role_template_capabilities` | Versioned nine-role foundation baseline and reviewed capability mappings |
+| `role_definitions`, `role_capabilities` | Organisation-owned, versioned, data-driven role bundles linked to their source template where applicable |
+| `role_assignments`, `assignment_scopes` | Effective-dated grants and independently effective-dated organisation, organisational-unit, or centre scopes, with an explicit grant source/actor and nonblank reason |
 | `system_audit_events` | Generic append-only security/system events with tenant-consistent scope, actor, and known foundation target; separate from future Area Manager audits |
 
-Application-owned identifiers are UUIDs. Composite foreign keys prevent an assignment or scope from linking records across organisations. Mutable foundation aggregates carry `lock_version`; the first approved mutation repositories must compare and increment it and record the actor/source in the audit ledger. Capability bundles and role assignments are intentionally not seeded because no production users, organisation, or authentication provider are approved. The synthetic role matrix exists only in automated policy tests. No business-module table, development seed, child record, employee record, compliance score, or production data is created.
+Application-owned identifiers are UUIDs. Composite foreign keys prevent an assignment or scope from linking records across organisations. Mutable foundation aggregates carry `lock_version`; the first approved mutation repositories must compare and increment it and record the actor/source in the audit ledger. The capability catalogue and versioned canonical role templates are migration data. Each organisation receives matching evolvable role definitions, but provisioning creates no principal, membership, assignment, employee, or access grant. Database tests compare every canonical role/capability mapping with the reviewed TypeScript contract. No business-module table, development employee seed, child record, compliance score, or production data is created.
 
 ## Global conventions
 
 - Use opaque, non-sequential public identifiers; internal database identifiers must not reveal tenant volume.
 - Every tenant-owned aggregate carries immutable `organisation_id`.
 - Centre-owned aggregates also carry `centre_id`, validated as belonging to the same organisation.
-- State/region membership is effective-dated; historical events retain the applicable centre and hierarchy snapshot/reference.
+- State/region membership and assignment scope are effective-dated with half-open intervals; historical events retain the applicable centre and hierarchy snapshot/reference.
+- Centre ancestry is resolved centrally from one effective leaf placement through a recursive, tenant-constrained PostgreSQL query; simultaneous placements, inactive lineage, and cycles fail closed.
 - Store canonical timestamps with timezone semantics and record centre-local business date where workflow depends on it.
 - Material records include creation/update actor and version for optimistic concurrency.
 - Activated/finalised/versioned content is immutable; correction uses supersession, amendment, or reopening.

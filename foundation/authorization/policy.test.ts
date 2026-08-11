@@ -10,6 +10,10 @@ import {
   type AuthorisationResource,
   type PrincipalAuthorisationContext,
 } from "./policy";
+import {
+  canonicalRoleBundle,
+  type CanonicalRoleKey,
+} from "./roles";
 
 const NOW = new Date("2026-08-11T00:00:00.000Z");
 const ACTIVE_FROM = new Date("2026-01-01T00:00:00.000Z");
@@ -23,35 +27,7 @@ const CENTRE_A = "centre-a";
 const CENTRE_B = "centre-b";
 const CENTRE_C = "centre-c";
 
-const roleBundles = {
-  educator: [capability.centreRead],
-  assistant_director: [capability.centreRead],
-  centre_director: [capability.centreRead, capability.centreManage],
-  area_manager: [capability.centreRead],
-  compliance_manager: [capability.organisationRead, capability.centreRead],
-  operations_leadership: [
-    capability.organisationRead,
-    capability.centreRead,
-    capability.assignmentRead,
-  ],
-  finance: [
-    capability.organisationRead,
-    capability.centreRead,
-    capability.budgetSummaryRead,
-  ],
-  executive: [capability.organisationRead, capability.centreRead],
-  system_administrator: [
-    capability.principalRead,
-    capability.principalManage,
-    capability.identityMappingManage,
-    capability.assignmentRead,
-    capability.assignmentManage,
-    capability.systemConfigure,
-    capability.systemHealthRead,
-  ],
-} satisfies Record<string, readonly FoundationCapability[]>;
-
-type TestRole = keyof typeof roleBundles;
+type TestRole = CanonicalRoleKey;
 
 function centreResource(
   centreId: string,
@@ -90,7 +66,7 @@ function assignment(
     organisationId: ORG_A,
     membershipId: "membership-a",
     roleKey: role,
-    capabilities: roleBundles[role],
+    capabilities: canonicalRoleBundle(role).capabilities,
     scopes,
     status: "active",
     effectiveFrom: ACTIVE_FROM,
@@ -148,6 +124,18 @@ describe("foundation capability and scope policy", () => {
       reason: "scope_mismatch",
     });
     expect(decision(context, capability.organisationRead, organisationResource()).allowed).toBe(false);
+  });
+
+  test("Assistant Director does not inherit Centre Director management", () => {
+    const context = principal([
+      assignment("assistant_director", [
+        { type: "centre", centreId: CENTRE_A },
+      ]),
+    ]);
+
+    expect(
+      decision(context, capability.centreManage, centreResource(CENTRE_A, [NSW])),
+    ).toEqual({ allowed: false, reason: "capability_missing" });
   });
 
   test("Centre Director manages own centre but not another centre", () => {

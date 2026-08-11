@@ -67,8 +67,8 @@ async function createPrincipalMembership(
 describe("system audit events", () => {
   test("records a system-scoped event with safe context", async () => {
     const recorded = await recordAuditEvent({
-      action: "foundation.health.checked",
-      resourceType: "system.health",
+      action: "foundation.configuration.verified",
+      resourceType: "system.configuration",
       scopeType: "system",
       correlationId: "synthetic-test-correlation",
       context: { source: "automated_test", available: true },
@@ -87,8 +87,8 @@ describe("system audit events", () => {
     `;
 
     expect(stored).toEqual({
-      action: "foundation.health.checked",
-      resource_type: "system.health",
+      action: "foundation.configuration.verified",
+      resource_type: "system.configuration",
       scope_type: "system",
       correlation_id: "synthetic-test-correlation",
       context: { source: "automated_test", available: true },
@@ -127,6 +127,21 @@ describe("system audit events", () => {
     `;
 
     expect(stored?.action).toBe("foundation.policy.checked");
+
+    await expect(
+      centreSuccessDB.exec`
+        DELETE FROM system_audit_events
+        WHERE id = ${recorded.id}
+      `,
+    ).rejects.toThrow("system audit events are append-only");
+
+    const retained = await centreSuccessDB.queryRow<{ event_count: number }>`
+      SELECT count(*)::integer AS event_count
+      FROM system_audit_events
+      WHERE id = ${recorded.id}
+    `;
+
+    expect(retained?.event_count).toBe(1);
   });
 
   test("records a centre event only when scope belongs to its organisation", async () => {
@@ -134,28 +149,52 @@ describe("system audit events", () => {
     const organisationB = await createOrganisation("Synthetic organisation B");
     const centreA = await createCentre(organisationA, "Synthetic centre A");
     const centreB = await createCentre(organisationB, "Synthetic centre B");
+    const organisationAActor = await createPrincipalMembership(organisationA);
 
     const recorded = await recordAuditEvent({
       organisationId: organisationA,
+      actorPrincipalId: organisationAActor,
       action: "foundation.centre.checked",
       resourceType: "centre",
       resourceId: centreA,
       scopeType: "centre",
       scopeId: centreA,
+      correlationId: "synthetic-centre-correlation",
+      context: { source: "authorization_integration_test", allowed: true },
     });
 
     const stored = await centreSuccessDB.queryRow<{
       organisation_id: string | null;
+      actor_principal_id: string | null;
+      action: string;
+      resource_type: string;
+      resource_id: string | null;
       scope_id: string | null;
+      correlation_id: string | null;
+      context: Record<string, unknown>;
     }>`
-      SELECT organisation_id, scope_id
+      SELECT
+        organisation_id,
+        actor_principal_id,
+        action,
+        resource_type,
+        resource_id,
+        scope_id,
+        correlation_id,
+        context
       FROM system_audit_events
       WHERE id = ${recorded.id}
     `;
 
     expect(stored).toEqual({
       organisation_id: organisationA,
+      actor_principal_id: organisationAActor,
+      action: "foundation.centre.checked",
+      resource_type: "centre",
+      resource_id: centreA,
       scope_id: centreA,
+      correlation_id: "synthetic-centre-correlation",
+      context: { source: "authorization_integration_test", allowed: true },
     });
 
     await expect(
@@ -218,8 +257,8 @@ describe("system audit events", () => {
 
     const invalidSystemScope = {
       organisationId: organisationA,
-      action: "foundation.health.checked",
-      resourceType: "system.health",
+      action: "foundation.configuration.verified",
+      resourceType: "system.configuration",
       scopeType: "system",
       scopeId: organisationA,
     } as unknown as RecordAuditEventInput;
@@ -227,5 +266,34 @@ describe("system audit events", () => {
     await expect(recordAuditEvent(invalidSystemScope)).rejects.toThrow(
       "system audit scope cannot include organisation or scope IDs",
     );
+
+    await expect(
+      recordAuditEvent({
+        action: "foundation.configuration.verified",
+        resourceType: "organisation",
+        resourceId: organisationA,
+        scopeType: "system",
+      }),
+    ).rejects.toThrow("system audit scope cannot claim a tenant resource");
+
+    await expect(
+      centreSuccessDB.exec`
+        INSERT INTO system_audit_events (
+          id,
+          action,
+          resource_type,
+          resource_id,
+          scope_type,
+          occurred_at
+        ) VALUES (
+          ${randomUUID()},
+          'foundation.configuration.verified',
+          'organisation',
+          ${organisationA},
+          'system',
+          now()
+        )
+      `,
+    ).rejects.toThrow("system_audit_events_organisation_target_check");
   });
 });
