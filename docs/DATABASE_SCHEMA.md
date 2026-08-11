@@ -2,7 +2,7 @@
 
 ## Status
 
-This document remains the logical data architecture for the whole product. The foundation and authentication physical subsets are implemented. Milestone 2B authorises only the quarterly-review, finding/action, acknowledgement, positive-observation, and private-evidence records described below. Milestone 2C People & Access concepts are approved as architecture but are not permission to create tables or migrations before the implementation gate opens.
+This document remains the logical data architecture for the whole product. The foundation and authentication physical subsets are implemented. Milestone 2B authorises only the quarterly-review, finding/action, acknowledgement, positive-observation, and private-evidence records described below. Milestone 2C People & Access implementation is authorised as of 11 August 2026; its physical tables are created only through reviewed forward migrations within the approved architecture.
 
 ## Persistence strategy
 

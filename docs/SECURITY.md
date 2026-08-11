@@ -115,7 +115,7 @@ Supabase RLS is not used. PostgreSQL RLS is not assumed as the primary control; 
 
 ### People & Access invitation security architecture
 
-Milestone 2C is architecture-approved but not implementation-authorised. Future invitation secrets use at least 256 bits of cryptographic randomness, exact 72-hour expiry, one-time consumption, resend/cancel generation invalidation, keyed-digest-only persistence, constant-time verification, generic errors, and no role/scope or identity data in the URL. Raw invitation secrets, Entra tokens, JWT claims, email/UPN, and Microsoft object identifiers must not appear in logs or audit payloads.
+Milestone 2C is authorised for implementation as of 11 August 2026. Invitation secrets use at least 256 bits of cryptographic randomness, exact 72-hour expiry, one-time consumption, resend/cancel generation invalidation, keyed-digest-only persistence, constant-time verification, generic errors, and no role/scope or identity data in the URL. Raw invitation secrets, Entra tokens, JWT claims, email/UPN, and Microsoft object identifiers must not appear in logs or audit payloads.
 
 Email is only delivery/correlation evidence; permanent identity remains exact `tid + oid`. A forwarded link, same-tenant token, mutable email match, Entra group/app role, or frontend state cannot activate access. Missing/ambiguous/mismatched correlation, guest uncertainty, mapping conflicts, and changed role/scope packages fail closed to administrator review. Pending proposals stay outside active authorisation tables.
 
@@ -221,7 +221,7 @@ Milestone 1 and Milestone 2A are accepted. Milestone 2B authorises only the synt
 - no production deployment or support-access path is created merely because local authentication runs; and
 - no break-glass, impersonation, automated employee provisioning, HR synchronisation, Microsoft Graph, or Entra-owned business authorisation is introduced.
 
-Milestone 2C People & Access architecture is approved only as planning. Its migrations, invitation acceptance boundary, APIs, outbox/Pub/Sub worker, email provider, routes, and production first-administrator mechanism remain prohibited until Milestone 2B is accepted and a separate implementation prompt is approved.
+Milestone 2C People & Access implementation is authorised as of 11 August 2026 within the approved architecture: migrations, the invitation acceptance boundary, APIs, the outbox/Pub/Sub worker, provider-neutral email delivery, and frontend routes. The production first-administrator mechanism remains separately gated until the Encore Cloud operational mechanism is validated, and the concrete email provider remains a deferred selection.
 
 Before the relevant later capability or production release, Bright Steps must still approve the data inventory/privacy plan; evidence and retention/legal-hold design; cloud region, backup, deployment, and support access; incident owners; and AI/wellbeing privacy decisions.
 

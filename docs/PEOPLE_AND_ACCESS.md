@@ -2,7 +2,7 @@
 
 ## Status and implementation gate
 
-**Architecture approved for Milestone 2C — People & Access + User Invitations. Implementation is not authorised.** Milestone 2B must complete acceptance remediation, pass regression and hosted CI, and receive Product Owner acceptance before any Milestone 2C migration, package, API, worker, email integration, or frontend route is created.
+**Architecture approved and implementation authorised for Milestone 2C — People & Access + User Invitations.** The Product Owner accepted Milestone 2B and separately authorised Milestone 2C implementation on 11 August 2026. This document and ADR-0014 are the authoritative design baseline; implementation must not exceed the approved scope, and the production first-administrator bootstrap remains separately gated.
 
 This document is the approved product and engineering design. Microsoft Entra proves identity. Centre Success PostgreSQL owns application access. Centre Success is not an HR system and does not manage Microsoft accounts.
 
@@ -278,9 +278,8 @@ Milestone 2C implementation must include:
 
 ## P. Remaining Product Owner decisions
 
-The architecture decisions in this document are approved. Implementation still requires these bounded decisions/evidence:
+The architecture decisions in this document are approved, Milestone 2B was accepted, and Milestone 2C implementation was authorised on 11 August 2026. The email-provider architecture is approved through the outbox/Pub/Sub design with a provider-neutral adapter; the concrete provider selection remains deferred. Still-open bounded decisions:
 
-- Product Owner acceptance of Milestone 2B before starting 2C;
 - transactional email provider, sender domain, template owner, delivery/retention policy and support path;
 - exact safe email-correlation claim/procedure available in the BSA token configuration, with uncertain guest/member cases remaining review-only;
 - retention periods for invitations, intended-email data, delivery attempts and access history;

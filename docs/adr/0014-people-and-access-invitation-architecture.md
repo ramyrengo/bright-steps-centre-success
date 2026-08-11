@@ -2,7 +2,7 @@
 
 ## Status
 
-Accepted as architecture; implementation gated until Milestone 2B Product Owner acceptance.
+Accepted as architecture. Implementation authorised 11 August 2026, following Milestone 2B Product Owner acceptance. The production first-administrator bootstrap remains separately gated.
 
 ## Context
 
