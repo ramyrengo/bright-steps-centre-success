@@ -1,4 +1,4 @@
-name: Foundation CI
+name: Centre Success CI
 
 on:
   pull_request:
@@ -15,7 +15,7 @@ concurrency:
 
 jobs:
   quality:
-    name: Foundation quality and security
+    name: Foundation and quarterly-review quality
     runs-on: ubuntu-24.04
     timeout-minutes: 25
 
@@ -33,6 +33,9 @@ jobs:
           cache-dependency-path: |
             package-lock.json
             frontend/package-lock.json
+
+      - name: Enforce authentication scope guardrails
+        run: node .github/scripts/auth-scope-guard.mjs
 
       - name: Install dependencies from lockfiles
         run: |
@@ -64,10 +67,10 @@ jobs:
       - name: Backend type check
         run: npm run typecheck
 
-      - name: Pure authorization tests
+      - name: Pure backend tests
         run: npm run test:unit
 
-      - name: Encore database integration tests
+      - name: Database, authorization, and workflow integration tests
         run: npm run test:integration
 
       - name: Backend dependency audit
@@ -79,7 +82,7 @@ jobs:
       - name: Frontend type check
         run: npm --prefix frontend run typecheck
 
-      - name: Frontend foundation tests
+      - name: Frontend authentication and workflow tests
         run: npm --prefix frontend test
 
       - name: Frontend production build

@@ -28,5 +28,10 @@
     "forceConsistentCasingInFileNames": true,
     "skipLibCheck": true
   },
-  "include": ["foundation/**/*.ts"]
+  "include": [
+    "foundation/**/*.ts",
+    "scripts/**/*.ts",
+    "encore.gen/auth/**/*.ts",
+    "encore.gen/internal/auth/**/*.ts"
+  ]
 }

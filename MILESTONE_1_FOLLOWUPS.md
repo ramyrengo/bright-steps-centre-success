@@ -1,5 +1,12 @@
 # Milestone 1 — open follow-ups
 
+> **STATUS: REMEDIATED**
+>
+> The findings in this document were addressed before Milestone 1 acceptance.
+> Milestone 1 was subsequently accepted and merged through pull request #1 with
+> Foundation CI green on `main`. The original findings remain below as
+> engineering history.
+
 **Raised:** 11 August 2026, 16:35 AEST. **Updated:** 17:00 AEST against
 `9360de8` on `milestone-1/foundation`, after the first CI run.
 

@@ -89,21 +89,27 @@ Hierarchy changes must be effective-dated so historical records retain the scope
 - Finance import and reconciliation/approval should be separable.
 - Centre Health methodology changes require governance approval and do not recalculate history silently.
 - System administrators cannot use technical privilege as routine business access.
+- The System Administrator who requests/sends a privileged invitation cannot be its independent approver; the target cannot approve pending access.
+- Standard Educator, Assistant Director, Centre Director, and explicit-portfolio Area Manager packages may activate after successful identity verification when the invitation was created by an authorised System Administrator and the package remains current.
+- System Administrator, Executive, Finance, Compliance Manager, organisation-wide Operations Leadership, and future policy-designated privileged packages require independent second approval.
 
 ## Lifecycle
 
-1. Identity is linked to a person after an approved source or invitation process.
-2. Membership, role, scope, effective dates, and grantor are recorded.
-3. The assignee acknowledges role-specific responsibilities where required.
-4. Access changes take effect promptly and invalidate cached decisions.
-5. Delegations expire automatically.
-6. Transfers update future access without rewriting historical attribution.
-7. Deactivation blocks new sessions and retains required historical records.
-8. Periodic access reviews require managers and data owners to recertify privileged, finance, executive, export, wellbeing, and break-glass access.
+1. A System Administrator creates a reviewed invitation; its pending role/scope proposals confer no authority.
+2. After verified correlation, permanent identity is linked by Entra `tid + oid`, never email/UPN.
+3. Standard access activates atomically; privileged access waits for a distinct current System Administrator's approval of the exact package.
+4. Membership, independent role assignments, scopes, effective dates, grantor, approval lineage, and reason are recorded.
+5. Principals move through `pending -> active -> suspended -> active` or terminal `revoked`; history remains attributable.
+6. Access changes take effect promptly and invalidate cached decisions. Delegations expire automatically.
+7. Movers use effective-dated replacement without transient widening; leavers are disabled in Centre Success independently of Microsoft account action.
+8. A mutation cannot remove, suspend, revoke, unmap, or descope the final reachable active System Administrator. The operating target is at least two.
+9. Periodic access reviews require managers and data owners to recertify privileged, finance, executive, export, wellbeing, and break-glass access.
+
+For invitation role/scope combinations, Educators may have explicit multiple-centre assignments; Area Managers receive an explicit selected-centre portfolio; Operations Leadership may be scoped to organisation, state/region, group, or explicit centres. Every combination is validated in Encore and each capability stays bound to the assignment that grants its scope.
 
 ## Open decisions
 
-- Identity provider, authentication assurance, and joiner/mover/leaver source.
+- Authentication assurance beyond the Milestone 2A single-tenant Microsoft Entra gate (MFA, recovery, Conditional Access, step-up) and the authoritative joiner/mover/leaver source and operating SLA.
 - Exact organisation and region hierarchy.
 - Future module capability bundles, industrial responsibilities, delegations, and approval authorities beyond the approved foundation baseline.
 - Approval thresholds and independent-verifier rules.
@@ -111,3 +117,4 @@ Hierarchy changes must be effective-dated so historical records retain the scope
 - Break-glass design and support impersonation policy.
 - Which budget line items Centre Directors and executives may view.
 - Wellbeing support-request operating model and authorised recipients.
+- People & Access email provider/retention, safe correlation evidence, joiner/mover/leaver operating source and SLA, non-standard privilege classification, production first-administrator procedure, and break-glass/recovery policy. See `PEOPLE_AND_ACCESS.md`.

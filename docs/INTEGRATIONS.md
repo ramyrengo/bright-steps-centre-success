@@ -11,7 +11,10 @@
 7. Surface freshness/failure to users when it affects decisions.
 8. Never let an integration bypass backend authorisation or write final consequential states without a governed command.
 
-No external application integration is approved or configured in Milestone 0.
+Microsoft Entra ID in the single Bright Steps Australia tenant is approved only
+as the Milestone 2A authentication provider. Two app registrations and the
+delegated Centre Success API scope do not approve business, HR, Microsoft Graph,
+or any other external application integration.
 
 ## Candidate integration register
 
@@ -19,13 +22,13 @@ Actual vendors and scope require discovery.
 
 | Capability | Potential system of record | Direction | Centre Success purpose | Key constraints |
 | --- | --- | --- | --- | --- |
-| Identity | Bright Steps identity provider | Inbound/session | Authentication subject and lifecycle | Provider/MFA/session decision pending; minimal claims |
+| Identity | Microsoft Entra ID — single BSA tenant | Inbound/access token | Strictly verified `tid + oid` identity for mapped BSA workforce users only | Two app registrations; API access token and `access_as_user`; User assignment required = No; authentication alone grants nothing; no auto-provisioning, Graph, groups/app-role authority, or email identity; PostgreSQL-owned authorisation |
 | People/centre assignments | HR/people or operations master | Inbound | Person status, Centre Director/Area Manager assignments | Effective dates, rapid offboarding, no unnecessary HR fields |
 | Centre hierarchy | Operations/master data | Inbound | Organisation, region/state, centre scope | Jurisdiction/timezone and historical hierarchy |
 | Roster/staffing facts | Roster/workforce system | Inbound aggregates/facts | Approved compliance or readiness controls | Do not become a shadow roster; minimise personal details |
 | Training/certifications | LMS/HR/credential source | Inbound | Verified status and expiry | Source freshness, issuer, legal interpretation reviewed |
 | Finance | Accounting/budget/procurement system | Inbound | Approved/actual/committed/forecast context | Immutable batches, mapping, reconciliation, restricted detail |
-| Notifications | Email/SMS/push provider | Outbound/status | Reminders and escalations | Minimal content, consent/preferences, provider retention |
+| Notifications | Transactional email provider (vendor deferred) | Outbound/status | Future People & Access invitations, reminders, and escalations | PostgreSQL outbox plus Encore Pub/Sub worker; idempotent delivery; minimal content; no Graph; provider, sender, retention, and support policy require approval |
 | Document repository | Approved document system | Inbound/reference | Policies and knowledge sources | Licence, version, classification, deletion, no open crawl |
 | ACECQA/jurisdictional sources | Official sites/manual registrar | Controlled reference | Change monitoring and source registry | Human verification; no auto-activation or invented law |
 | AI provider | Approved model/embedding service | Request/response | Assistant functions | Privacy, region, retention/training, prompt injection, cost |
@@ -101,6 +104,8 @@ Domain workflows create a notification intent, not a provider call inline. Recip
 
 Respect approved mandatory categories, user channel preferences, quiet hours, centre time zone, digesting, deduplication, and escalation. Delivery failure does not roll back the business action and remains visible for retry/support.
 
+For the approved-but-gated People & Access architecture, an invitation transaction commits its current token generation and outbox intent together. A bounded dispatcher publishes to Encore Pub/Sub and an idempotent subscriber calls the later-approved transactional email provider. Resend/cancel invalidates the old generation; delivery records never contain the plaintext token, role, scope, Entra claims, or Microsoft object identifier. Microsoft Graph is not used merely to send invitations or classify guest/member identities. HR/recruitment integration is deferred and cannot silently activate access.
+
 ## Official-source monitoring
 
 Automated monitoring may flag that an ACECQA or jurisdictional page/document changed. It must not convert a diff into an active legal control. The source workflow requires an authorised person to verify the official publication, jurisdiction, effective dates, interpretation, affected controls/templates/AI knowledge, and release plan.
@@ -133,6 +138,7 @@ Automated monitoring may flag that an ACECQA or jurisdictional page/document cha
 - Finance definitions and integration mechanism.
 - Required refresh/freshness and outage behaviour by domain.
 - Notification channels/providers and communication policy.
+- People & Access transactional email provider, sender domain, invitation template ownership, delivery retry/support policy, and retention.
 - Approved source-monitoring method.
 - Data residency, subprocessors, support access, and retention for every provider.
 - Integration priorities within MVP.

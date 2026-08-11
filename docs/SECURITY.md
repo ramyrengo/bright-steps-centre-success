@@ -12,8 +12,10 @@ The architecture is risk-based and requires legal/privacy validation. It does no
 - [OAIC — Notifiable Data Breaches](https://www.oaic.gov.au/privacy/notifiable-data-breaches) is the official entry point for applicable breach-assessment and notification guidance.
 - [ACECQA — current NQF child-safety changes](https://www.acecqa.gov.au/nqf-child-safety-changes-1-september-2025-and-1-january-2026) is a source input for the governed compliance process, not a substitute for jurisdiction-specific advice.
 - Encore’s [automatic infrastructure](https://encore.dev/features/automatic-infrastructure) and [TypeScript platform overview](https://encore.dev/ts) describe the confirmed platform capabilities; environment configuration must still be security-reviewed.
+- Microsoft's [MSAL React guidance](https://learn.microsoft.com/en-us/entra/msal/javascript/react/getting-started), [access-token claims reference](https://learn.microsoft.com/en-us/entra/identity-platform/access-token-claims-reference), [access-token validation guidance](https://learn.microsoft.com/en-us/entra/identity-platform/access-tokens), and [signing-key rollover guidance](https://learn.microsoft.com/en-us/entra/identity-platform/signing-key-rollover) define the approved browser and API trust inputs. Centre Success adds its exact single-tenant/client contract and PostgreSQL mapping/authorisation boundary.
+- Encore's [authentication handler documentation](https://encore.dev/docs/ts/develop/auth) defines the central handler, trusted AuthData, and `auth: true` endpoint boundary.
 
-Sources were checked 11 August 2026 and must be revalidated before implementation.
+Platform and authentication sources were checked 11 August 2026 for Milestone 2A. External regulatory and privacy references must still be revalidated before the affected business capability is implemented or released.
 
 ## Data classification
 
@@ -48,11 +50,36 @@ Priority threats include:
 
 ## Identity and session architecture
 
-The identity provider is an open decision. Milestone 1 implements the identity-provider-neutral internal principal, external-identity mapping seam, persisted role baseline, data-driven assignments, pure policy tests, and a database-backed internal authorization-context seam. It does not implement passwords, a temporary login, client-supplied identity headers, or runtime authentication.
+Microsoft Entra ID in the single Bright Steps Australia tenant is approved for authentication only. Entra **User assignment required** is **No**: any valid identity from the exact BSA tenant may authenticate, but authentication alone creates no Centre Success access. Unmapped or uninvited identities remain `not_provisioned`; guest/B2B identities are never auto-provisioned and ambiguous cases require administrator review. Centre Success neither implements public self-registration nor stores the authentication method in its domain model. Authentication adds no Microsoft Graph, directory, mailbox, calendar, SharePoint, Teams, or other business-integration permission.
 
-After Bright Steps approves authentication assurance, MFA, recovery, invitation, federation, and joiner/mover/leaver processes, an Encore authentication handler will validate credentials and establish the trusted internal principal and active organisation. The implemented loader then reads current membership, assignment-bound capability, effective scope, and resource ancestry from one PostgreSQL snapshot. Sessions require secure transport, expiry, rotation/revocation, browser protections appropriate to the chosen token/cookie model, and reauthentication for approved high-risk actions.
+Two single-tenant app registrations separate the public Centre Success Web SPA from the Centre Success API. The browser uses MSAL Authorization Code with PKCE, an actual `/redirect` bridge, root post-logout destination, and `sessionStorage` cache. The connected local smoke proves the current Web registration accepts the exact MSAL v5 `/redirect` URI; root remains the post-logout landing and is not a bridge substitute. One central frontend adapter acquires the delegated `api://5e8ce11c-ade3-4baa-82f6-351919b444ca/access_as_user` token and supplies it as `Authorization: Bearer <access-token>` to the generated client. It never sends an ID token or Microsoft Graph token, manually stores an access token, accepts an arbitrary scope environment variable, or lets components construct identity headers.
 
-Until then, no protected business API is exposed. The sole public Milestone 1 endpoint is a minimal health check that returns no tenant, centre, user, configuration, dependency, version, or diagnostic detail beyond the approved operational contract.
+Environment URLs do not define OAuth trust. Local frontend and backend origins
+are `http://localhost:3000` and `http://localhost:4000`. The confirmed staging
+backend/API origin is
+`https://staging-bright-steps-centre-success-uwhi.encr.app`; it is not an Entra
+SPA redirect URI, post-logout URI, Application ID URI, scope, or token audience.
+No staging frontend origin is approved or deployed, so no staging browser CORS
+or Entra redirect value is approved. The API registration continues to define
+the confirmed `api://5e8ce11c-ade3-4baa-82f6-351919b444ca` Application ID URI,
+delegated scope, and exact `aud = 5e8ce11c-ade3-4baa-82f6-351919b444ca`
+version 2 token validation.
+
+One central Encore handler strictly parses the Bearer header and validates RS256 signature by `kid`; `iss = https://login.microsoftonline.com/27026100-3522-48b5-8e95-80230afc4127/v2.0`; `tid = 27026100-3522-48b5-8e95-80230afc4127`; `aud = 5e8ce11c-ade3-4baa-82f6-351919b444ca` (the API client-ID GUID, not the `api://` URI); `azp = b490189d-37c1-422c-a54a-b12d55646947`; `ver = 2.0`; `exp` and `nbf` with a small documented clock skew; and space-delimited `scp` containing `access_as_user`. Missing, malformed, expired, not-yet-valid, wrong-issuer, wrong-tenant, wrong-client, SPA/ID/Graph/unrelated-audience, wrong-version, wrong-scope, unknown-key, or invalid-signature credentials receive generic public responses.
+
+The handler obtains signing keys only through the BSA tenant v2 OIDC discovery document and its `jwks_uri`. Remote work is single-flight, normal refresh is attempted hourly, cached keys are trusted for no more than 24 hours, the remote timeout is five seconds, and all remote fetches—including an unknown-`kid` forced refresh—share a five-minute cooldown. Unresolved or stale trust fails closed. Key resolution is injectable; deterministic tests use generated test-only RSA material without a Microsoft login or production credential.
+
+The verified lower-case `tid + oid` resolves through `external_identity_mappings` as `provider_key = 'microsoft_entra:27026100-3522-48b5-8e95-80230afc4127'` and raw lower-case `oid` provider subject. A missing/inactive mapping or inactive principal receives no Centre Success access; a valid Entra token never provisions access. Trusted AuthData contains only the internal principal UUID in Encore's required `userID` field. It contains no provider identity, Entra group/app role/claim, Centre Success role, capability, scope, organisation, centre, email, raw JWT, or credential.
+
+The protected authentication-gate self-context endpoint reloads current membership and assignment-bound capability/scope facts from PostgreSQL for every request. Zero active organisation memberships return only `provisioningStatus: "not_provisioned"`; exactly one is selected server-side; multiple fail closed pending a future organisation-selection decision. No client-supplied active organisation is identity context, and no business authorisation decision is cached across requests. Future protected business endpoints must continue through the capability-and-resource-scope authoriser.
+
+The Product Owner completed the live local seam proof on 11 August 2026: a real BSA Microsoft session obtained the Centre Success API access token; Encore validated it; the approved local `tid + oid` mapping resolved the synthetic Local System Administrator principal; PostgreSQL loaded its one active synthetic organisation context; and protected `/foundation/me` returned the provisioned state. The earlier unmapped denial disappeared only after that reviewed mapping. This is local-development evidence, not a production onboarding or auto-provisioning path, and no token, claim payload, `oid`, email, or UPN is recorded in documentation or logs.
+
+The public health endpoint remains minimal and non-sensitive. Encore invokes the declared auth handler when an `Authorization` header is supplied even to this public route. If that handler returns `unauthenticated`, Encore deliberately continues the health request as anonymous: a malformed Bearer credential establishes no AuthData but the minimal health response remains `200`. The protected self-context route denies the same missing or malformed credential with `401`. This observed gateway behaviour does not authenticate the caller or grant access to protected data.
+
+For a provisioned principal the self-context endpoint returns only provisioning status, authenticated principal ID, safe display name, and active organisation ID/name needed to prove the chain; it exposes no assignments, raw capabilities, other users, raw Entra identity, provider configuration, or business data. For zero membership it returns no principal or organisation information.
+
+Because Entra access tokens can remain valid after an account or internal access change, offboarding requires both Microsoft account/session disablement or revocation under BSA IT process and immediate Centre Success mapping/principal deactivation. The application-side action independently denies subsequent requests even when the presented token is still cryptographically valid.
 
 ## Authorisation
 
@@ -77,7 +104,7 @@ Supabase RLS is not used. PostgreSQL RLS is not assumed as the primary control; 
 - Type and schema validation at API boundaries with size, range, enum, and normalisation constraints.
 - Parameterised database access and explicit response schemas.
 - Output encoding and sanitised rich text; never render imported or AI content as trusted executable markup.
-- CSRF protection if cookie authentication is selected; restrictive CORS based on approved frontend origins. Milestone 1 local CORS allows only uncredentialed requests from `http://localhost:3000`; wildcard or credentialed CORS is not enabled.
+- Cross-origin Encore calls use only a Bearer header, and the committed authenticated CORS allowlist contains exactly `http://localhost:3000`; wildcard and production origins are absent. Encore's documented `encore run` convenience permits all origins locally, so the committed exact list governs deployed behaviour rather than providing a local runtime origin rejection. Exact API `aud` and Web-client `azp` validation remain mandatory. The frontend does not use cookie authentication, cross-origin cookie forwarding, or browser `credentials: include`.
 - Rate limits and abuse controls by endpoint, identity, organisation, and IP where appropriate.
 - Idempotency for retried commands, webhook events, Pub/Sub subscribers, imports, and action generation.
 - Optimistic concurrency and state-machine validation for material workflows.
@@ -86,10 +113,19 @@ Supabase RLS is not used. PostgreSQL RLS is not assumed as the primary control; 
 - Security headers, TLS, and no sensitive data in URLs.
 - Generated Encore API documentation/explorer access restricted by environment and endpoint exposure.
 
+### People & Access invitation security architecture
+
+Milestone 2C is architecture-approved but not implementation-authorised. Future invitation secrets use at least 256 bits of cryptographic randomness, exact 72-hour expiry, one-time consumption, resend/cancel generation invalidation, keyed-digest-only persistence, constant-time verification, generic errors, and no role/scope or identity data in the URL. Raw invitation secrets, Entra tokens, JWT claims, email/UPN, and Microsoft object identifiers must not appear in logs or audit payloads.
+
+Email is only delivery/correlation evidence; permanent identity remains exact `tid + oid`. A forwarded link, same-tenant token, mutable email match, Entra group/app role, or frontend state cannot activate access. Missing/ambiguous/mismatched correlation, guest uncertainty, mapping conflicts, and changed role/scope packages fail closed to administrator review. Pending proposals stay outside active authorisation tables.
+
+Privileged packages require a distinct current System Administrator to approve the exact immutable package. Every access mutation is attributable and preserves at least one reachable active System Administrator under concurrency; operations target two. Invitation email delivery uses a PostgreSQL outbox and idempotent Encore Pub/Sub worker with a separately approved transactional provider—never Microsoft Graph merely for email or guest discovery. See `PEOPLE_AND_ACCESS.md` and ADR-0014.
+
 ## Evidence and Object Storage
 
 - Private buckets by default; no public evidence bucket.
 - Random object keys and short-lived authorised access.
+- Milestone 2B local synthetic uploads remain explicitly `not_scanned`; the API and UI disclose that state. Non-local access to a newly uploaded unscanned object fails closed until an approved scanning control exists.
 - Upload quarantine, content signature/type/size checks, malware scanning, and checksum verification before use.
 - Prevent active content execution; force safe download/render policy for risky formats.
 - Strip or account for sensitive image/document metadata where appropriate.
@@ -122,7 +158,11 @@ Supabase RLS is not used. PostgreSQL RLS is not assumed as the primary control; 
 
 ## Secrets and configuration
 
-Use Encore secrets for credentials and keys when implementation is approved. Secrets are environment-scoped, least-privilege, rotatable, never committed, never exposed to Next.js client code, and redacted from logs/traces/errors. Configuration that changes business behaviour—control versions, thresholds, score methods, template versions—is governed application data, not an untracked environment variable.
+Frontend public configuration is limited to `NEXT_PUBLIC_ENTRA_TENANT_ID`, `NEXT_PUBLIC_ENTRA_WEB_CLIENT_ID`, `NEXT_PUBLIC_ENTRA_API_CLIENT_ID`, `NEXT_PUBLIC_ENTRA_REDIRECT_URI`, `NEXT_PUBLIC_ENTRA_POST_LOGOUT_REDIRECT_URI`, and `NEXT_PUBLIC_ENCORE_API_URL`. The API scope is derived as `api://5e8ce11c-ade3-4baa-82f6-351919b444ca/access_as_user`, not accepted from an arbitrary environment value. The SPA registration is a public client and has no client secret.
+
+Backend integrity-sensitive trusted configuration uses Encore-supported environment configuration/secrets named `EntraTenantId`, `EntraApiClientId`, and `EntraWebClientId`. The issuer and discovery endpoints are derived from the validated tenant ID; a caller cannot supply them. No permanent Microsoft signing PEM or client secret is configured. Root and frontend `.env*` files must be ignored except deliberately safe examples. Values are environment-scoped, never committed as real credentials, and redacted from logs, traces, errors, and generated clients.
+
+CI authentication tests generate test-only signing material and require no Microsoft account, live JWKS request, or production Microsoft secret. Configuration that changes business behaviour—control versions, thresholds, score methods, template versions—is governed application data, not an untracked environment variable.
 
 ## Logging, audit, and observability
 
@@ -136,14 +176,14 @@ Logs and traces:
 - alert on error rates, suspicious denials, export anomalies, auth changes, job backlog, and integration failures; and
 - never use centre or user names as high-cardinality metric labels.
 
-Audit records cover permission changes, privileged access, evidence/export activity, source/control/template releases, audit finalisation/amendment, high-risk action closure, budget import/config, wellbeing administration/access, and AI-assisted material actions. Runtime authorization allow/deny audit policy is deferred until an authenticated protected endpoint exists; the public health route is not logged into the durable audit ledger to manufacture traffic. Integration tests instead prove tenant event attribution and append-only update/delete rejection directly at the approved audit seam.
+Audit records cover permission changes, privileged access, evidence/export activity, source/control/template releases, audit finalisation/amendment, high-risk action closure, budget import/config, wellbeing administration/access, and AI-assisted material actions. The local-only first-administrator bootstrap writes one minimised append-only event for each of its two synthetic canonical System Administrator assignments; both are explicitly bootstrap-sourced with no fabricated human actor and contain no Entra identity or credential. The separate local external-identity linker records a minimised, attributable security event without the Entra tenant/object identifiers or credentials. Routine successful page authentication is not appended per request, and expected unprovisioned-account traffic must not become an unauthenticated write-amplification path. Investigation-worthy authentication categories may use correlation IDs and generic internal reason codes in rate-limited operational telemetry under an approved retention/alert policy; raw access/ID tokens, JWT payloads, secrets, credentials, and provider error detail are never logged. The public health route remains outside the durable audit ledger.
 
 ## Infrastructure and delivery
 
 - Encore Cloud and GitHub-connected deployment are the confirmed deployment path; production cloud/provider/region and account ownership require approval.
 - Protect the default branch, require reviewed pull requests and passing checks, and restrict environment/deployment permissions.
 - Separate local, test, preview/staging, and production data/secrets. Never copy production personal data into lower environments without an approved minimisation process.
-- Pin and review dependencies. The Milestone 1 GitHub Actions definition performs frozen installs, dependency audits, backend and authorization tests, frontend lint/tests/build, generated-client verification, and repository consistency checks. It authenticates the Encore CLI with a least-privilege, repository-secret-backed application auth key but performs no deployment or production automation.
+- Pin and review dependencies. Foundation CI performs frozen installs, dependency audits, backend authentication/authorisation/database tests, frontend lint/tests/build, generated-client verification, and repository consistency checks. It authenticates the Encore CLI with a least-privilege, repository-secret-backed application auth key but requires no production Microsoft secret and performs no deployment or production automation.
 - Treat `.encore` and `encore.gen` as generated, not hand-edited product source.
 - OrbStack is only the local Docker-compatible runtime where Encore infrastructure requires it; it is not the production architecture.
 - Limit Encore dashboard, service catalog, logs, and cloud-console access by environment and job need.
@@ -169,15 +209,19 @@ Define and exercise:
 
 The product may support workflow evidence but does not autonomously decide whether a regulatory or privacy notification is required.
 
-## Milestone 1 foundation constraints and deferred gates
+## Current delivery constraints and deferred gates
 
-Milestone 1 foundation work is authorised with synthetic, non-sensitive data and the approved role/scope baseline. Its release boundary is deliberately narrow:
+Milestone 1 and Milestone 2A are accepted. Milestone 2B authorises only the synthetic Area Manager quarterly-review-to-corrective-action vertical slice. Its release boundary remains deliberately narrow:
 
-- no protected runtime endpoint before the identity provider and session/MFA model are approved;
-- no real personal, child, finance, evidence, coaching, or wellbeing data;
-- no business module beyond organisation/centre/access/audit foundations;
-- no production deployment or support-access path merely because local foundation work runs; and
-- no break-glass behaviour.
+- the self-context and approved quarterly-review business APIs are protected through the same central authentication and PostgreSQL authorisation boundary;
+- a real BSA development Entra account may map only to controlled synthetic Centre Success data through the local-only operator workflow;
+- the first local synthetic operator and target administrator may be created only by the reviewed `encore exec` bootstrap, which refuses non-local environments, reuses the canonical System Administrator role, creates no mapping, and exposes no API;
+- no child data, finance, coaching, wellbeing, QIP, regulatory corpus, or other business module is introduced;
+- audit/remediation evidence is private, centre/organisation scoped, purpose-bound, and unavailable when non-local and unscanned;
+- no production deployment or support-access path is created merely because local authentication runs; and
+- no break-glass, impersonation, automated employee provisioning, HR synchronisation, Microsoft Graph, or Entra-owned business authorisation is introduced.
+
+Milestone 2C People & Access architecture is approved only as planning. Its migrations, invitation acceptance boundary, APIs, outbox/Pub/Sub worker, email provider, routes, and production first-administrator mechanism remain prohibited until Milestone 2B is accepted and a separate implementation prompt is approved.
 
 Before the relevant later capability or production release, Bright Steps must still approve the data inventory/privacy plan; evidence and retention/legal-hold design; cloud region, backup, deployment, and support access; incident owners; and AI/wellbeing privacy decisions.
 
@@ -185,6 +229,9 @@ Before the relevant later capability or production release, Bright Steps must st
 
 - Applicable privacy, employment, records, child-safety, and jurisdictional obligations confirmed by qualified owners.
 - Data residency and subprocessors.
+- Production frontend origins, Entra app-registration operations, and environment configuration.
+- MFA, recovery, session-revocation expectations, step-up authentication, and assurance levels for future high-risk actions.
+- Multi-organisation active-context selection and persistence beyond the Milestone 2A zero/one/multiple server-side rules.
 - Security assurance standard, penetration-test cadence, and vulnerability SLAs.
 - Recovery objectives and business continuity process.
 - Support access and break-glass design.

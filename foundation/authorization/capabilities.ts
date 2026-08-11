@@ -10,6 +10,17 @@ export const FOUNDATION_CAPABILITIES = {
   systemConfigure: "system.configure",
   systemHealthRead: "system.health.read",
   budgetSummaryRead: "budget.summary.read",
+  quarterlyAuditRead: "quarterly_audit.read",
+  quarterlyAuditConduct: "quarterly_audit.conduct",
+  quarterlyAuditFinalise: "quarterly_audit.finalise",
+  quarterlyAuditAcknowledge: "quarterly_audit.acknowledge",
+  findingRead: "finding.read",
+  correctiveActionRead: "corrective_action.read",
+  correctiveActionRemediate: "corrective_action.remediate",
+  correctiveActionVerify: "corrective_action.verify",
+  evidenceRead: "evidence.read",
+  evidenceUpload: "evidence.upload",
+  complianceOversightRead: "compliance.oversight.read",
 } as const;
 
 export type FoundationCapability =

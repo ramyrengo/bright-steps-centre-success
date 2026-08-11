@@ -4,7 +4,9 @@
 
 **Milestone 0 — architecture documentation: complete and approved.**
 
-**Milestone 1 — Centre Success foundation: implementation and architecture-review remediation complete; awaiting product-owner acceptance.** The Encore application and Cloud connection were preserved. Later business modules remain outside this authorisation, and Milestone 2 must not begin without explicit approval.
+**Milestone 1 — Centre Success foundation: accepted / complete.** The Product Owner formally accepted Milestone 1 after pull request #1 was merged into `main` and the Foundation CI and local quality gates passed. The Encore application and Cloud connection were preserved.
+
+**Milestone 2 — started under controlled sub-milestone gates.** Milestone 2A is accepted and complete. **Milestone 2B — Area Manager Audit to Corrective Action** is implemented with acceptance remediation in progress. **Milestone 2C — People & Access + User Invitations** is approved as architecture only; implementation awaits the Milestone 2B acceptance gate and a separate implementation authorisation.
 
 ## MVP objective
 
@@ -52,9 +54,9 @@ Include only after business decisions, privacy/security review, and capacity val
 
 ## Approved foundation decisions and later gates
 
-The product owner approved the canonical foundation role/scope baseline, one Encore service/database, an identity-provider-neutral principal, persisted and evolvable role templates, database-backed capability/scope authorization tests, a public health endpoint, the local uncredentialed CORS origin, and a committed generated frontend client.
+The product owner approved the canonical foundation role/scope baseline, one Encore service/database, an identity-provider-neutral principal, persisted and evolvable role templates, database-backed capability/scope authorization tests, a public health endpoint, the restricted local frontend origin, and a committed generated frontend client.
 
-The identity provider and runtime session/MFA/recovery design are intentionally deferred. Milestone 1 must not expose a protected business endpoint or invent temporary authentication while that decision is open. The effective hierarchy resolver is implemented, while the authoritative organisation/portfolio source and propagation process remain deferred. Access review, privacy/retention, cloud production operations, and all business-module decisions remain gates before the affected capability or production release; they do not authorise scope expansion during the synthetic foundation.
+Milestone 2A approves Microsoft Entra ID in the single Bright Steps Australia tenant for authentication only. Two app registrations, MSAL Authorization Code with PKCE, a Centre Success API access token, strict OIDC/JWKS verification, `tid + oid` external-identity mapping, the central Encore auth handler, and PostgreSQL-owned authorisation form the gate. It does not approve Entra groups/app roles/claims as business authority, auto-provisioning, Microsoft Graph, business APIs, or a temporary bypass. MFA/recovery/Conditional Access/step-up, multi-organisation context selection, the authoritative organisation/portfolio source and propagation process, access review, privacy/retention, cloud production operations, and all business-module decisions remain gates before the affected capability or release.
 
 ## Delivery milestones
 
@@ -73,13 +75,43 @@ Exit evidence:
 - observable public health request with safe logs/traces and no protected data;
 - no business module can bypass the authorisation interface.
 
-### Milestone 2 — compliance work vertical slice
+### Milestone 2 — controlled vertical-slice delivery
 
-**Goal:** Complete one approved control from activation to verified completion.
+**Status:** Started.
 
-Deliver source/control version, applicability, scheduled obligation, task, private evidence upload/review, finding/action, notification, and audit history for a small validated control set.
+#### Milestone 2A — Authentication Gate
 
-Exit evidence includes source approval, idempotent scheduling, malware/file controls, overdue/escalation behaviour, independent verification where configured, accessibility/mobile testing, and restore/link-integrity test.
+**Status:** Accepted / complete. On 11 August 2026 the Product Owner completed the live local proof and observed `Welcome, Local System Administrator`, `Authentication: Connected`, and `Centre Success: Ready`. The real BSA chain succeeded from Microsoft sign-in and Centre Success API access-token acquisition through strict Encore validation, `tid + oid` mapping, the provider-neutral internal principal, active synthetic local organisation membership, PostgreSQL authorisation context, protected `/foundation/me`, and the provisioned application state. The linked Centre Success principal and organisation records are synthetic local-development data; this evidence is not a production provisioning workflow.
+
+**Goal:** Establish trusted human identity before the first protected business endpoint is built.
+
+Deliver single-tenant BSA Entra sign-in/sign-out in the existing Next.js application using MSAL Authorization Code with PKCE, an actual `/redirect` bridge and root post-logout destination; acquire only the delegated Centre Success API access token; validate rotating tenant OIDC/JWKS keys and the exact issuer/`tid`/API `aud`/Web-client `azp`/version/time/scope contract in one Encore auth handler; map `tid + oid` to the active internal principal; provide one minimal protected self-context endpoint that reloads database authorisation; retain one generated-client token adapter; provide the separately approved local-only synthetic first-administrator bootstrap plus the explicit local Entra mapping tool; add deterministic authentication/authorisation tests; and update the security decision and operating documentation.
+
+Exit evidence includes missing/malformed/invalid/expired/not-yet-valid/wrong-issuer/wrong-tenant/wrong-client/wrong-audience/wrong-version/wrong-scope token denial; SPA/ID and Graph-like token rejection; controlled JWKS refresh and key-rotation proof; unmapped/inactive mapping and inactive-principal denial; zero membership returning only `not_provisioned`, exactly one membership loading server-selected context, and multiple failing closed; cross-organisation and expired-assignment denial after valid authentication; no client-selected identity or organisation; exact configured local authenticated CORS with the documented Encore local-development behaviour; accessible signed-out/loading/not-provisioned/denied/unavailable/signed-in states; a local-only first-administrator bootstrap that refuses every non-local environment, reuses the exact canonical technical role, remains duplicate-free and audited on repeat/concurrent runs, creates no real identity or HTTP surface, and enables the existing linker through backend authorisation; reproducible generated client; passing existing foundation checks; and a real local BSA Entra session/API access-token smoke test. CI uses test-only cryptographic material and no production Microsoft secret.
+
+The final live proof closed the previously operator-dependent criteria: a real BSA Microsoft 365 login obtained a real access token for the Centre Success API; Encore validated it; the approved local `tid + oid` mapping resolved the synthetic internal principal and its one active local organisation; and protected `/foundation/me` returned the provisioned Local System Administrator projection. The earlier safe `Account not provisioned` state disappeared only after the reviewed local bootstrap and mapping workflow completed.
+
+For this gate, zero current active organisations produce only the authenticated `not_provisioned` projection, exactly one is resolved server-side, and multiple fail closed. A multi-organisation selection/session experience is a later decision, not an implicit choice of the first membership.
+
+#### Milestone 2B — Area Manager Audit to Corrective Action vertical slice
+
+**Status:** **IMPLEMENTED — ACCEPTANCE REMEDIATION IN PROGRESS.** The implemented scope is the synthetic internal quarterly-review workflow from assigned-centre audit through scoring, findings, corrective action, Centre Director remediation/evidence, independent Area/Compliance verification, acknowledgement, positive practice, comparable-quarter support, and minimal Compliance Manager oversight. It is not accepted or complete until remediation evidence is reviewed and the Product Owner accepts it.
+
+**Goal:** Complete one assigned-centre quarterly review and follow every configured failed item to verified corrective-action closure without duplicate entry.
+
+Deliver a versioned synthetic development template, pinned audit run, weighted/configurable internal scoring, critical risk override, immediate and finalisation-time findings/actions, private evidence with environment-safe availability, acknowledgement, recurrence/comparison support, and scoped operational views. No content is presented as an official regulatory assessment.
+
+The 25-item Milestone 2B gate remains the acceptance target. Local evidence now includes assignment isolation, immutable version history, controlled response-correction withdrawal/reactivation, idempotent immediate/final findings, versioned score-band threshold interpretation, score/risk separation, database-enforced independent verification, private evidence controls, accessible mobile workflows, negative/concurrency regression checks, and no later business module. This wording records implementation evidence only; it does not pre-empt Product Owner acceptance. A hosted workflow run can be recorded after reviewed changes are committed and pushed; this repository update does not perform Git operations.
+
+The 11 August 2026 acceptance-remediation gate passed locally on Node 24.16.0 and Encore 1.57.13: backend typecheck, 92 unit tests, 56 Encore/PostgreSQL integration tests, 57 frontend tests, frontend lint/typecheck/production build, generated-client byte comparison, both dependency audits, the authentication scope guard, and `git diff --check`. A fresh isolated Encore namespace applied every migration through version 15, served the health endpoint, and recorded `schema_migrations` version 15 with `dirty = false`; the temporary namespace was then removed. Hosted CI, independent re-review, and explicit Product Owner acceptance remain required before changing this milestone to complete.
+
+#### Milestone 2C — People & Access + User Invitations
+
+**Status:** **ARCHITECTURE APPROVED — IMPLEMENTATION AWAITING GATE.** No Milestone 2C migration, API, worker, package, email provider, route, or production bootstrap is authorised until Milestone 2B completes remediation, regression and hosted CI, receives Product Owner acceptance, and the Product Owner separately authorises Milestone 2C implementation.
+
+**Goal:** Allow an authorised System Administrator to invite a BSA employee, safely correlate verified Entra identity, and activate a reviewed PostgreSQL role/scope package without making Entra, email, or a pending proposal an authorisation source.
+
+The approved architecture uses 72-hour one-time invitation generations, invitation-owned pending proposals outside active grant tables, `tid + oid` permanent identity, standard package activation after verified acceptance, independent second approval for privileged packages, multiple non-recombining assignments, effective-dated joiner/mover/leaver changes, a PostgreSQL outbox with Encore Pub/Sub delivery, and last-reachable-System-Administrator protection. Entra user assignment remains **No**; unmapped/uninvited identities remain `not_provisioned`, Microsoft Graph is not introduced, and production first-administrator operations remain separately gated. See `docs/PEOPLE_AND_ACCESS.md` and ADR-0014.
 
 ### Milestone 3 — Area Manager internal audits
 

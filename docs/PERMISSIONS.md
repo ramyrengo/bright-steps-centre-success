@@ -17,6 +17,8 @@ Centre Success combines:
 
 Effective access is evaluated per request from server-side records. Claims may identify a session and stable user subject, but mutable centre assignments and role scope must not live only in a long-lived token.
 
+For Milestone 2A, Microsoft Entra ID in the single Bright Steps Australia tenant proves identity only. A strictly verified `tid + oid` pair maps to an active internal principal; Entra groups, app roles, token roles, authentication method, and frontend state never grant a Centre Success capability or scope. PostgreSQL remains the authorisation source of truth.
+
 ## Scope types
 
 | Scope | Meaning | Typical use |
@@ -49,7 +51,29 @@ Roles are data-driven convenience bundles. Versioned canonical templates are sto
 
 `budget.summary.read` proves that a scoped financial capability can be represented; it does not authorise a budget module in Milestone 1. The same applies to future business capabilities: they require their own domain approval and resource/classification policy.
 
+### Approved Milestone 2B domain capability bundles
+
+The following capabilities extend new canonical role-template versions. Existing organisation assignments are migrated to matching reviewed role definitions; the authoriser still evaluates capability and scope, never the role name.
+
+| Canonical role | Milestone 2B capabilities |
+| --- | --- |
+| Area Manager | `quarterly_audit.read`, `quarterly_audit.conduct`, `quarterly_audit.finalise`, `finding.read`, `corrective_action.read`, `corrective_action.verify`, `evidence.read` |
+| Centre Director | `quarterly_audit.read`, `quarterly_audit.acknowledge`, `finding.read`, `corrective_action.read`, `corrective_action.remediate`, `evidence.read`, `evidence.upload` |
+| Compliance Manager | `compliance.oversight.read`, `quarterly_audit.read`, `finding.read`, `corrective_action.read`, `corrective_action.verify`, `evidence.read` |
+| System Administrator | No Milestone 2B business-content capability |
+| Executive | No Milestone 2B mutation capability |
+
+Template publication remains migration/local-development seed governance in this slice; no generic template-administration API is introduced.
+
 When a principal has multiple roles, access is the union of complete valid grants. Each allow path must independently supply both the requested capability and a matching current scope. Capabilities and scopes from unrelated assignments cannot be recombined to manufacture broader access.
+
+### Approved Milestone 2C architecture capability boundary
+
+Milestone 2C implementation is not yet authorised. Its approved architecture retains existing `principal.read`, `principal.manage`, `identity.mapping.manage`, `assignment.read`, and `assignment.manage`, and proposes the narrowly reviewed keys `invitation.read`, `invitation.manage`, `privileged_access.approve`, and `access_history.read` for a future canonical System Administrator template version. `access.change.request` is reserved for a later Operations Leadership request workflow and is not direct grant or activation authority. No other role receives People & Access administration automatically.
+
+Only a current, appropriately scoped System Administrator may initially create/manage invitations. The four standard packages—Educator with explicit centre(s), Assistant Director with centre scope, Centre Director with centre scope, and Area Manager with an explicit selected-centre portfolio—may activate after verified identity without another approval when the current invitation package passes all checks. System Administrator, Executive, Finance, Compliance Manager, organisation-wide Operations Leadership, and any policy-designated privileged package require a distinct current System Administrator to approve the exact package. The requester/inviter cannot provide their own independent approval.
+
+Invitation proposals confer no authority and must not appear in active organisation memberships, role assignments, or assignment scopes. Activation creates independent grants atomically. A policy allow path must still obtain capability and matching scope from the same assignment. Every mutation that could remove the final reachable active System Administrator is denied under a cross-table transactional/database invariant; the operational target is at least two. Full rules are in `PEOPLE_AND_ACCESS.md` and ADR-0014.
 
 ## Data classes
 
@@ -64,7 +88,7 @@ Classification controls read, search, aggregation, download, export, notificatio
 
 For every protected endpoint or internal command:
 
-1. Require authentication and load current account/membership status.
+1. Require authentication, map the verified provider subject to the active internal principal, and load current account/membership status.
 2. Resolve the target resource by opaque identifier without returning data.
 3. Confirm target `organisation_id` equals the active authorised organisation.
 4. Load active role assignments/delegations and calculate capabilities.
@@ -137,18 +161,21 @@ Break-glass, if approved, requires strong re-authentication, reason, incident/re
 
 - Centralise policy evaluation and typed scope helpers in the modular monolith.
 - Construct principal context from PostgreSQL in one consistent read snapshot, using a trusted internal principal and independently established active organisation.
+- Obtain that trusted principal only from the central Encore AuthData created after strict Entra API access-token verification and active external-mapping resolution; AuthData carries no provider identity, role, capability, scope, organisation, or centre authority.
 - Resolve a centre's effective organisational-unit ancestry through the one canonical recursive data-layer query; callers never submit ancestor IDs.
 - Keep domain-specific rules beside the owning module, invoked through one consistent decision interface.
 - Require organisation predicates in repository/query interfaces so accidental unscoped access is difficult.
 - Return only authorised fields through explicit response models; avoid serialising database rows directly.
 - Treat exports, counts, search, autocomplete, logs, metrics labels, object metadata, and notifications as data disclosure surfaces.
-- Cache only non-sensitive decisions briefly and invalidate on membership, role, assignment, delegation, or resource changes.
+- For Milestone 2A, do not cache business authorisation decisions across requests; reload mapping, principal, membership, assignment, capability, and scope facts so internal revocation applies immediately. A separately approved later cache must be short-lived and safely invalidated.
 
 PostgreSQL row-level security is not assumed. If evaluated later as defence in depth, it would supplement—not replace—Encore application authorisation and require an approved architecture decision.
 
-### Milestone 1 authentication seam
+### Milestone 2A authentication connection
 
-The external identity provider, session, and MFA model remain unapproved. Milestone 1 therefore exercises the pure policy and database-backed context/hierarchy loaders with synthetic internal principals. The loaders are internal functions, not APIs, and do not accept a principal, role, organisation, centre, or ancestry asserted by an untrusted HTTP client. No protected business API is exposed until an approved runtime authentication handler can establish trusted identity and active tenant. The only public endpoint is a minimal non-sensitive health check.
+Microsoft Entra ID tenant `27026100-3522-48b5-8e95-80230afc4127` is the approved authentication provider. The central Encore auth handler accepts only an RS256 version 2 access token for the Centre Success API with the exact BSA issuer/`tid`, `aud = 5e8ce11c-ade3-4baa-82f6-351919b444ca`, `azp = b490189d-37c1-422c-a54a-b12d55646947`, valid time window, and `access_as_user` scope. It resolves canonical `provider_key = 'microsoft_entra:27026100-3522-48b5-8e95-80230afc4127'` plus the raw lower-case Entra `oid` through `external_identity_mappings` and returns only the active internal principal UUID in Encore's required `userID` field. Missing/inactive mappings and inactive principals deny access. Entra permissions, groups, roles, email, UPN, and other mutable claims are ignored for business authorisation.
+
+The authentication-gate self-context endpoint then uses the existing database-backed context loader; it does not duplicate policy. Zero current active organisation memberships return only `provisioningStatus: "not_provisioned"`, exactly one is resolved server-side, and multiple fail closed. An organisation or centre identifier supplied in a future request is a requested resource, never identity context or proof of access, and remains subject to independent backend resolution and capability/scope checks. The public health check stays unauthenticated and non-sensitive.
 
 ## Audit and monitoring
 
@@ -156,6 +183,14 @@ Always audit privileged assignment changes, control/template approval, audit fin
 
 ## Required authorisation tests
 
+- Missing/malformed credentials, invalid signatures, expired/not-yet-valid tokens, wrong `tid`/issuer/API audience/Web-client `azp`, wrong version, missing/wrong scope, and unknown signing keys are rejected with no provider detail leak.
+- SPA/ID-token and Microsoft Graph/unrelated-resource audiences are rejected; an Entra `roles` claim cannot replace the delegated `access_as_user` scope or grant a business permission.
+- Unknown `kid` causes at most one controlled, single-flight, cooldown-governed JWKS refresh; rotation to a current key succeeds and a still-unknown key is denied.
+- A valid Entra identity with no active external mapping, an inactive mapping, or an inactive internal principal receives no Centre Success access.
+- A mapped active principal with zero active memberships receives only the authenticated `not_provisioned` projection; exactly one loads context and multiple fail closed.
+- A malformed Bearer credential on the public health route is exercised through the actual Encore gateway and documents Encore's public-route authentication behaviour rather than assuming direct-handler semantics.
+- Frontend tests cover MSAL initialization/redirect completion, explicit active-account selection, silent API-token acquisition, interaction-required handling without loops, sign-out/root return, safe UI states, and the one generated-client adapter without exposing token material.
+- A valid token cannot bypass cross-organisation, expired-assignment, capability, or scope denial; the client cannot select its principal.
 - User from organisation A cannot infer or access organisation B by ID, search, count, file, export, or event.
 - Educator and Assistant Director can read their assigned centre but not another centre; neither receives organisation administration.
 - Centre Director cannot access another centre by changing a route/body/filter.
@@ -174,10 +209,12 @@ Always audit privileged assignment changes, control/template approval, audit fin
 - Bulk operations do not partially process unauthorised resources unless the API contract safely and explicitly supports it.
 - Pub/Sub replay cannot apply a transition under a stale or wrong-tenant context.
 
-## Decisions deferred beyond the authorised foundation
+## Decisions deferred beyond the authorised Milestone 2B slice
 
-- Identity provider, session model, MFA and step-up policy before any protected runtime endpoint.
-- Future domain capability catalogues and role-bundle changes beyond the approved Milestone 1 set.
+- MFA, recovery, session-revocation, assurance and step-up policy before affected high-risk operations.
+- Multi-organisation active-context selection/persistence beyond the Milestone 2A exact-one fail-closed rule.
+- Physical implementation of the approved Milestone 2C People & Access capability/template changes; architecture approval does not authorise a migration.
+- Future domain capability catalogues and role-bundle changes beyond the approved Milestone 2B and People & Access architecture sets.
 - Authoritative organisation/portfolio source, assignment owner, and propagation SLA; recursive foundation hierarchy evaluation is implemented.
 - Wellbeing aggregation thresholds and support roles.
 - Finance category visibility.

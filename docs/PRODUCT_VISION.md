@@ -76,6 +76,7 @@ The target product includes:
 - Centre Health with positive recognition and explainable risk signals;
 - budget approved-versus-actual-versus-forecast accountability;
 - Compliance Manager and executive portfolio views;
+- secure People & Access invitations, role/scope lifecycle, and joiner/mover/leaver controls with Centre Success-owned authorisation;
 - permission-aware AI assistance and governed knowledge retrieval;
 - notifications, integrations, audit trails, and security controls.
 
@@ -113,7 +114,7 @@ Measures must not create perverse incentives to close actions without quality ev
 ## Assumptions requiring validation
 
 - The organisational hierarchy, regions, centre identifiers, and Area Manager assignments.
-- Bright Steps’ identity provider and user lifecycle process.
+- The authoritative operational source and SLA for the approved dual-system joiner/mover/leaver architecture, plus authentication assurance beyond the Milestone 2A single-tenant Microsoft Entra gate, including MFA, recovery, Conditional Access, and step-up decisions.
 - Applicable jurisdictions and approved regulatory source owners.
 - Existing finance, HR, roster, training, notification, and document systems.
 - Audit methodology, severity language, scoring weights, and escalation policy.

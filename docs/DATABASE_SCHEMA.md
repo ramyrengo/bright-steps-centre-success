@@ -2,7 +2,7 @@
 
 ## Status
 
-This document remains the logical data architecture for the whole product. Only the explicitly approved Milestone 1 physical subset below has been implemented; later conceptual modules are not permission to create their tables.
+This document remains the logical data architecture for the whole product. The foundation and authentication physical subsets are implemented. Milestone 2B authorises only the quarterly-review, finding/action, acknowledgement, positive-observation, and private-evidence records described below. Milestone 2C People & Access concepts are approved as architecture but are not permission to create tables or migrations before the implementation gate opens.
 
 ## Persistence strategy
 
@@ -23,7 +23,7 @@ The source-controlled migrations in `foundation/migrations/` create one Encore-m
 | `centres` | Organisation-owned service locations and jurisdiction/timezone metadata |
 | `centre_organisational_unit_memberships` | Effective-dated centre-to-unit relationships |
 | `principals` | Identity-provider-neutral internal user identity |
-| `external_identity_mappings` | Future provider-key/subject mapping seam; no credentials or provider integration |
+| `external_identity_mappings` | Provider-neutral external identity to internal principal mapping; Milestone 2A stores `provider_key = 'microsoft_entra:27026100-3522-48b5-8e95-80230afc4127'` and the raw lower-case Entra `oid` as `provider_subject`, with no credentials, roles, capabilities, or scopes |
 | `organisation_memberships` | Effective-dated tenant membership that grants no content capability by itself |
 | `capabilities` | Canonical foundation capability catalogue |
 | `canonical_role_templates`, `canonical_role_template_capabilities` | Versioned nine-role foundation baseline and reviewed capability mappings |
@@ -67,6 +67,15 @@ Application-owned identifiers are UUIDs. Composite foreign keys prevent an assig
 | Break-glass grant | Exceptional access request/approval/use/review if later approved |
 
 Identity-provider tokens, passwords, and raw credentials do not belong in application tables.
+
+For Milestone 2A, `tid + oid` is the durable external identity pair. Tenant and
+object GUIDs are validated and canonicalised before lookup; email, UPN,
+`preferred_username`, and pairwise `sub` are not identity keys. The existing
+unique `(provider_key, provider_subject)` constraint prevents one Entra tenant
+object from mapping to multiple internal principals. Mapping status and internal
+principal status are checked on every authenticated request; sign-in creates no
+mapping or access record. Provider-neutral migration 009 preserves attributable
+mapping-audit target integrity and does not embed an authentication-provider-specific schema.
 
 ## Source and control-governance module
 
@@ -144,6 +153,12 @@ Due-date changes and severity changes are histories, not overwrites.
 | Recognition | Strength, evidence, audience, consent/classification |
 
 Final results keep both calculated components and the methodology version; a mutable current formula is never applied invisibly to history.
+
+### Approved Milestone 2B physical shape
+
+The implementation normalises stable templates from immutable versions, ordered sections/items, versioned outcome rules and performance bands. An audit run pins one template version; responses reference that version's items; final section/overall results are snapshots. Stable item lineage supports repeat findings and comparison without wording matching. Template items have an optional, reference-only Quality Area mapping seam; the synthetic development template leaves it unset and no regulatory corpus or assertion is embedded.
+
+Findings retain their originating response. Corrective actions retain owner, due/severity/evidence/verification configuration and an append-only transition history. Immediate configured findings/actions may exist before audit finalisation; uniqueness constraints make reconciliation retry-safe. A response correction can move the paired records to `WITHDRAWN` only with actor, time, and reason metadata; later qualifying outcomes reactivate the same IDs. `CRITICAL` or immediate outcome configuration is invalid unless independent verification is required. Performance bands use complete half-open ranges with the final `100` inclusive and carry the versioned internal-threshold classification used by oversight. Acknowledgements and positive observations are separate immutable records. Private evidence metadata and object versions link through target-specific, tenant-constrained join tables rather than an unchecked cross-tenant polymorphic identifier.
 
 ## Quality and QIP module
 
@@ -232,6 +247,14 @@ Snapshots are append-only. Corrections publish a new snapshot or explicit recalc
 | Webhook receipt | Provider event ID, signature result, replay/idempotency state |
 | Outbox event | Transactionally recorded event awaiting publication |
 
+### Approved People & Access logical proposal — not implemented
+
+Milestone 2C proposes organisation-owned invitations, immutable role/scope proposals, one-time token generations, invitation events, privileged approvals, outbox events, and delivery attempts. Pending proposal rows must remain outside `organisation_memberships`, `role_assignments`, and `assignment_scopes`; they confer no current authority. Activation alone may write the active external mapping, membership, independent assignments/scopes, and audit events in one serializable transaction after identity, package, scope, approval, and uniqueness checks.
+
+The principal lifecycle requires a reviewed forward migration to `pending`, `active`, `suspended`, and terminal `revoked`. Existing `inactive` rows must be explicitly classified during migration preflight rather than silently translated. Invitation generations store only keyed digests, generation/expiry/consumption/invalidation facts, and never plaintext. Privileged approvals bind a distinct approver to the exact package digest/version. Cross-table protection must preserve at least one reachable active System Administrator under concurrent mapping, membership, principal, assignment, scope, role-template, or capability changes.
+
+The full proposed entities, invariants, activation transaction, migration preflight, and tests are in `PEOPLE_AND_ACCESS.md`. No physical People & Access schema exists until Milestone 2B is accepted and a separate implementation prompt authorises it.
+
 ## AI and knowledge module
 
 | Aggregate/entity | Purpose and key relationships |
@@ -285,3 +308,4 @@ If analytics needs later justify a warehouse, feed it through minimised, classif
 - PostgreSQL isolation controls and backup/restore requirements in Encore Cloud.
 - Search/index technology and permitted content.
 - Data residency, AI provider, and export constraints.
+- People & Access invitation/email retention, safe identity-correlation evidence, transactional email provider, joiner/mover/leaver operating source, and production first-administrator mechanism.

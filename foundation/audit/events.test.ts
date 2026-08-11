@@ -296,4 +296,56 @@ describe("system audit events", () => {
       `,
     ).rejects.toThrow("system_audit_events_organisation_target_check");
   });
+
+  test("rejects an external identity mapping target from another organisation", async () => {
+    const organisationA = await createOrganisation(
+      "Synthetic mapping audit organisation A",
+    );
+    const organisationB = await createOrganisation(
+      "Synthetic mapping audit organisation B",
+    );
+    const organisationAActor = await createPrincipalMembership(organisationA);
+    const organisationBPrincipal =
+      await createPrincipalMembership(organisationB);
+    const mappingId = randomUUID();
+
+    await centreSuccessDB.exec`
+      INSERT INTO external_identity_mappings (
+        id,
+        principal_id,
+        provider_key,
+        provider_subject,
+        status
+      ) VALUES (
+        ${mappingId},
+        ${organisationBPrincipal},
+        'microsoft_entra:11111111-1111-4111-8111-111111111111',
+        ${randomUUID()},
+        'active'
+      )
+    `;
+
+    await expect(
+      recordAuditEvent({
+        organisationId: organisationA,
+        actorPrincipalId: organisationAActor,
+        action: "identity.mapping.checked",
+        resourceType: "external_identity_mapping",
+        resourceId: mappingId,
+        scopeType: "principal",
+        scopeId: organisationAActor,
+      }),
+    ).rejects.toThrow(
+      "audit external-identity-mapping resource does not belong to organisation",
+    );
+
+    await expect(
+      recordAuditEvent({
+        action: "identity.mapping.checked",
+        resourceType: "external_identity_mapping",
+        resourceId: mappingId,
+        scopeType: "system",
+      }),
+    ).rejects.toThrow("system audit scope cannot claim a tenant resource");
+  });
 });
