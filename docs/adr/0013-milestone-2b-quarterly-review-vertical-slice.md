@@ -1,7 +1,7 @@
 # ADR-0013: Milestone 2B quarterly review vertical slice
 
 - Architecture decision status: Accepted
-- Milestone delivery status: **IMPLEMENTED — ACCEPTANCE REMEDIATION IN PROGRESS**
+- Milestone delivery status: **ACCEPTED / COMPLETE** (Product Owner acceptance recorded 11 August 2026)
 - Date: 2026-08-11
 - Decision owner: Product Owner
 

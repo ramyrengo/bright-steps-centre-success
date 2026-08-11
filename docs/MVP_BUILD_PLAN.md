@@ -95,7 +95,7 @@ For this gate, zero current active organisations produce only the authenticated 
 
 #### Milestone 2B — Area Manager Audit to Corrective Action vertical slice
 
-**Status:** **IMPLEMENTED — ACCEPTANCE REMEDIATION IN PROGRESS.** The implemented scope is the synthetic internal quarterly-review workflow from assigned-centre audit through scoring, findings, corrective action, Centre Director remediation/evidence, independent Area/Compliance verification, acknowledgement, positive practice, comparable-quarter support, and minimal Compliance Manager oversight. It is not accepted or complete until remediation evidence is reviewed and the Product Owner accepts it.
+**Status:** **ACCEPTED / COMPLETE.** Formally accepted by the Product Owner on 11 August 2026. Acceptance evidence: implementation and acceptance remediation complete; independent re-review returned PASS with all required findings (H1, H2, M1, M3–M7) closed; 205 local tests passing; clean-database migrations through version 15; pull request #2 merged with hosted Foundation CI green; no critical findings, no authentication or authorisation regression, and no deferred-module scope creep. The known N+1 multi-centre authorisation behaviour is an explicitly accepted non-blocking follow-up that must be addressed before broad 20+ centre rollout. The accepted scope is the synthetic internal quarterly-review workflow from assigned-centre audit through scoring, findings, corrective action, Centre Director remediation/evidence, independent Area/Compliance verification, acknowledgement, positive practice, comparable-quarter support, and minimal Compliance Manager oversight.
 
 **Goal:** Complete one assigned-centre quarterly review and follow every configured failed item to verified corrective-action closure without duplicate entry.
 
@@ -107,7 +107,7 @@ The 11 August 2026 acceptance-remediation gate passed locally on Node 24.16.0 an
 
 #### Milestone 2C — People & Access + User Invitations
 
-**Status:** **ARCHITECTURE APPROVED — IMPLEMENTATION AWAITING GATE.** No Milestone 2C migration, API, worker, package, email provider, route, or production bootstrap is authorised until Milestone 2B completes remediation, regression and hosted CI, receives Product Owner acceptance, and the Product Owner separately authorises Milestone 2C implementation.
+**Status:** **IMPLEMENTATION AUTHORISED.** The Product Owner accepted Milestone 2B and separately authorised Milestone 2C implementation on 11 August 2026, limited to the approved People & Access scope in `docs/PEOPLE_AND_ACCESS.md` and ADR-0014. The approved invitation policy: 72-hour one-time invitation generations; System Administrator as initial inviter; standard roles activate after successful approved invitation identity verification; privileged initial roles (System Administrator, Executive, Finance, Compliance Manager, and organisation-wide Operations Leadership) require independent second approval; no Microsoft Graph; no separate passwords or local login; the transactional email architecture uses the approved outbox/Pub/Sub design with the concrete provider remaining configuration/provider-neutral until explicitly chosen; and the production first-administrator bootstrap remains separately gated until the Encore Cloud operational mechanism is validated.
 
 **Goal:** Allow an authorised System Administrator to invite a BSA employee, safely correlate verified Entra identity, and activate a reviewed PostgreSQL role/scope package without making Entra, email, or a pending proposal an authorisation source.
 

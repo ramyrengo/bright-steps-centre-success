@@ -361,9 +361,9 @@ Milestone 2B quarterly-review/action/evidence/oversight workflow APIs are all
 capability, assignment, effective-date, and resource-scope checks. No generic
 administrator CRUD surface exists. The frontend routes are usability surfaces,
 not authority. Milestone 2B includes only the synthetic internal vertical slice.
-Milestone 2C People & Access architecture is approved, but its migrations,
-APIs, worker/email integration, packages, and routes remain unapproved until
-Milestone 2B acceptance and a separate implementation authorisation.
+Milestone 2B was accepted and Milestone 2C People & Access implementation was
+authorised on 11 August 2026 within the approved architecture; the production
+first-administrator bootstrap remains separately gated.
 
 ## Framework references
 
