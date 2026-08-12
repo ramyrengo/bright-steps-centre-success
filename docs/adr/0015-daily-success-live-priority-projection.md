@@ -1,6 +1,6 @@
 # ADR-0015: Daily Success as a live read-only priority projection
 
-- **Status:** Accepted architecture; implementation acceptance remediation in progress
+- **Status:** Accepted architecture; Milestone 3A implementation accepted and complete (12 August 2026)
 - **Date:** 2026-08-12
 
 ## Context

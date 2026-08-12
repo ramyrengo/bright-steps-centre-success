@@ -8,7 +8,11 @@
 
 **Milestone 2 — accepted / complete under controlled sub-milestone gates.** Milestones 2A, 2B, and **Milestone 2C — People & Access + User Invitations** are **ACCEPTED / COMPLETE**.
 
-**Milestone 3 — started under controlled sub-milestone gates. Milestone 3A — Daily Success remains IMPLEMENTED / ACCEPTANCE REMEDIATION IN PROGRESS. It is not accepted. Milestone 3B and later work remain locked.**
+**Milestone 3 — started under controlled sub-milestone gates. Milestone 3A — Daily Success is ACCEPTED / COMPLETE. Milestone 3B and later work remain locked.**
+
+Milestone 3A acceptance evidence, recorded 12 August 2026: implementation completed; acceptance remediation completed; independent review **PASS**; targeted remediation re-review **PASS**; the full local regression gate green (backend typecheck, 141 unit tests, 100 database-backed integration tests, 90 frontend tests, frontend lint/typecheck/production build, generated-client reproducibility, authentication scope guard, `git diff --check`); hosted Foundation CI green; Encore Build green; merged to `main` through pull request #6. Migrations remain 001–018 and Milestone 3A added none. Acceptance is an implementation acceptance only and does not make Centre Success production-ready.
+
+Non-blocking follow-ups recorded at acceptance, deliberately not expanded into Milestone 3A: eligible verification items render in both the Area Manager **VERIFY TODAY** queue and their ordinary priority section; `WorkflowShell` still defaults to a fixed workspace navigation that may include destinations the current principal is not authorised for; the `daily-card__why` description list retains a grid display that drops its assistive-technology term/description mapping; `Cache-Control` is asserted against a fixture rather than a built response; mobile-layout behaviour has no automated evidence; and compliance/administration perspectives still share the centre layout below their summary.
 
 ## MVP objective
 

@@ -2,7 +2,7 @@
 
 ## Current delivery gate
 
-**Milestone 1, Milestone 2A: Microsoft Entra Authentication Gate, Milestone 2B: Area Manager Audit to Corrective Action, and Milestone 2C: People & Access + User Invitations are accepted and complete. Milestone 3A: Daily Success is the only later milestone authorised and remains IMPLEMENTED / ACCEPTANCE REMEDIATION IN PROGRESS. It is not accepted.** Preserve the Encore application, Cloud connection, PostgreSQL authorisation foundation, authentication architecture, and existing tests. Milestone 3B and every later milestone remain locked.
+**Milestone 1, Milestone 2A: Microsoft Entra Authentication Gate, Milestone 2B: Area Manager Audit to Corrective Action, Milestone 2C: People & Access + User Invitations, and Milestone 3A: Daily Success are accepted and complete.** Preserve the Encore application, Cloud connection, PostgreSQL authorisation foundation, authentication architecture, and existing tests. Milestone 3B and every later milestone remain locked; no later milestone is authorised. Acceptance of Milestone 3A is an implementation acceptance only and does not make Centre Success production-ready.
 
 Milestone 3A is a live, read-only orchestration over source-owned corrective-action, quarterly-review, and People & Access facts. It must not add Daily Success persistence, copied workflow facts, snapshots, completion/acknowledgement/dismissal/snooze state, generic tasks, notifications, manual priorities, materialisation, role-name authorization, or a per-centre database authorizer loop. Only the Centre Director, Area Manager, Compliance Manager, and administration-only eligible System Administrator perspectives are approved. See `docs/DAILY_SUCCESS.md` and ADR-0015.
 
