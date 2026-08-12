@@ -4,9 +4,9 @@ Bright Steps Centre Success is a proposed operational success system for Austral
 
 ## Current status
 
-**Milestone 1, Milestone 2A — Authentication Gate, Milestone 2B — Area Manager Audit to Corrective Action, and Milestone 2C — People & Access + User Invitations are accepted and complete. No later milestone is authorised.**
+**Milestone 1, Milestone 2A — Authentication Gate, Milestone 2B — Area Manager Audit to Corrective Action, and Milestone 2C — People & Access + User Invitations are accepted and complete. Milestone 3A — Daily Success remains IMPLEMENTED / ACCEPTANCE REMEDIATION IN PROGRESS; it is not accepted. Milestone 3B and later work remain locked.**
 
-Milestone 0 architecture, Milestone 1 foundation, Milestone 2A authentication, and Milestone 2B quarterly review are complete. The repository contains one Encore `foundation` service with the organisation/centre/principal/access/audit foundation, Microsoft Entra authentication, the synthetic quarterly-review vertical slice, and the implemented Milestone 2C invitation-based People & Access workflow. The responsive Next.js application uses the generated client; database-backed authorisation and workflow tests plus automated quality checks preserve the authentication/authorisation boundary.
+The repository contains one Encore `foundation` service with the organisation/centre/principal/access/audit foundation, Microsoft Entra authentication, the synthetic quarterly-review vertical slice, People & Access, and the Milestone 3A live Daily Success priority projection. The responsive Next.js application uses the generated client; database-backed authorisation and workflow tests plus automated quality checks preserve the authentication/authorisation boundary. Daily Success adds no business table or mutation and remains subject to independent review and Product Owner acceptance.
 
 Microsoft Entra ID in the single Bright Steps Australia tenant is the approved authentication provider. The Next.js SPA uses MSAL Authorization Code with PKCE to obtain an access token for the Centre Success API. Encore strictly validates that token and maps its `tid + oid` identity to the existing provider-neutral internal principal, after which Centre Success reloads current membership, assignment-bound capabilities, and scopes from PostgreSQL. Entra user assignment is set to **No**, but authentication still grants no Centre Success access: unmapped or uninvited identities remain `not_provisioned`. Entra is not the business-authorisation source, users are not auto-provisioned, and Microsoft Graph is not integrated. See [Foundation Decisions](docs/FOUNDATION_DECISIONS.md), [People & Access Architecture](docs/PEOPLE_AND_ACCESS.md), [ADR-0012](docs/adr/0012-microsoft-entra-id-single-tenant-authentication.md), [ADR-0013](docs/adr/0013-milestone-2b-quarterly-review-vertical-slice.md), [ADR-0014](docs/adr/0014-people-and-access-invitation-architecture.md), and [MVP Build Plan](docs/MVP_BUILD_PLAN.md).
 
@@ -32,6 +32,7 @@ Microsoft Entra ID in the single Bright Steps Australia tenant is the approved a
 | [Personas](docs/PERSONAS.md) | User needs, risks, and contexts |
 | [User Roles](docs/USER_ROLES.md) | Operational responsibilities and separation of duties |
 | [People & Access Architecture](docs/PEOPLE_AND_ACCESS.md) | Implemented invitation, access lifecycle, approval, candidate-boundary, and security design |
+| [Daily Success](docs/DAILY_SUCCESS.md) | Live source orchestration, priority, timezone, authorization, API, and review boundary |
 | [Workflows](docs/WORKFLOWS.md) | End-to-end journeys and lifecycle states |
 | [NQS Framework](docs/NQS_FRAMEWORK.md) | NQF/NQS/QIP modelling and source governance |
 | [Compliance Engine](docs/COMPLIANCE_ENGINE.md) | Configurable controls, tasks, evidence, and corrective actions |

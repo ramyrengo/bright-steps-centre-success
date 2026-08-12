@@ -18,24 +18,29 @@ export function WorkflowShell({
   eyebrow,
   title,
   summary,
+  workspaceLinks,
   children,
 }: Readonly<{
   eyebrow: string;
   title: string;
   summary: string;
+  workspaceLinks?: readonly { href: string; label: string }[];
   children: ReactNode;
 }>) {
   const { signOut } = useCentreSuccessAuthentication();
+  const links = workspaceLinks ?? [
+    { href: "/area-manager", label: "Area Manager" },
+    { href: "/centre", label: "Centre" },
+    { href: "/compliance", label: "Compliance" },
+    { href: "/admin/people", label: "People & Access" },
+  ];
   return (
     <main className="workflow-shell">
       <header className="workflow-topbar">
         <Link className="workflow-brand" href="/">Bright Steps · Centre Success</Link>
-        <nav aria-label="Centre Success workspaces" className="workflow-nav">
-          <Link href="/area-manager">Area Manager</Link>
-          <Link href="/centre">Centre</Link>
-          <Link href="/compliance">Compliance</Link>
-          <Link href="/admin/people">People &amp; Access</Link>
-        </nav>
+        {links.length ? <nav aria-label="Centre Success workspaces" className="workflow-nav">
+          {links.map((link) => <Link href={link.href} key={link.href}>{link.label}</Link>)}
+        </nav> : null}
         <button className="auth-text-button" type="button" onClick={() => void signOut()}>
           Sign out
         </button>

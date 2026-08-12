@@ -38,6 +38,10 @@ ADR-0014 supersedes the earlier operational recommendation to require Entra ente
 
 Milestone 2C is **ACCEPTED / COMPLETE**. The workflow uses System-Administrator-created invitations, 72-hour one-time token generations, pending proposals outside active authorisation tables, permanent `tid + oid` identity, standard atomic activation, independent approval for privileged packages, non-recombining assignments, and at least one reachable active System Administrator. Microsoft Graph, Entra groups/app roles, email identity, HR synchronisation, and a permanent production bootstrap remain outside the approved boundary. See `docs/PEOPLE_AND_ACCESS.md` and ADR-0014.
 
+### Implemented Daily Success boundary
+
+Milestone 3A is implemented for independent review, not accepted. ADR-0015 adds one protected read-only request-time projection and makes `/` the operational home without changing the provider-neutral principal, PostgreSQL authorization source, modular-monolith deployment, or database ownership model. Current source capabilities and scopes—not role names or selected perspectives—derive Centre, Portfolio, Compliance, and administration-only views. One set-wise hierarchy query replaces per-centre authorizer calls. There is no Daily Success persistence, source-fact copy, notification, task mutation, or authorization cache. See `docs/DAILY_SUCCESS.md`.
+
 ## Authorisation model
 
 Roles are data-driven bundles. Runtime policy evaluates:
@@ -116,7 +120,7 @@ Database integration evidence also covers nested state/region ancestry, centre m
 
 - MFA, recovery, session-revocation expectations, authentication assurance, and step-up;
 - multi-organisation active-context selection/persistence beyond the exact-one Milestone 2A gate;
-- protected organisation/centre business APIs beyond the minimal self-context proof;
+- Milestone 3B and later product workflows beyond the approved Daily Success read projection;
 - authoritative organisation/portfolio source integration, hierarchy ownership, and propagation SLA;
 - break-glass or support impersonation;
 - production CORS origins and deployment/security operations; and

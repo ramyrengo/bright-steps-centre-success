@@ -17,9 +17,11 @@ const authMocks = vi.hoisted(() => ({
 
 const clientMocks = vi.hoisted(() => {
   const me = vi.fn();
+  const getDailySuccess = vi.fn();
   return {
-    client: { foundation: { me } },
+    client: { foundation: { me, getDailySuccess } },
     me,
+    getDailySuccess,
   };
 });
 
@@ -47,6 +49,17 @@ beforeEach(() => {
     signOut: authMocks.signOut,
     getAccessToken: authMocks.getAccessToken,
   }));
+  clientMocks.getDailySuccess.mockResolvedValue({
+    cacheControl: "private, no-store",
+    asOf: "2026-08-12T00:00:00.000Z",
+    status: "ready",
+    activePerspective: { kind: "centre", label: "Synthetic Centre", centreId: "centre" },
+    availablePerspectives: [{ kind: "centre", label: "Synthetic Centre", centreId: "centre" }],
+    businessDates: [], sections: [], attentionCentres: [], verificationItems: [],
+    aggregateCounts: { coverage: "complete", active: 0, urgent: 0, dueToday: 0, waiting: 0, distinctCentres: 0 },
+    positiveContext: { completedTodayCount: 0, recentTitles: [] },
+    sourceHealth: [], authorisationHealth: { status: "available" }, workspaceLinks: [],
+  });
 });
 
 afterEach(() => {
@@ -83,7 +96,7 @@ describe("Centre Success authentication shell", () => {
     expect(clientMocks.me).not.toHaveBeenCalled();
   });
 
-  test("renders safe provisioned identity details from foundation.me", async () => {
+  test("renders Daily Success after safe provisioned identity resolution", async () => {
     clientMocks.me.mockResolvedValue({
       provisioningStatus: "provisioned",
       principal: {
@@ -101,11 +114,10 @@ describe("Centre Success authentication shell", () => {
     expect(
       await screen.findByRole("heading", {
         level: 1,
-        name: "Welcome, Synthetic Centre Director",
+        name: "Good morning, Synthetic Centre Director",
       }),
     ).toBeDefined();
-    expect(screen.getByText("Connected", { exact: true })).toBeDefined();
-    expect(screen.getByText("Ready", { exact: true })).toBeDefined();
+    expect(screen.getByRole("heading", { name: "On track" })).toBeDefined();
 
     fireEvent.click(screen.getByRole("button", { name: "Sign out" }));
     expect(authMocks.signOut).toHaveBeenCalledOnce();
@@ -200,7 +212,7 @@ describe("Centre Success authentication shell", () => {
     expect(
       await screen.findByRole("heading", {
         level: 1,
-        name: "Welcome, Synthetic Centre Director",
+        name: "Good morning, Synthetic Centre Director",
       }),
     ).toBeDefined();
     expect(clientMocks.me).toHaveBeenCalledTimes(2);

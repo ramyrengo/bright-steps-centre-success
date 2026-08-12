@@ -46,6 +46,7 @@ vi.mock("../lib/centre-success-client", () => ({
 
 import { AreaManagerWorkspace } from "./area-manager-workspace";
 import { CentreActionWorkspace, CentreActionsWorkspace } from "./centre-actions-workspace";
+import { CentreReviewWorkspace } from "./centre-review-workspace";
 import { ComplianceOversightWorkspace } from "./compliance-oversight-workspace";
 import { QuarterlyAuditWorkspace } from "./quarterly-audit-workspace";
 import { VerificationWorkspace } from "./verification-workspace";
@@ -124,6 +125,56 @@ beforeEach(() => {
 afterEach(cleanup);
 
 describe("Milestone 2B role-focused workflows", () => {
+  test("Centre Director review route reads and acknowledges through the existing source workflow", async () => {
+    const finalAudit = {
+      ...AUDIT,
+      status: "FINALISED" as const,
+      score: 92,
+      riskStatus: "STRONG" as const,
+      sections: [{ ...AUDIT.sections[0], score: 92 }],
+      acknowledged: false,
+    };
+    foundation.getQuarterlyAudit
+      .mockResolvedValueOnce(finalAudit)
+      .mockResolvedValueOnce({ ...finalAudit, acknowledged: true });
+    foundation.acknowledgeQuarterlyAudit.mockResolvedValue({
+      acknowledgementId: "00000000-0000-4000-8000-000000000799",
+      acknowledgedAt: "2026-08-12T00:00:00.000Z",
+    });
+    render(<CentreReviewWorkspace auditId={AUDIT.id} />);
+    expect(await screen.findByText("BSA Internal Audit Score")).toBeDefined();
+    expect(screen.getByText(/not an ACECQA assessment or NQS rating/i)).toBeDefined();
+    expect(screen.getAllByRole("heading", { level: 1 })).toHaveLength(1);
+    expect(screen.queryByRole("navigation", { name: "Centre Success workspaces" })).toBeNull();
+    fireEvent.click(screen.getByRole("button", { name: "Acknowledge review" }));
+    await waitFor(() => expect(foundation.acknowledgeQuarterlyAudit).toHaveBeenCalledWith(AUDIT.id, {}));
+    expect(await screen.findByText("Review acknowledged.")).toBeDefined();
+  });
+
+  test("keeps acknowledgement success when the subsequent review refresh fails", async () => {
+    const finalAudit = {
+      ...AUDIT,
+      status: "FINALISED" as const,
+      score: 92,
+      riskStatus: "STRONG" as const,
+      sections: [{ ...AUDIT.sections[0], score: 92 }],
+      acknowledged: false,
+    };
+    foundation.getQuarterlyAudit
+      .mockResolvedValueOnce(finalAudit)
+      .mockRejectedValueOnce(new Error("synthetic refresh failure"));
+    foundation.acknowledgeQuarterlyAudit.mockResolvedValue({
+      acknowledgementId: "00000000-0000-4000-8000-000000000799",
+      acknowledgedAt: "2026-08-12T00:00:00.000Z",
+    });
+    render(<CentreReviewWorkspace auditId={AUDIT.id} />);
+    fireEvent.click(await screen.findByRole("button", { name: "Acknowledge review" }));
+    expect(await screen.findByText("Review acknowledged. Latest review details could not be refreshed.")).toBeDefined();
+    expect(screen.queryByText("The review could not be acknowledged. Reload and check your access.")).toBeNull();
+    expect(screen.queryByRole("button", { name: "Acknowledge review" })).toBeNull();
+    expect(foundation.acknowledgeQuarterlyAudit).toHaveBeenCalledTimes(1);
+  });
+
   test("Area Manager sees loading, empty and can prepare then start an assigned-centre review", async () => {
     const centre = [{ id: ACTION.centreId, name: ACTION.centreName, openCorrectiveActions: 0 }];
     let resolveCentres!: (value: { centres: typeof centre }) => void;

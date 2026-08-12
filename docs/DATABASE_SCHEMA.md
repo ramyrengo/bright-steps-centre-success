@@ -2,7 +2,7 @@
 
 ## Status
 
-This document remains the logical data architecture for the whole product. The foundation, authentication, Milestone 2B quarterly-review and Milestone 2C People & Access physical subsets are implemented through reviewed forward migrations. Later modules remain logical architecture only until separately authorised.
+This document remains the logical data architecture for the whole product. The foundation, authentication, Milestone 2B quarterly-review and Milestone 2C People & Access physical subsets are implemented through reviewed forward migrations. Milestone 3A Daily Success is implemented without a physical Daily Success table: it is a request-time projection over those source subsets. Later modules remain logical architecture only until separately authorised.
 
 ## Persistence strategy
 
@@ -96,6 +96,10 @@ Internal policy and external-source text remain distinguishable in origin metada
 
 ## Daily success and compliance-work module
 
+**Milestone 3A physical decision:** Daily Success persists no aggregate or entity. It reads source-owned corrective actions/findings, quarterly reviews/acknowledgements, and People & Access invitations/events at request time. `centres.timezone` and `organisations.default_timezone` are the authoritative business-date fields. No daily plan/check-in, task, snapshot, copied status/due/owner, preference, snooze, completion, manual priority, cache, or materialized projection is implemented.
+
+The following table remains possible later compliance-work architecture only; it does not describe Milestone 3A persistence and requires separate approval:
+
 | Aggregate/entity | Purpose and key relationships |
 | --- | --- |
 | Obligation instance | One control version applied to a centre occurrence/window |
@@ -103,12 +107,12 @@ Internal policy and external-source text remain distinguishable in origin metada
 | Task assignment | Current/history of assignees and delegation |
 | Task update | Progress, blocker, comment, transition, author |
 | Attestation | Versioned statement accepted by a user at a time |
-| Daily plan/check-in | Centre/business date, priorities, acknowledgement, wrap-up |
+| Daily plan/check-in | Deferred stateful planning concept; expressly not implemented by Milestone 3A |
 | Certification type | Governed type and reminder policy |
 | Certification record | Subject, issuer/source, verification, dates, restricted attachment link |
 | Expiry reminder | Derived delivery state, never the authoritative expiry |
 
-The daily view is a query/projection over source records. It must not duplicate their status as an independent truth.
+The implemented Daily Success view is a query/projection over source records and never duplicates their status as an independent truth. ADR-0015 governs this boundary.
 
 ## Evidence module
 

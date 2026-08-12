@@ -15,6 +15,7 @@ import {
   useCentreSuccessAuthentication,
 } from "@/lib/centre-success-authentication";
 import { useAuthenticatedCentreSuccessClient } from "@/lib/centre-success-client";
+import { DailySuccessHome } from "@/components/daily-success-home";
 
 function errorReason(details: unknown): string | undefined {
   if (typeof details !== "object" || details === null) {
@@ -136,6 +137,10 @@ function AuthenticatedAccess() {
     setState({ kind: "loading" });
     setAttempt((current) => current + 1);
   }, []);
+
+  if (state.kind === "ready" && state.displayName) {
+    return <DailySuccessHome displayName={state.displayName} />;
+  }
 
   return <AuthenticationGate authenticatedState={state} onRetry={retry} />;
 }
