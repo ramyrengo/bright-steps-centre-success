@@ -219,8 +219,10 @@ durable audit row.
 ## Consequences
 
 Milestone 2A adds MSAL browser dependencies and a standards-compliant JWT/JWKS
-verification dependency, but no Microsoft Graph integration or second backend
-service. The tenant, API application/client ID, Web SPA application/client ID,
+verification dependency, but no Microsoft Graph authentication/authorisation
+integration or second backend service. ADR-0016 later approves a separate,
+staging-only app-only invitation-email send without changing this boundary. The
+tenant, API application/client ID, Web SPA application/client ID,
 API scope, admin consent, and working local MSAL v5 `/redirect` path are
 confirmed. The connected proof first demonstrated real BSA sign-in, API
 access-token acquisition, strict Encore verification, safe unmapped denial,

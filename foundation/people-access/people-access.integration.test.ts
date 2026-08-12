@@ -7,7 +7,7 @@ import {
 } from "node:crypto";
 import { readFileSync } from "node:fs";
 import { createLocalJWKSet, type JWK } from "jose";
-import { beforeAll, describe, expect, test } from "vitest";
+import { beforeAll, describe, expect, test, vi } from "vitest";
 import { FOUNDATION_CAPABILITIES as capability } from "../authorization/capabilities";
 import { authoriseCentreFromDatabase } from "../authorization/database-authoriser";
 import { authorise } from "../authorization/policy";
@@ -29,9 +29,13 @@ import {
   transitionPrincipalLifecycle,
   type PeopleAccessWorkflowDependencies,
 } from "./service";
-import { deliverInvitationOutboxMessage } from "./outbox";
+import {
+  claimInvitationDeliveriesForDispatch,
+  deliverInvitationOutboxMessage,
+  dispatchPendingInvitationDeliveries,
+} from "./outbox";
 import { getAccessHistory, getInvitationSummary } from "./queries";
-import type { InvitationDeliveryRequest } from "./email";
+import { InvitationDeliveryError, type InvitationDeliveryRequest } from "./email";
 
 const TENANT_ID = "27026100-3522-48b5-8e95-80230afc4127";
 const TEST_API_CLIENT_ID = "22222222-2222-4222-8222-222222222222";
@@ -218,6 +222,24 @@ async function createAndSendStandard(h: ReturnType<typeof harness>, email: strin
   }, h.dependencies);
 }
 
+async function createDeliveryFixture(label: string, start = DECISION_AT) {
+  const h = harness(start);
+  const sent = await createAndSendStandard(
+    h,
+    `${label}-${randomUUID()}@brightsteps.example`,
+  );
+  const outbox = await centreSuccessDB.queryRow<{ id: string }>`
+    SELECT outbox.id
+    FROM people_notification_outbox AS outbox
+    JOIN invitation_token_generations AS generation
+      ON generation.id = outbox.token_generation_id
+    WHERE outbox.invitation_id = ${sent.id}
+      AND generation.status = 'CURRENT'
+  `;
+  if (!outbox) throw new Error("synthetic invitation outbox missing");
+  return { h, sent, outboxId: outbox.id };
+}
+
 describe("Milestone 2C People & Access PostgreSQL workflows", () => {
   test("migration 016 refuses an unclassifiable inactive legacy principal", async () => {
     const migration = readFileSync(
@@ -283,11 +305,18 @@ describe("Milestone 2C People & Access PostgreSQL workflows", () => {
       deliveries.push(request);
       return { providerReference: "test-provider-reference" };
     } };
-    await deliverInvitationOutboxMessage(
-      { outboxId: stored!.outbox_id },
-      adapter,
-      { deliveryEncryptionKey: h.deliveryEncryptionKey, publicBaseUrl: "http://localhost:3000" },
-    );
+    await Promise.all([
+      deliverInvitationOutboxMessage(
+        { outboxId: stored!.outbox_id },
+        adapter,
+        { deliveryEncryptionKey: h.deliveryEncryptionKey, publicBaseUrl: "http://localhost:3000" },
+      ),
+      deliverInvitationOutboxMessage(
+        { outboxId: stored!.outbox_id },
+        adapter,
+        { deliveryEncryptionKey: h.deliveryEncryptionKey, publicBaseUrl: "http://localhost:3000" },
+      ),
+    ]);
     await deliverInvitationOutboxMessage(
       { outboxId: stored!.outbox_id },
       adapter,
@@ -299,15 +328,32 @@ describe("Milestone 2C People & Access PostgreSQL workflows", () => {
     const erasedDelivery = await centreSuccessDB.queryRow<{
       status: string;
       material_erased: boolean;
+      provider_reference: string;
     }>`
-      SELECT status,
+      SELECT outbox.status,
              encrypted_token IS NULL
                AND encryption_iv IS NULL
-               AND encryption_tag IS NULL AS material_erased
-      FROM people_notification_outbox
-      WHERE id = ${stored!.outbox_id}
+               AND encryption_tag IS NULL AS material_erased,
+             attempt.provider_reference
+      FROM people_notification_outbox AS outbox
+      JOIN people_notification_delivery_attempts AS attempt
+        ON attempt.outbox_id = outbox.id
+       AND attempt.status = 'DELIVERED'
+      WHERE outbox.id = ${stored!.outbox_id}
     `;
-    expect(erasedDelivery).toEqual({ status: "DELIVERED", material_erased: true });
+    expect(erasedDelivery).toEqual({
+      status: "DELIVERED",
+      material_erased: true,
+      provider_reference: "test-provider-reference",
+    });
+    const concurrentReservations = await centreSuccessDB.queryAll<{
+      attempt_number: number; status: string;
+    }>`
+      SELECT attempt_number, status
+      FROM people_notification_provider_attempts
+      WHERE outbox_id = ${stored!.outbox_id}
+    `;
+    expect(concurrentReservations).toEqual([{ attempt_number: 1, status: "ACCEPTED" }]);
 
     const previousToken = h.token();
     const resent = await sendInvitation({
@@ -339,12 +385,15 @@ describe("Milestone 2C People & Access PostgreSQL workflows", () => {
       { outboxId: retryableOutbox!.id },
       { deliverInvitation: async () => { throw new Error("synthetic provider outage containing no credential"); } },
       { deliveryEncryptionKey: h.deliveryEncryptionKey, publicBaseUrl: "http://localhost:3000" },
-    )).rejects.toThrow("synthetic provider outage");
+    )).resolves.toBeUndefined();
     const retryState = await centreSuccessDB.queryRow<{
-      status: string; error_class: string; attempt_status: string;
+      status: string; error_class: string; attempt_status: string; material_retained: boolean;
     }>`
       SELECT outbox.status, outbox.last_error_class AS error_class,
-             attempt.status AS attempt_status
+             attempt.status AS attempt_status,
+             outbox.encrypted_token IS NOT NULL
+               AND outbox.encryption_iv IS NOT NULL
+               AND outbox.encryption_tag IS NOT NULL AS material_retained
       FROM people_notification_outbox AS outbox
       JOIN people_notification_delivery_attempts AS attempt ON attempt.outbox_id = outbox.id
       WHERE outbox.id = ${retryableOutbox!.id}
@@ -353,8 +402,664 @@ describe("Milestone 2C People & Access PostgreSQL workflows", () => {
       status: "PENDING",
       error_class: "provider_retryable",
       attempt_status: "RETRYABLE_FAILURE",
+      material_retained: true,
     });
     expect(JSON.stringify(retryState)).not.toContain(h.token());
+
+    const prematureRetry = vi.fn(async () => ({ providerReference: "unexpected-retry" }));
+    await deliverInvitationOutboxMessage(
+      { outboxId: retryableOutbox!.id },
+      { deliverInvitation: prematureRetry },
+      { deliveryEncryptionKey: h.deliveryEncryptionKey, publicBaseUrl: "http://localhost:3000" },
+    );
+    expect(prematureRetry).not.toHaveBeenCalled();
+
+    await centreSuccessDB.exec`
+      UPDATE people_notification_outbox
+      SET next_attempt_at = now() - interval '1 second'
+      WHERE id = ${retryableOutbox!.id}
+    `;
+    let retryableProviderCalls = 1;
+    await deliverInvitationOutboxMessage(
+      { outboxId: retryableOutbox!.id },
+      {
+        deliverInvitation: async () => {
+          retryableProviderCalls += 1;
+          throw new InvitationDeliveryError("graph.mailbox_authorization", true, 1_000);
+        },
+      },
+      { deliveryEncryptionKey: h.deliveryEncryptionKey, publicBaseUrl: "http://localhost:3000" },
+    );
+    const secondRetryState = await centreSuccessDB.queryRow<{
+      status: string; error_class: string; attempt_statuses: string[];
+    }>`
+      SELECT outbox.status, outbox.last_error_class AS error_class,
+             array_agg(attempt.status ORDER BY attempt.attempt_number) AS attempt_statuses
+      FROM people_notification_outbox AS outbox
+      JOIN people_notification_delivery_attempts AS attempt ON attempt.outbox_id = outbox.id
+      WHERE outbox.id = ${retryableOutbox!.id}
+      GROUP BY outbox.id
+    `;
+    expect(secondRetryState).toEqual({
+      status: "PENDING",
+      error_class: "graph.mailbox_authorization",
+      attempt_statuses: ["RETRYABLE_FAILURE", "RETRYABLE_FAILURE"],
+    });
+
+    await centreSuccessDB.exec`
+      UPDATE people_notification_outbox
+      SET next_attempt_at = now() - interval '1 second'
+      WHERE id = ${retryableOutbox!.id}
+    `;
+    await deliverInvitationOutboxMessage(
+      { outboxId: retryableOutbox!.id },
+      {
+        deliverInvitation: async () => {
+          retryableProviderCalls += 1;
+          throw new InvitationDeliveryError("graph.service_unavailable", true);
+        },
+      },
+      { deliveryEncryptionKey: h.deliveryEncryptionKey, publicBaseUrl: "http://localhost:3000" },
+    );
+    const exhaustedState = await centreSuccessDB.queryRow<{
+      status: string; error_class: string; attempt_statuses: string[];
+      error_classes: string[]; material_retained: boolean;
+    }>`
+      SELECT outbox.status, outbox.last_error_class AS error_class,
+             array_agg(attempt.status ORDER BY attempt.attempt_number) AS attempt_statuses,
+             array_agg(attempt.error_class ORDER BY attempt.attempt_number) AS error_classes,
+             outbox.encrypted_token IS NOT NULL
+               AND outbox.encryption_iv IS NOT NULL
+               AND outbox.encryption_tag IS NOT NULL AS material_retained
+      FROM people_notification_outbox AS outbox
+      JOIN people_notification_delivery_attempts AS attempt ON attempt.outbox_id = outbox.id
+      WHERE outbox.id = ${retryableOutbox!.id}
+      GROUP BY outbox.id
+    `;
+    expect(exhaustedState).toEqual({
+      status: "FAILED",
+      error_class: "delivery_attempts_exhausted",
+      attempt_statuses: [
+        "RETRYABLE_FAILURE",
+        "RETRYABLE_FAILURE",
+        "PERMANENT_FAILURE",
+      ],
+      error_classes: [
+        "provider_retryable",
+        "graph.mailbox_authorization",
+        "delivery_attempts_exhausted",
+      ],
+      material_retained: true,
+    });
+    expect(retryableProviderCalls).toBe(3);
+
+    const afterExhaustion = vi.fn(async () => ({ providerReference: "must-not-deliver" }));
+    await deliverInvitationOutboxMessage(
+      { outboxId: retryableOutbox!.id },
+      { deliverInvitation: afterExhaustion },
+      { deliveryEncryptionKey: h.deliveryEncryptionKey, publicBaseUrl: "http://localhost:3000" },
+    );
+    expect(afterExhaustion).not.toHaveBeenCalled();
+    const publishedIds: string[] = [];
+    await dispatchPendingInvitationDeliveries(async (message) => {
+      publishedIds.push(message.outboxId);
+      return `synthetic-publish-${publishedIds.length}`;
+    });
+    expect(publishedIds).not.toContain(retryableOutbox!.id);
+
+    const rotatedAfterExhaustion = await sendInvitation({
+      organisationId: fixture.organisationId,
+      invitationId: draft.id,
+      actorPrincipalId: fixture.inviterId,
+      expectedLockVersion: resent.lockVersion,
+      resend: true,
+    }, h.dependencies);
+    expect(rotatedAfterExhaustion.status).toBe("SENT");
+    const outboxStatuses = await centreSuccessDB.queryAll<{ status: string }>`
+      SELECT outbox.status FROM people_notification_outbox AS outbox
+      JOIN invitation_token_generations AS generation
+        ON generation.id = outbox.token_generation_id
+      WHERE outbox.invitation_id = ${draft.id}
+      ORDER BY generation.generation
+    `;
+    expect(outboxStatuses.map((row) => row.status)).toEqual([
+      "DELIVERED",
+      "FAILED",
+      "PENDING",
+    ]);
+  });
+
+  test("never delivers a superseded invitation generation after resend", async () => {
+    const h = harness();
+    const draft = await createInvitation({
+      organisationId: fixture.organisationId,
+      actorPrincipalId: fixture.inviterId,
+      request: {
+        email: "superseded-delivery@brightsteps.example",
+        displayName: "Synthetic Superseded Delivery Candidate",
+        assignments: [{
+          roleKey: "centre_director",
+          scopes: [{ scopeType: "centre", centreId: fixture.centreA }],
+        }],
+        reason: "Prove current-generation delivery enforcement.",
+      },
+    }, h.dependencies);
+    const sent = await sendInvitation({
+      organisationId: fixture.organisationId,
+      invitationId: draft.id,
+      actorPrincipalId: fixture.inviterId,
+      expectedLockVersion: draft.lockVersion,
+      resend: false,
+    }, h.dependencies);
+    const firstOutbox = await centreSuccessDB.queryRow<{ id: string }>`
+      SELECT id FROM people_notification_outbox
+      WHERE invitation_id = ${draft.id}
+    `;
+    await sendInvitation({
+      organisationId: fixture.organisationId,
+      invitationId: draft.id,
+      actorPrincipalId: fixture.inviterId,
+      expectedLockVersion: sent.lockVersion,
+      resend: true,
+    }, h.dependencies);
+
+    const deliver = vi.fn(async () => ({ providerReference: "must-not-send" }));
+    await deliverInvitationOutboxMessage(
+      { outboxId: firstOutbox!.id },
+      { deliverInvitation: deliver },
+      { deliveryEncryptionKey: h.deliveryEncryptionKey, publicBaseUrl: "http://localhost:3000" },
+    );
+    expect(deliver).not.toHaveBeenCalled();
+    const state = await centreSuccessDB.queryRow<{
+      status: string; error_class: string; provider_attempts: number;
+    }>`
+      SELECT outbox.status, outbox.last_error_class AS error_class,
+             (SELECT count(*)::integer
+              FROM people_notification_provider_attempts
+              WHERE outbox_id = outbox.id) AS provider_attempts
+      FROM people_notification_outbox AS outbox
+      WHERE outbox.id = ${firstOutbox!.id}
+    `;
+    expect(state).toEqual({
+      status: "FAILED",
+      error_class: "invitation_generation_not_current",
+      provider_attempts: 0,
+    });
+  });
+
+  test("durably consumes at most three provider reservations across accepted-but-unreconciled crashes", async () => {
+    const delivery = await createDeliveryFixture("durable-provider-cap");
+    const provider = vi.fn(async () => ({ providerReference: "accepted-before-result-rollback" }));
+    const failResultTransaction = async () => {
+      throw new Error("synthetic result transaction commit failure");
+    };
+
+    for (let attempt = 1; attempt <= 3; attempt += 1) {
+      await expect(deliverInvitationOutboxMessage(
+        { outboxId: delivery.outboxId },
+        { deliverInvitation: provider },
+        {
+          deliveryEncryptionKey: delivery.h.deliveryEncryptionKey,
+          publicBaseUrl: "http://localhost:3000",
+        },
+        {
+          beforeResultCommit: failResultTransaction,
+          providerAttemptLeaseMilliseconds: 1,
+        },
+      )).rejects.toThrow("synthetic result transaction commit failure");
+
+      const persisted = await centreSuccessDB.queryAll<{
+        attempt_number: number; status: string;
+      }>`
+        SELECT attempt_number, status
+        FROM people_notification_provider_attempts
+        WHERE outbox_id = ${delivery.outboxId}
+        ORDER BY attempt_number
+      `;
+      expect(persisted).toHaveLength(attempt);
+      expect(persisted.at(-1)).toEqual({ attempt_number: attempt, status: "RESERVED" });
+
+      await new Promise((resolve) => setTimeout(resolve, 5));
+    }
+
+    const forbiddenFourthCall = vi.fn(async () => ({ providerReference: "must-not-send" }));
+    await deliverInvitationOutboxMessage(
+      { outboxId: delivery.outboxId },
+      { deliverInvitation: forbiddenFourthCall },
+      {
+        deliveryEncryptionKey: delivery.h.deliveryEncryptionKey,
+        publicBaseUrl: "http://localhost:3000",
+      },
+    );
+    expect(provider).toHaveBeenCalledTimes(3);
+    expect(forbiddenFourthCall).not.toHaveBeenCalled();
+
+    const state = await centreSuccessDB.queryRow<{
+      status: string; error_class: string; reservation_numbers: number[];
+      reservation_statuses: string[]; history_statuses: string[];
+    }>`
+      SELECT outbox.status, outbox.last_error_class AS error_class,
+        array_agg(DISTINCT reservation.attempt_number ORDER BY reservation.attempt_number)
+          AS reservation_numbers,
+        array_agg(DISTINCT reservation.status ORDER BY reservation.status)
+          AS reservation_statuses,
+        array_agg(DISTINCT history.status ORDER BY history.status)
+          AS history_statuses
+      FROM people_notification_outbox AS outbox
+      JOIN people_notification_provider_attempts AS reservation
+        ON reservation.outbox_id = outbox.id
+      JOIN people_notification_delivery_attempts AS history
+        ON history.outbox_id = outbox.id
+      WHERE outbox.id = ${delivery.outboxId}
+      GROUP BY outbox.id
+    `;
+    expect(state).toEqual({
+      status: "FAILED",
+      error_class: "delivery_attempts_exhausted",
+      reservation_numbers: [1, 2, 3],
+      reservation_statuses: ["AMBIGUOUS"],
+      history_statuses: ["AMBIGUOUS"],
+    });
+    await expect(centreSuccessDB.exec`
+      DELETE FROM people_notification_provider_attempts
+      WHERE outbox_id = ${delivery.outboxId} AND attempt_number = 1
+    `).rejects.toThrow(/cannot be deleted/);
+    await expect(centreSuccessDB.exec`
+      UPDATE people_notification_provider_attempts
+      SET status = 'RETRYABLE_FAILURE', completed_at = now(), updated_at = now()
+      WHERE outbox_id = ${delivery.outboxId} AND attempt_number = 1
+    `).rejects.toThrow(/outcome is terminal/);
+
+    await expect(centreSuccessDB.exec`
+      INSERT INTO people_notification_provider_attempts (
+        id, organisation_id, outbox_id, attempt_number, status,
+        reserved_at, lease_expires_at, updated_at
+      ) VALUES (
+        ${randomUUID()}, ${fixture.organisationId}, ${delivery.outboxId}, 4,
+        'RESERVED', now(), now() + interval '1 minute', now()
+      )
+    `).rejects.toThrow();
+  });
+
+  test("never reaches the provider when the reservation transaction cannot commit", async () => {
+    const delivery = await createDeliveryFixture("reservation-commit-failure");
+    const provider = vi.fn(async () => ({ providerReference: "must-not-send" }));
+    await expect(deliverInvitationOutboxMessage(
+      { outboxId: delivery.outboxId },
+      { deliverInvitation: provider },
+      {
+        deliveryEncryptionKey: delivery.h.deliveryEncryptionKey,
+        publicBaseUrl: "http://localhost:3000",
+      },
+      {
+        beforeReservationCommit: async () => {
+          throw new Error("synthetic reservation commit failure");
+        },
+      },
+    )).rejects.toThrow("synthetic reservation commit failure");
+    expect(provider).not.toHaveBeenCalled();
+    const state = await centreSuccessDB.queryRow<{
+      status: string; reservations: number;
+    }>`
+      SELECT outbox.status,
+        (SELECT count(*)::integer
+         FROM people_notification_provider_attempts
+         WHERE outbox_id = outbox.id) AS reservations
+      FROM people_notification_outbox AS outbox
+      WHERE id = ${delivery.outboxId}
+    `;
+    expect(state).toEqual({ status: "PENDING", reservations: 0 });
+    await expect(centreSuccessDB.exec`
+      INSERT INTO people_notification_provider_attempts (
+        id, organisation_id, outbox_id, attempt_number, status,
+        reserved_at, lease_expires_at, updated_at
+      ) VALUES (
+        ${randomUUID()}, ${fixture.organisationId}, ${delivery.outboxId}, 2,
+        'RESERVED', now(), now() + interval '1 minute', now()
+      )
+    `).rejects.toThrow(/next contiguous attempt/);
+  });
+
+  test("consumes a crash-before-send reservation and permits only the next numbered slot", async () => {
+    const delivery = await createDeliveryFixture("crash-before-provider");
+    const provider = vi.fn(async () => ({ providerReference: "second-slot-delivery" }));
+    await expect(deliverInvitationOutboxMessage(
+      { outboxId: delivery.outboxId },
+      { deliverInvitation: provider },
+      {
+        deliveryEncryptionKey: delivery.h.deliveryEncryptionKey,
+        publicBaseUrl: "http://localhost:3000",
+      },
+      {
+        providerAttemptLeaseMilliseconds: 50,
+        afterReservationCommitted: async () => {
+          throw new Error("synthetic crash before Graph");
+        },
+      },
+    )).rejects.toThrow("synthetic crash before Graph");
+    expect(provider).not.toHaveBeenCalled();
+
+    await deliverInvitationOutboxMessage(
+      { outboxId: delivery.outboxId },
+      { deliverInvitation: provider },
+      {
+        deliveryEncryptionKey: delivery.h.deliveryEncryptionKey,
+        publicBaseUrl: "http://localhost:3000",
+      },
+    );
+    expect(provider).not.toHaveBeenCalled();
+
+    await new Promise((resolve) => setTimeout(resolve, 60));
+    await deliverInvitationOutboxMessage(
+      { outboxId: delivery.outboxId },
+      { deliverInvitation: provider },
+      {
+        deliveryEncryptionKey: delivery.h.deliveryEncryptionKey,
+        publicBaseUrl: "http://localhost:3000",
+      },
+    );
+    expect(provider).toHaveBeenCalledTimes(1);
+    const reservations = await centreSuccessDB.queryAll<{
+      attempt_number: number; status: string;
+    }>`
+      SELECT attempt_number, status
+      FROM people_notification_provider_attempts
+      WHERE outbox_id = ${delivery.outboxId}
+      ORDER BY attempt_number
+    `;
+    expect(reservations).toEqual([
+      { attempt_number: 1, status: "AMBIGUOUS" },
+      { attempt_number: 2, status: "ACCEPTED" },
+    ]);
+  });
+
+  test("recovers stale dispatch claims and compare-and-set reconciliation never overwrites worker outcomes", async () => {
+    const stale = await createDeliveryFixture("stale-dispatch-claim");
+    const initialClaims = await claimInvitationDeliveriesForDispatch();
+    expect(initialClaims.map((claim) => claim.outboxId)).toContain(stale.outboxId);
+    const claimedState = await centreSuccessDB.queryRow<{ status: string; has_lease: boolean }>`
+      SELECT status,
+             dispatch_lease_id IS NOT NULL AND dispatch_lease_expires_at IS NOT NULL AS has_lease
+      FROM people_notification_outbox WHERE id = ${stale.outboxId}
+    `;
+    expect(claimedState).toEqual({ status: "PUBLISHED", has_lease: true });
+    const activeLeaseClaims = await claimInvitationDeliveriesForDispatch();
+    expect(activeLeaseClaims.map((claim) => claim.outboxId)).not.toContain(stale.outboxId);
+    await centreSuccessDB.exec`
+      UPDATE people_notification_outbox
+      SET dispatch_lease_expires_at = now() - interval '1 second'
+      WHERE id = ${stale.outboxId}
+    `;
+    const recoveredPublications: string[] = [];
+    await dispatchPendingInvitationDeliveries(async (message) => {
+      recoveredPublications.push(message.outboxId);
+      return randomUUID();
+    });
+    expect(recoveredPublications).toContain(stale.outboxId);
+    const publishedWithoutReconciliation = await centreSuccessDB.queryRow<{ status: string }>`
+      SELECT status FROM people_notification_outbox WHERE id = ${stale.outboxId}
+    `;
+    expect(publishedWithoutReconciliation?.status).toBe("PUBLISHED");
+    await centreSuccessDB.exec`
+      UPDATE people_notification_outbox
+      SET dispatch_lease_expires_at = now() - interval '1 second'
+      WHERE id = ${stale.outboxId}
+    `;
+    const republishedAfterAmbiguousSuccess: string[] = [];
+    await dispatchPendingInvitationDeliveries(async (message) => {
+      republishedAfterAmbiguousSuccess.push(message.outboxId);
+      return randomUUID();
+    });
+    expect(republishedAfterAmbiguousSuccess).toContain(stale.outboxId);
+
+    const scenarios = [
+      {
+        label: "pending",
+        adapter: {
+          deliverInvitation: async () => {
+            throw new InvitationDeliveryError("graph.service_unavailable", true, 60_000);
+          },
+        },
+        expectedStatus: "PENDING",
+      },
+      {
+        label: "failed",
+        adapter: {
+          deliverInvitation: async () => {
+            throw new InvitationDeliveryError("graph.authentication_configuration", false);
+          },
+        },
+        expectedStatus: "FAILED",
+      },
+      {
+        label: "delivered",
+        adapter: {
+          deliverInvitation: async () => ({ providerReference: "worker-won-dispatch-race" }),
+        },
+        expectedStatus: "DELIVERED",
+      },
+    ] as const;
+
+    for (const scenario of scenarios) {
+      const item = await createDeliveryFixture(`dispatch-race-${scenario.label}`);
+      await expect(dispatchPendingInvitationDeliveries(async (message) => {
+        if (message.outboxId !== item.outboxId) return randomUUID();
+        await deliverInvitationOutboxMessage(
+          message,
+          scenario.adapter,
+          {
+            deliveryEncryptionKey: item.h.deliveryEncryptionKey,
+            publicBaseUrl: "http://localhost:3000",
+          },
+        );
+        throw new Error("synthetic ambiguous publish acknowledgement");
+      })).rejects.toThrow("synthetic ambiguous publish acknowledgement");
+      const state = await centreSuccessDB.queryRow<{
+        status: string; dispatch_lease_id: string | null; next_attempt_at: Date;
+      }>`
+        SELECT status, dispatch_lease_id, next_attempt_at
+        FROM people_notification_outbox WHERE id = ${item.outboxId}
+      `;
+      expect(state?.status).toBe(scenario.expectedStatus);
+      expect(state?.dispatch_lease_id).toBeNull();
+      if (scenario.expectedStatus === "PENDING") {
+        expect(state!.next_attempt_at.getTime()).toBeGreaterThan(Date.now() + 30_000);
+      }
+    }
+  });
+
+  test("materialises elapsed resend invitations as expired at the exact boundary without rotation", async () => {
+    const before = await createDeliveryFixture("resend-before-expiry");
+    before.h.setNow(new Date(DECISION_AT.getTime() + 72 * 60 * 60 * 1_000 - 1));
+    await expect(sendInvitation({
+      organisationId: fixture.organisationId,
+      invitationId: before.sent.id,
+      actorPrincipalId: fixture.inviterId,
+      expectedLockVersion: before.sent.lockVersion,
+      resend: true,
+    }, before.h.dependencies)).resolves.toMatchObject({ status: "SENT" });
+
+    for (const offset of [0, 1]) {
+      const item = await createDeliveryFixture(`resend-expired-${offset}`);
+      item.h.setNow(new Date(DECISION_AT.getTime() + 72 * 60 * 60 * 1_000 + offset));
+      await expect(sendInvitation({
+        organisationId: fixture.organisationId,
+        invitationId: item.sent.id,
+        actorPrincipalId: fixture.inviterId,
+        expectedLockVersion: item.sent.lockVersion,
+        resend: true,
+      }, item.h.dependencies)).rejects.toMatchObject({ code: "invitation_expired" });
+      const state = await centreSuccessDB.queryRow<{
+        invitation_status: string; generation_status: string;
+        generations: number; outboxes: number;
+      }>`
+        SELECT invitation.status AS invitation_status,
+               generation.status AS generation_status,
+               (SELECT count(*)::integer FROM invitation_token_generations
+                WHERE invitation_id = invitation.id) AS generations,
+               (SELECT count(*)::integer FROM people_notification_outbox
+                WHERE invitation_id = invitation.id) AS outboxes
+        FROM access_invitations AS invitation
+        JOIN invitation_token_generations AS generation
+          ON generation.invitation_id = invitation.id
+        WHERE invitation.id = ${item.sent.id}
+      `;
+      expect(state).toEqual({
+        invitation_status: "EXPIRED",
+        generation_status: "EXPIRED",
+        generations: 1,
+        outboxes: 1,
+      });
+    }
+
+    const concurrent = await createDeliveryFixture("concurrent-resend-expiry");
+    concurrent.h.setNow(new Date(DECISION_AT.getTime() + 72 * 60 * 60 * 1_000));
+    const requests = await Promise.allSettled([
+      sendInvitation({
+        organisationId: fixture.organisationId,
+        invitationId: concurrent.sent.id,
+        actorPrincipalId: fixture.inviterId,
+        expectedLockVersion: concurrent.sent.lockVersion,
+        resend: true,
+      }, concurrent.h.dependencies),
+      sendInvitation({
+        organisationId: fixture.organisationId,
+        invitationId: concurrent.sent.id,
+        actorPrincipalId: fixture.inviterId,
+        expectedLockVersion: concurrent.sent.lockVersion,
+        resend: true,
+      }, concurrent.h.dependencies),
+    ]);
+    expect(requests.every((request) => request.status === "rejected")).toBe(true);
+    const concurrentCounts = await centreSuccessDB.queryRow<{
+      status: string; generations: number; outboxes: number;
+    }>`
+      SELECT status,
+        (SELECT count(*)::integer FROM invitation_token_generations
+         WHERE invitation_id = invitation.id) AS generations,
+        (SELECT count(*)::integer FROM people_notification_outbox
+         WHERE invitation_id = invitation.id) AS outboxes
+      FROM access_invitations AS invitation
+      WHERE id = ${concurrent.sent.id}
+    `;
+    expect(concurrentCounts).toEqual({ status: "EXPIRED", generations: 1, outboxes: 1 });
+
+    const cancelled = await createDeliveryFixture("cancelled-remains-terminal");
+    const cancelledSummary = await cancelInvitation({
+      organisationId: fixture.organisationId,
+      invitationId: cancelled.sent.id,
+      actorPrincipalId: fixture.inviterId,
+      expectedLockVersion: cancelled.sent.lockVersion,
+      reason: "Prove elapsed resend cannot rewrite a cancelled invitation.",
+    }, cancelled.h.dependencies);
+    cancelled.h.setNow(new Date(DECISION_AT.getTime() + 72 * 60 * 60 * 1_000));
+    await expect(sendInvitation({
+      organisationId: fixture.organisationId,
+      invitationId: cancelled.sent.id,
+      actorPrincipalId: fixture.inviterId,
+      expectedLockVersion: cancelledSummary.lockVersion,
+      resend: true,
+    }, cancelled.h.dependencies)).rejects.toMatchObject({ code: "invalid_state" });
+    await expect(getInvitationSummary(
+      fixture.organisationId,
+      cancelled.sent.id,
+    )).resolves.toMatchObject({ status: "CANCELLED" });
+  });
+
+  test("serializes cancellation with delivery and never sends after cancellation wins", async () => {
+    const h = harness();
+    const createSentInvitation = async (suffix: string) => {
+      const draft = await createInvitation({
+        organisationId: fixture.organisationId,
+        actorPrincipalId: fixture.inviterId,
+        request: {
+          email: `cancel-delivery-${suffix}-${randomUUID()}@brightsteps.example`,
+          displayName: `Synthetic Cancel Delivery ${suffix}`,
+          assignments: [{
+            roleKey: "centre_director",
+            scopes: [{ scopeType: "centre", centreId: fixture.centreA }],
+          }],
+          reason: "Prove cancellation and delivery ordering.",
+        },
+      }, h.dependencies);
+      const sent = await sendInvitation({
+        organisationId: fixture.organisationId,
+        invitationId: draft.id,
+        actorPrincipalId: fixture.inviterId,
+        expectedLockVersion: draft.lockVersion,
+        resend: false,
+      }, h.dependencies);
+      const outbox = await centreSuccessDB.queryRow<{ id: string }>`
+        SELECT id FROM people_notification_outbox WHERE invitation_id = ${sent.id}
+      `;
+      return { sent, outboxId: outbox!.id };
+    };
+
+    const deliveryWins = await createSentInvitation("delivery-first");
+    let releaseDelivery!: () => void;
+    let markStarted!: () => void;
+    const deliveryStarted = new Promise<void>((resolve) => { markStarted = resolve; });
+    const deliveryRelease = new Promise<void>((resolve) => { releaseDelivery = resolve; });
+    const adapter = vi.fn(async () => {
+      markStarted();
+      await deliveryRelease;
+      return { providerReference: "test-delivery-before-cancel" };
+    });
+    const deliveryPromise = deliverInvitationOutboxMessage(
+      { outboxId: deliveryWins.outboxId },
+      { deliverInvitation: adapter },
+      { deliveryEncryptionKey: h.deliveryEncryptionKey, publicBaseUrl: "http://localhost:3000" },
+    );
+    await deliveryStarted;
+    let cancelSettled = false;
+    const cancelPromise = cancelInvitation({
+      organisationId: fixture.organisationId,
+      invitationId: deliveryWins.sent.id,
+      actorPrincipalId: fixture.inviterId,
+      expectedLockVersion: deliveryWins.sent.lockVersion,
+      reason: "Cancel while provider delivery holds the invitation lock.",
+    }, h.dependencies).finally(() => { cancelSettled = true; });
+    await new Promise((resolve) => setTimeout(resolve, 25));
+    expect(cancelSettled).toBe(false);
+    releaseDelivery();
+    await deliveryPromise;
+    await expect(cancelPromise).resolves.toMatchObject({ status: "CANCELLED" });
+    expect(adapter).toHaveBeenCalledTimes(1);
+
+    const cancellationWins = await createSentInvitation("cancel-first");
+    await cancelInvitation({
+      organisationId: fixture.organisationId,
+      invitationId: cancellationWins.sent.id,
+      actorPrincipalId: fixture.inviterId,
+      expectedLockVersion: cancellationWins.sent.lockVersion,
+      reason: "Cancel before the worker claims delivery.",
+    }, h.dependencies);
+    const staleAdapter = vi.fn(async () => ({ providerReference: "must-not-send" }));
+    await deliverInvitationOutboxMessage(
+      { outboxId: cancellationWins.outboxId },
+      { deliverInvitation: staleAdapter },
+      { deliveryEncryptionKey: h.deliveryEncryptionKey, publicBaseUrl: "http://localhost:3000" },
+    );
+    expect(staleAdapter).not.toHaveBeenCalled();
+    const cancelledState = await centreSuccessDB.queryRow<{
+      invitation_status: string; generation_status: string; outbox_status: string;
+      error_class: string;
+    }>`
+      SELECT invitation.status AS invitation_status,
+             generation.status AS generation_status,
+             outbox.status AS outbox_status,
+             outbox.last_error_class AS error_class
+      FROM access_invitations AS invitation
+      JOIN invitation_token_generations AS generation ON generation.invitation_id = invitation.id
+      JOIN people_notification_outbox AS outbox ON outbox.token_generation_id = generation.id
+      WHERE invitation.id = ${cancellationWins.sent.id}
+    `;
+    expect(cancelledState).toEqual({
+      invitation_status: "CANCELLED",
+      generation_status: "INVALIDATED",
+      outbox_status: "FAILED",
+      error_class: "invitation_generation_not_current",
+    });
   });
 
   test("activates a standard multi-centre package atomically and rejects replay/concurrent use", async () => {

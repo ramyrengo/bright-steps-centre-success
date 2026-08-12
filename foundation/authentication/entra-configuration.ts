@@ -16,3 +16,14 @@ export function loadRuntimeEntraVerificationConfig(): ValidatedEntraTokenVerific
     webClientId: entraWebClientId(),
   });
 }
+
+/** Loads the two identifiers shared with the server-side Graph client. */
+export function loadRuntimeEntraConfidentialClientIdentifiers(): {
+  tenantId: string;
+  clientId: string;
+} {
+  return {
+    tenantId: entraTenantId(),
+    clientId: entraApiClientId(),
+  };
+}
