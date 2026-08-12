@@ -133,7 +133,7 @@ async function placeCentre(
 
 async function addPrincipal(
   label: string,
-  status: "active" | "inactive" = "active",
+  status: "pending" | "active" | "suspended" | "revoked" = "active",
 ): Promise<string> {
   const id = randomUUID();
 
@@ -792,11 +792,11 @@ describe("database-backed foundation authorization", () => {
     const organisationId = await addOrganisation("Fail-closed organisation");
     const tree = await addSimpleCentreTree(organisationId, "Fail closed");
 
-    const inactivePrincipalId = await addPrincipal(
-      "Inactive principal",
-      "inactive",
-    );
+    const inactivePrincipalId = await addPrincipal("Inactive principal");
     await addMembership(organisationId, inactivePrincipalId);
+    await centreSuccessDB.exec`
+      UPDATE principals SET status = 'suspended' WHERE id = ${inactivePrincipalId}
+    `;
     expect(
       await authoriseCentreFromDatabase({
         principalId: inactivePrincipalId,

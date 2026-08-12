@@ -98,7 +98,7 @@ export const CANONICAL_ROLE_BUNDLES = [
   {
     key: "system_administrator",
     name: "System Administrator",
-    version: 1,
+    version: 2,
     capabilities: [
       capability.principalRead,
       capability.principalManage,
@@ -107,6 +107,10 @@ export const CANONICAL_ROLE_BUNDLES = [
       capability.assignmentManage,
       capability.systemConfigure,
       capability.systemHealthRead,
+      capability.invitationRead,
+      capability.invitationManage,
+      capability.accessHistoryRead,
+      capability.privilegedAccessApprove,
     ],
   },
 ] as const satisfies readonly CanonicalRoleBundle[];

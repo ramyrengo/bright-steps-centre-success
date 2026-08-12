@@ -43,7 +43,7 @@ export interface LoadPrincipalAuthorisationContextInput {
 
 interface PrincipalRow {
   id: string;
-  status: "active" | "inactive";
+  status: "pending" | "active" | "suspended" | "revoked";
 }
 
 interface OrganisationRow {

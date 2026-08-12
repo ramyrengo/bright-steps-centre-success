@@ -208,11 +208,15 @@ describe("local first-System-Administrator bootstrap", () => {
       ORDER BY capability.capability_code
     `;
     expect(capabilities.map((row) => row.capability_code)).toEqual([
+      "access_history.read",
       "assignment.manage",
       "assignment.read",
       "identity.mapping.manage",
+      "invitation.manage",
+      "invitation.read",
       "principal.manage",
       "principal.read",
+      "privileged_access.approve",
       "system.configure",
       "system.health.read",
     ]);
@@ -424,7 +428,7 @@ describe("local first-System-Administrator bootstrap", () => {
     await centreSuccessDB.exec`
       DELETE FROM canonical_role_template_capabilities
       WHERE role_key = 'system_administrator'
-        AND role_version = 1
+        AND role_version = 2
         AND capability_code = 'identity.mapping.manage'
     `;
     try {
@@ -437,7 +441,7 @@ describe("local first-System-Administrator bootstrap", () => {
           role_key,
           role_version,
           capability_code
-        ) VALUES ('system_administrator', 1, 'identity.mapping.manage')
+        ) VALUES ('system_administrator', 2, 'identity.mapping.manage')
         ON CONFLICT DO NOTHING
       `;
     }

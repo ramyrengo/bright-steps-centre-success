@@ -115,27 +115,51 @@ export namespace foundation {
 
         constructor(baseClient: BaseClient) {
             this.baseClient = baseClient
+            this.acceptInvitation = this.acceptInvitation.bind(this)
             this.acknowledgeQuarterlyAudit = this.acknowledgeQuarterlyAudit.bind(this)
+            this.addPersonAssignment = this.addPersonAssignment.bind(this)
+            this.approveInvitation = this.approveInvitation.bind(this)
+            this.cancelInvitationEndpoint = this.cancelInvitationEndpoint.bind(this)
             this.completeEvidenceUpload = this.completeEvidenceUpload.bind(this)
+            this.createInvitation = this.createInvitation.bind(this)
             this.finaliseQuarterlyAudit = this.finaliseQuarterlyAudit.bind(this)
             this.getAuditPreparation = this.getAuditPreparation.bind(this)
             this.getComplianceOversight = this.getComplianceOversight.bind(this)
             this.getCorrectiveAction = this.getCorrectiveAction.bind(this)
             this.getEvidenceAccess = this.getEvidenceAccess.bind(this)
+            this.getInvitation = this.getInvitation.bind(this)
+            this.getPeopleOptions = this.getPeopleOptions.bind(this)
+            this.getPerson = this.getPerson.bind(this)
+            this.getPersonAccess = this.getPersonAccess.bind(this)
+            this.getPersonHistory = this.getPersonHistory.bind(this)
             this.getQuarterlyAudit = this.getQuarterlyAudit.bind(this)
             this.health = this.health.bind(this)
             this.listAssignedAuditCentres = this.listAssignedAuditCentres.bind(this)
             this.listCorrectiveActionVerificationQueue = this.listCorrectiveActionVerificationQueue.bind(this)
             this.listMyCorrectiveActions = this.listMyCorrectiveActions.bind(this)
+            this.listPeople = this.listPeople.bind(this)
             this.markQuarterlyAuditReady = this.markQuarterlyAuditReady.bind(this)
             this.me = this.me.bind(this)
+            this.reactivatePerson = this.reactivatePerson.bind(this)
+            this.removePersonAssignment = this.removePersonAssignment.bind(this)
+            this.replacePersonAssignmentScope = this.replacePersonAssignmentScope.bind(this)
             this.requestEvidenceUpload = this.requestEvidenceUpload.bind(this)
+            this.resendInvitation = this.resendInvitation.bind(this)
             this.returnCorrectiveAction = this.returnCorrectiveAction.bind(this)
+            this.revokePerson = this.revokePerson.bind(this)
             this.saveQuarterlyAuditResponse = this.saveQuarterlyAuditResponse.bind(this)
+            this.sendInvitation = this.sendInvitation.bind(this)
             this.startCorrectiveAction = this.startCorrectiveAction.bind(this)
             this.startQuarterlyAudit = this.startQuarterlyAudit.bind(this)
             this.submitCorrectiveActionEvidence = this.submitCorrectiveActionEvidence.bind(this)
+            this.suspendPerson = this.suspendPerson.bind(this)
             this.verifyAndCloseCorrectiveAction = this.verifyAndCloseCorrectiveAction.bind(this)
+        }
+
+        public async acceptInvitation(params: people_access.AcceptInvitationRequest): Promise<people_access.AcceptInvitationResponse> {
+            // Now make the actual call to the API
+            const resp = await this.baseClient.callTypedAPI("POST", `/invitations/accept`, JSON.stringify(params))
+            return await resp.json() as people_access.AcceptInvitationResponse
         }
 
         public async acknowledgeQuarterlyAudit(auditId: string, params: quarterly_reviews.AcknowledgeAuditRequest): Promise<quarterly_reviews.AcknowledgeAuditResponse> {
@@ -144,10 +168,34 @@ export namespace foundation {
             return await resp.json() as quarterly_reviews.AcknowledgeAuditResponse
         }
 
+        public async addPersonAssignment(principalId: string, params: people_access.AddAssignmentRequest): Promise<people_access.PersonAccessResponse> {
+            // Now make the actual call to the API
+            const resp = await this.baseClient.callTypedAPI("POST", `/admin/people/${encodeURIComponent(principalId)}/assignments`, JSON.stringify(params))
+            return await resp.json() as people_access.PersonAccessResponse
+        }
+
+        public async approveInvitation(invitationId: string, params: people_access.VersionedInvitationRequest): Promise<people_access.InvitationSummary> {
+            // Now make the actual call to the API
+            const resp = await this.baseClient.callTypedAPI("POST", `/admin/people/invitations/${encodeURIComponent(invitationId)}/approve`, JSON.stringify(params))
+            return await resp.json() as people_access.InvitationSummary
+        }
+
+        public async cancelInvitationEndpoint(invitationId: string, params: people_access.VersionedInvitationRequest): Promise<people_access.InvitationSummary> {
+            // Now make the actual call to the API
+            const resp = await this.baseClient.callTypedAPI("POST", `/admin/people/invitations/${encodeURIComponent(invitationId)}/cancel`, JSON.stringify(params))
+            return await resp.json() as people_access.InvitationSummary
+        }
+
         public async completeEvidenceUpload(evidenceId: string): Promise<quarterly_reviews.CompleteEvidenceUploadResponse> {
             // Now make the actual call to the API
             const resp = await this.baseClient.callTypedAPI("POST", `/evidence/${encodeURIComponent(evidenceId)}/complete`)
             return await resp.json() as quarterly_reviews.CompleteEvidenceUploadResponse
+        }
+
+        public async createInvitation(params: people_access.CreateInvitationRequest): Promise<people_access.InvitationSummary> {
+            // Now make the actual call to the API
+            const resp = await this.baseClient.callTypedAPI("POST", `/admin/people/invitations`, JSON.stringify(params))
+            return await resp.json() as people_access.InvitationSummary
         }
 
         public async finaliseQuarterlyAudit(auditId: string, params: quarterly_reviews.AuditTransitionRequest): Promise<quarterly_reviews.FinaliseQuarterlyAuditResponse> {
@@ -178,6 +226,36 @@ export namespace foundation {
             // Now make the actual call to the API
             const resp = await this.baseClient.callTypedAPI("GET", `/evidence/${encodeURIComponent(evidenceId)}/access`)
             return await resp.json() as quarterly_reviews.GetEvidenceAccessResponse
+        }
+
+        public async getInvitation(invitationId: string): Promise<people_access.InvitationSummary> {
+            // Now make the actual call to the API
+            const resp = await this.baseClient.callTypedAPI("GET", `/admin/people/invitations/${encodeURIComponent(invitationId)}`)
+            return await resp.json() as people_access.InvitationSummary
+        }
+
+        public async getPeopleOptions(): Promise<people_access.PeopleAccessOptionsResponse> {
+            // Now make the actual call to the API
+            const resp = await this.baseClient.callTypedAPI("GET", `/admin/people/options`)
+            return await resp.json() as people_access.PeopleAccessOptionsResponse
+        }
+
+        public async getPerson(principalId: string): Promise<people_access.PersonAccessResponse> {
+            // Now make the actual call to the API
+            const resp = await this.baseClient.callTypedAPI("GET", `/admin/people/${encodeURIComponent(principalId)}`)
+            return await resp.json() as people_access.PersonAccessResponse
+        }
+
+        public async getPersonAccess(principalId: string): Promise<people_access.PersonAccessResponse> {
+            // Now make the actual call to the API
+            const resp = await this.baseClient.callTypedAPI("GET", `/admin/people/${encodeURIComponent(principalId)}/access`)
+            return await resp.json() as people_access.PersonAccessResponse
+        }
+
+        public async getPersonHistory(principalId: string): Promise<people_access.AccessHistoryResponse> {
+            // Now make the actual call to the API
+            const resp = await this.baseClient.callTypedAPI("GET", `/admin/people/${encodeURIComponent(principalId)}/history`)
+            return await resp.json() as people_access.AccessHistoryResponse
         }
 
         public async getQuarterlyAudit(auditId: string): Promise<quarterly_reviews.QuarterlyAuditView> {
@@ -214,6 +292,12 @@ export namespace foundation {
             return await resp.json() as quarterly_reviews.ListCorrectiveActionsResponse
         }
 
+        public async listPeople(): Promise<people_access.PeopleListResponse> {
+            // Now make the actual call to the API
+            const resp = await this.baseClient.callTypedAPI("GET", `/admin/people`)
+            return await resp.json() as people_access.PeopleListResponse
+        }
+
         public async markQuarterlyAuditReady(auditId: string, params: quarterly_reviews.AuditTransitionRequest): Promise<quarterly_reviews.AuditStatusTransitionResponse> {
             // Now make the actual call to the API
             const resp = await this.baseClient.callTypedAPI("POST", `/quarterly-reviews/audits/${encodeURIComponent(auditId)}/ready`, JSON.stringify(params))
@@ -230,10 +314,34 @@ export namespace foundation {
             return await resp.json() as FoundationMeResponse
         }
 
+        public async reactivatePerson(principalId: string, params: people_access.PrincipalLifecycleRequest): Promise<people_access.PrincipalLifecycleResponse> {
+            // Now make the actual call to the API
+            const resp = await this.baseClient.callTypedAPI("POST", `/admin/people/${encodeURIComponent(principalId)}/reactivate`, JSON.stringify(params))
+            return await resp.json() as people_access.PrincipalLifecycleResponse
+        }
+
+        public async removePersonAssignment(principalId: string, assignmentId: string, params: people_access.AssignmentMutationRequest): Promise<people_access.PersonAccessResponse> {
+            // Now make the actual call to the API
+            const resp = await this.baseClient.callTypedAPI("POST", `/admin/people/${encodeURIComponent(principalId)}/assignments/${encodeURIComponent(assignmentId)}/remove`, JSON.stringify(params))
+            return await resp.json() as people_access.PersonAccessResponse
+        }
+
+        public async replacePersonAssignmentScope(principalId: string, assignmentId: string, params: people_access.AssignmentMutationRequest): Promise<people_access.PersonAccessResponse> {
+            // Now make the actual call to the API
+            const resp = await this.baseClient.callTypedAPI("PUT", `/admin/people/${encodeURIComponent(principalId)}/assignments/${encodeURIComponent(assignmentId)}/scope`, JSON.stringify(params))
+            return await resp.json() as people_access.PersonAccessResponse
+        }
+
         public async requestEvidenceUpload(params: quarterly_reviews.RequestEvidenceUploadRequest): Promise<quarterly_reviews.RequestEvidenceUploadResponse> {
             // Now make the actual call to the API
             const resp = await this.baseClient.callTypedAPI("POST", `/evidence/uploads`, JSON.stringify(params))
             return await resp.json() as quarterly_reviews.RequestEvidenceUploadResponse
+        }
+
+        public async resendInvitation(invitationId: string, params: people_access.VersionedInvitationRequest): Promise<people_access.InvitationSummary> {
+            // Now make the actual call to the API
+            const resp = await this.baseClient.callTypedAPI("POST", `/admin/people/invitations/${encodeURIComponent(invitationId)}/resend`, JSON.stringify(params))
+            return await resp.json() as people_access.InvitationSummary
         }
 
         public async returnCorrectiveAction(actionId: string, params: quarterly_reviews.ReturnCorrectiveActionRequest): Promise<quarterly_reviews.ActionTransitionResponse> {
@@ -242,10 +350,22 @@ export namespace foundation {
             return await resp.json() as quarterly_reviews.ActionTransitionResponse
         }
 
+        public async revokePerson(principalId: string, params: people_access.PrincipalLifecycleRequest): Promise<people_access.PrincipalLifecycleResponse> {
+            // Now make the actual call to the API
+            const resp = await this.baseClient.callTypedAPI("POST", `/admin/people/${encodeURIComponent(principalId)}/revoke`, JSON.stringify(params))
+            return await resp.json() as people_access.PrincipalLifecycleResponse
+        }
+
         public async saveQuarterlyAuditResponse(auditId: string, itemId: string, params: quarterly_reviews.SaveAuditResponseRequest): Promise<quarterly_reviews.SaveAuditResponseResponse> {
             // Now make the actual call to the API
             const resp = await this.baseClient.callTypedAPI("PUT", `/quarterly-reviews/audits/${encodeURIComponent(auditId)}/responses/${encodeURIComponent(itemId)}`, JSON.stringify(params))
             return await resp.json() as quarterly_reviews.SaveAuditResponseResponse
+        }
+
+        public async sendInvitation(invitationId: string, params: people_access.VersionedInvitationRequest): Promise<people_access.InvitationSummary> {
+            // Now make the actual call to the API
+            const resp = await this.baseClient.callTypedAPI("POST", `/admin/people/invitations/${encodeURIComponent(invitationId)}/send`, JSON.stringify(params))
+            return await resp.json() as people_access.InvitationSummary
         }
 
         public async startCorrectiveAction(actionId: string, params: quarterly_reviews.StartCorrectiveActionRequest): Promise<quarterly_reviews.ActionTransitionResponse> {
@@ -266,6 +386,12 @@ export namespace foundation {
             return await resp.json() as quarterly_reviews.ActionTransitionResponse
         }
 
+        public async suspendPerson(principalId: string, params: people_access.PrincipalLifecycleRequest): Promise<people_access.PrincipalLifecycleResponse> {
+            // Now make the actual call to the API
+            const resp = await this.baseClient.callTypedAPI("POST", `/admin/people/${encodeURIComponent(principalId)}/suspend`, JSON.stringify(params))
+            return await resp.json() as people_access.PrincipalLifecycleResponse
+        }
+
         public async verifyAndCloseCorrectiveAction(actionId: string, params: quarterly_reviews.VerifyCorrectiveActionRequest): Promise<quarterly_reviews.ActionTransitionResponse> {
             // Now make the actual call to the API
             const resp = await this.baseClient.callTypedAPI("POST", `/corrective-actions/${encodeURIComponent(actionId)}/verify`, JSON.stringify(params))
@@ -277,6 +403,194 @@ export namespace foundation {
 export namespace authentication {
     export interface AuthenticationParams {
         authorization: string
+    }
+}
+
+export namespace people_access {
+    export interface AcceptInvitationRequest {
+        invitationToken: string
+    }
+
+    export interface AcceptInvitationResponse {
+        outcome: "activated" | "awaiting_approval" | "administrator_review"
+        invitationStatus: InvitationStatus
+    }
+
+    export interface AccessHistoryResponse {
+        events: {
+            id: string
+            action: string
+            resourceType: string
+            occurredAt: string
+            actorDisplayName: string | null
+            reasonRecorded: boolean
+        }[]
+    }
+
+    export interface AddAssignmentRequest {
+        assignment: ProposedAssignment
+        reason: string
+        principalLockVersion: number
+    }
+
+    export interface AssignmentMutationRequest {
+        reason: string
+        principalLockVersion: number
+        replacementScopes?: ProposedScope[]
+    }
+
+    export interface AssignmentMutationRequest {
+        reason: string
+        principalLockVersion: number
+        replacementScopes?: ProposedScope[]
+    }
+
+    export interface CreateInvitationRequest {
+        email: string
+        displayName: string
+        assignments: ProposedAssignment[]
+        reason: string
+    }
+
+    export type InvitationScopeSummary = {
+        scopeType: "organisation"
+        displayName: string
+    } | {
+        scopeType: "organisational_unit"
+        organisationalUnitId: string
+        displayName: string
+    } | {
+        scopeType: "centre"
+        centreId: string
+        displayName: string
+    }
+
+    export type InvitationStatus = "DRAFT" | "SENT" | "IDENTITY_VERIFIED" | "AWAITING_PRIVILEGED_APPROVAL" | "ADMINISTRATOR_REVIEW" | "ACTIVATED" | "CANCELLED" | "EXPIRED"
+
+    export interface InvitationSummary {
+        id: string
+        organisationName: string
+        intendedEmail: string
+        displayName: string
+        status: InvitationStatus
+        privilegeClass: PrivilegeClass
+        packageVersion: number
+        requestedByName: string
+        requestReason: string
+        expiresAt: string | null
+        lockVersion: number
+        assignments: {
+            roleKey: string
+            roleName: string
+            roleVersion: number
+            privilegeClass: PrivilegeClass
+            effectiveFrom: string
+            effectiveTo: string | null
+            scopes: InvitationScopeSummary[]
+        }[]
+    }
+
+    export interface PeopleAccessOptionsResponse {
+        roles: {
+            roleKey: string
+            name: string
+            scopeMode: "multi_centre" | "single_centre" | "organisation" | "flexible"
+            approval: "standard" | "privileged" | "review"
+        }[]
+        centres: {
+            id: string
+            name: string
+        }[]
+        organisationalUnits: {
+            id: string
+            name: string
+            kind: string
+        }[]
+    }
+
+    export interface PeopleListResponse {
+        people: PersonSummary[]
+        invitations: InvitationSummary[]
+    }
+
+    export interface PersonAccessResponse {
+        person: PersonSummary
+    }
+
+    export interface PersonSummary {
+        principalId: string
+        displayName: string
+        status: PrincipalLifecycleStatus
+        microsoftIdentity: "connected" | "not_connected"
+        assignments: {
+            id: string
+            roleKey: string
+            roleName: string
+            scopes: ProposedScope[]
+        }[]
+        lockVersion: number
+    }
+
+    export interface PrincipalLifecycleRequest {
+        reason: string
+        lockVersion: number
+    }
+
+    export interface PrincipalLifecycleRequest {
+        reason: string
+        lockVersion: number
+    }
+
+    export interface PrincipalLifecycleRequest {
+        reason: string
+        lockVersion: number
+    }
+
+    export interface PrincipalLifecycleResponse {
+        principalId: string
+        status: PrincipalLifecycleStatus
+        lockVersion: number
+    }
+
+    export type PrincipalLifecycleStatus = "pending" | "active" | "suspended" | "revoked"
+
+    export type PrivilegeClass = "STANDARD" | "PRIVILEGED" | "REVIEW"
+
+    export interface ProposedAssignment {
+        roleKey: string
+        scopes: ProposedScope[]
+        effectiveFrom?: string
+        effectiveTo?: string
+    }
+
+    export type ProposedScope = {
+        scopeType: "organisation"
+    } | {
+        scopeType: "organisational_unit"
+        organisationalUnitId: string
+    } | {
+        scopeType: "centre"
+        centreId: string
+    }
+
+    export interface VersionedInvitationRequest {
+        lockVersion: number
+        reason?: string
+    }
+
+    export interface VersionedInvitationRequest {
+        lockVersion: number
+        reason?: string
+    }
+
+    export interface VersionedInvitationRequest {
+        lockVersion: number
+        reason?: string
+    }
+
+    export interface VersionedInvitationRequest {
+        lockVersion: number
+        reason?: string
     }
 }
 

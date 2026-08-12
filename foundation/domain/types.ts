@@ -40,7 +40,7 @@ export interface Centre {
   lockVersion: number;
 }
 
-export type PrincipalStatus = "active" | "inactive";
+export type PrincipalStatus = "pending" | "active" | "suspended" | "revoked";
 
 export interface Principal {
   id: string;

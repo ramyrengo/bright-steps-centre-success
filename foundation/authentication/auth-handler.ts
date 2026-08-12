@@ -65,6 +65,17 @@ function getRuntimeVerifier(): RuntimeVerifier {
   return runtimeVerifier;
 }
 
+/**
+ * Reuses the exact gateway verifier at the invitation-candidate boundary.
+ * It returns only the durable Entra tenant/object identity and never creates
+ * trusted Centre Success AuthData.
+ */
+export function verifyRuntimeEntraAccessToken(
+  token: string,
+): Promise<VerifiedEntraIdentity> {
+  return getRuntimeVerifier().verify(token);
+}
+
 const runtimeDependencies: AuthenticationDependencies = {
   verifyToken: (token) => getRuntimeVerifier().verify(token),
   resolvePrincipal: resolveActivePrincipalForEntraIdentity,
@@ -148,9 +159,9 @@ export async function authenticateEntraRequest(
 
   if (resolution.status !== "active") {
     logAuthenticationFailure("identity_not_provisioned");
-    throw APIError.permissionDenied(
-      "Centre Success access is not available",
-    ).withDetails({ reason: "account_not_provisioned" });
+    throw APIError.unauthenticated("authentication required").withDetails({
+      reason: "account_not_provisioned",
+    });
   }
 
   return { userID: resolution.principalId };

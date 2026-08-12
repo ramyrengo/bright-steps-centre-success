@@ -28,7 +28,7 @@ Actual vendors and scope require discovery.
 | Roster/staffing facts | Roster/workforce system | Inbound aggregates/facts | Approved compliance or readiness controls | Do not become a shadow roster; minimise personal details |
 | Training/certifications | LMS/HR/credential source | Inbound | Verified status and expiry | Source freshness, issuer, legal interpretation reviewed |
 | Finance | Accounting/budget/procurement system | Inbound | Approved/actual/committed/forecast context | Immutable batches, mapping, reconciliation, restricted detail |
-| Notifications | Transactional email provider (vendor deferred) | Outbound/status | Future People & Access invitations, reminders, and escalations | PostgreSQL outbox plus Encore Pub/Sub worker; idempotent delivery; minimal content; no Graph; provider, sender, retention, and support policy require approval |
+| Notifications | Transactional email provider (vendor deferred) | Outbound/status | People & Access invitations; later reminders/escalations require approval | Implemented PostgreSQL outbox plus Encore Pub/Sub worker and development no-op adapter; idempotent delivery; minimal content; no Graph; production provider, sender, retention, and support policy require approval |
 | Document repository | Approved document system | Inbound/reference | Policies and knowledge sources | Licence, version, classification, deletion, no open crawl |
 | ACECQA/jurisdictional sources | Official sites/manual registrar | Controlled reference | Change monitoring and source registry | Human verification; no auto-activation or invented law |
 | AI provider | Approved model/embedding service | Request/response | Assistant functions | Privacy, region, retention/training, prompt injection, cost |
@@ -104,7 +104,7 @@ Domain workflows create a notification intent, not a provider call inline. Recip
 
 Respect approved mandatory categories, user channel preferences, quiet hours, centre time zone, digesting, deduplication, and escalation. Delivery failure does not roll back the business action and remains visible for retry/support.
 
-For the approved-but-gated People & Access architecture, an invitation transaction commits its current token generation and outbox intent together. A bounded dispatcher publishes to Encore Pub/Sub and an idempotent subscriber calls the later-approved transactional email provider. Resend/cancel invalidates the old generation; delivery records never contain the plaintext token, role, scope, Entra claims, or Microsoft object identifier. Microsoft Graph is not used merely to send invitations or classify guest/member identities. HR/recruitment integration is deferred and cannot silently activate access.
+The implemented People & Access send transaction commits its current token generation and outbox intent together. A bounded dispatcher publishes to Encore Pub/Sub and an idempotent subscriber calls a provider-neutral adapter. Development/test delivery is a deterministic no-op; no production provider or credential is configured. Resend/cancel invalidates the old generation; durable business/audit records never contain the plaintext token, role/scope email content, Entra claims, or Microsoft object identifier. Microsoft Graph is not used to send invitations or classify guest/member identities. HR/recruitment integration is deferred and cannot silently activate access.
 
 ## Official-source monitoring
 

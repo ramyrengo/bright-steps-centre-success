@@ -32,11 +32,11 @@ Consequently:
 
 No temporary login, trusted test identity header, public self-registration, auto-provisioning, Microsoft Graph permission, or business endpoint is approved. MFA, recovery, Conditional Access, step-up, multi-organisation selection, and future business API decisions remain separately gated. See ADR-0012.
 
-### Approved People & Access architecture boundary
+### Implemented People & Access boundary
 
 ADR-0014 supersedes the earlier operational recommendation to require Entra enterprise-application user assignment. The approved setting is **User assignment required = No**. An exact-tenant Entra identity may authenticate, but authentication creates no internal principal mapping, membership, capability, scope, or application access; unmapped and uninvited identities remain `not_provisioned`.
 
-Milestone 2C implementation is authorised: the Product Owner accepted Milestone 2B and separately authorised Milestone 2C on 11 August 2026. The workflow uses System-Administrator-created invitations, 72-hour one-time token generations, pending proposals outside active authorisation tables, permanent `tid + oid` identity, standard atomic activation, independent approval for privileged packages, non-recombining assignments, and at least one reachable active System Administrator. Microsoft Graph, Entra groups/app roles, email identity, HR synchronisation, and a permanent production bootstrap remain outside the approved boundary. See `docs/PEOPLE_AND_ACCESS.md` and ADR-0014.
+Milestone 2C is **IMPLEMENTED — ACCEPTANCE REMEDIATION IN PROGRESS** and is not yet accepted. The workflow uses System-Administrator-created invitations, 72-hour one-time token generations, pending proposals outside active authorisation tables, permanent `tid + oid` identity, standard atomic activation, independent approval for privileged packages, non-recombining assignments, and at least one reachable active System Administrator. Microsoft Graph, Entra groups/app roles, email identity, HR synchronisation, and a permanent production bootstrap remain outside the approved boundary. See `docs/PEOPLE_AND_ACCESS.md` and ADR-0014.
 
 ## Authorisation model
 
@@ -121,4 +121,4 @@ Database integration evidence also covers nested state/region ancestry, centre m
 - break-glass or support impersonation;
 - production CORS origins and deployment/security operations; and
 - capabilities, data policies, and workflows for later business modules.
-- People & Access implementation details still enumerated in `docs/PEOPLE_AND_ACCESS.md`, including the email provider, correlation evidence, retention, JML operating source/SLA, production first-administrator mechanism, and break-glass/recovery policy.
+- People & Access operational decisions still enumerated in `docs/PEOPLE_AND_ACCESS.md`, including the production email provider, correlation-claim operations, retention, JML operating source/SLA, production first-administrator mechanism, and break-glass/recovery policy.

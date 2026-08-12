@@ -12,7 +12,7 @@ export type ActivePrincipalResolution =
 interface ExternalIdentityRow {
   principal_id: string;
   mapping_status: "active" | "inactive";
-  principal_status: "active" | "inactive";
+  principal_status: "pending" | "active" | "suspended" | "revoked";
 }
 
 /**

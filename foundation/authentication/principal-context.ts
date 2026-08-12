@@ -22,7 +22,7 @@ export class AuthenticatedPrincipalContextError extends Error {
 interface PrincipalRow {
   id: string;
   display_name: string;
-  status: "active" | "inactive";
+  status: "pending" | "active" | "suspended" | "revoked";
 }
 
 interface ActiveOrganisationRow {

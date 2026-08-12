@@ -13,7 +13,7 @@ const ASSIGNMENT_REASON =
   "Approved synthetic local first-administrator bootstrap.";
 const AUDIT_ACTION = "identity.local_bootstrap.completed";
 const SYSTEM_ADMINISTRATOR_DESCRIPTION =
-  "Foundation technical administration without implicit business-content access.";
+  "Foundation technical and People & Access administration without implicit business-content access.";
 const SYSTEM_ADMINISTRATOR_ROLE = canonicalRoleBundle("system_administrator");
 const SYSTEM_ADMINISTRATOR_CAPABILITIES = [
   ...SYSTEM_ADMINISTRATOR_ROLE.capabilities,
@@ -66,7 +66,7 @@ interface OrganisationRow {
 interface PrincipalRow {
   id: string;
   display_name: string;
-  status: "active" | "inactive";
+  status: "pending" | "active" | "suspended" | "revoked";
 }
 
 interface MembershipRow {
@@ -317,6 +317,8 @@ async function loadCanonicalSystemAdministratorRole(
      AND template.version = definition.source_template_version
     WHERE definition.organisation_id = ${ids.organisationId}
       AND definition.role_key = 'system_administrator'
+      AND definition.status = 'active'
+      AND template.status = 'active'
     ORDER BY definition.id
     FOR UPDATE OF definition
   `;

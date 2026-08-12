@@ -113,13 +113,13 @@ Supabase RLS is not used. PostgreSQL RLS is not assumed as the primary control; 
 - Security headers, TLS, and no sensitive data in URLs.
 - Generated Encore API documentation/explorer access restricted by environment and endpoint exposure.
 
-### People & Access invitation security architecture
+### Implemented People & Access invitation security boundary
 
-Milestone 2C is authorised for implementation as of 11 August 2026. Invitation secrets use at least 256 bits of cryptographic randomness, exact 72-hour expiry, one-time consumption, resend/cancel generation invalidation, keyed-digest-only persistence, constant-time verification, generic errors, and no role/scope or identity data in the URL. Raw invitation secrets, Entra tokens, JWT claims, email/UPN, and Microsoft object identifiers must not appear in logs or audit payloads.
+Milestone 2C is **IMPLEMENTED — ACCEPTANCE REMEDIATION IN PROGRESS**. Invitation secrets use 256 bits of cryptographic randomness, exact 72-hour expiry, one-time consumption, resend/cancel generation invalidation, HMAC-SHA-256 verifier storage, constant-time comparison, generic errors, and no role/scope or identity data in the URL. Delivery-only ciphertext uses AES-256-GCM under a separate Encore secret in the transactional outbox and is cleared atomically after successful terminal delivery; non-sensitive delivery and attempt metadata remains. Raw invitation secrets, Entra tokens, JWT claims, email/UPN, and Microsoft object identifiers must not appear in logs or audit payloads.
 
 Email is only delivery/correlation evidence; permanent identity remains exact `tid + oid`. A forwarded link, same-tenant token, mutable email match, Entra group/app role, or frontend state cannot activate access. Missing/ambiguous/mismatched correlation, guest uncertainty, mapping conflicts, and changed role/scope packages fail closed to administrator review. Pending proposals stay outside active authorisation tables.
 
-Privileged packages require a distinct current System Administrator to approve the exact immutable package. Every access mutation is attributable and preserves at least one reachable active System Administrator under concurrency; operations target two. Invitation email delivery uses a PostgreSQL outbox and idempotent Encore Pub/Sub worker with a separately approved transactional provider—never Microsoft Graph merely for email or guest discovery. See `PEOPLE_AND_ACCESS.md` and ADR-0014.
+Privileged packages require a distinct current System Administrator to approve the exact immutable package. Every access mutation is attributable and preserves at least one reachable active System Administrator under concurrency; operations target two. Administrative APIs require normal provisioned AuthData plus PostgreSQL authority. Only sensitive `POST /invitations/accept` admits an unmapped invitation candidate: it reuses the strict Entra verifier but never creates internal AuthData or confers business access. Invitation email delivery uses a PostgreSQL outbox and idempotent Encore Pub/Sub worker with a separately approved transactional provider—never Microsoft Graph for email or guest discovery. See `PEOPLE_AND_ACCESS.md` and ADR-0014.
 
 ## Evidence and Object Storage
 
@@ -221,7 +221,7 @@ Milestone 1 and Milestone 2A are accepted. Milestone 2B authorises only the synt
 - no production deployment or support-access path is created merely because local authentication runs; and
 - no break-glass, impersonation, automated employee provisioning, HR synchronisation, Microsoft Graph, or Entra-owned business authorisation is introduced.
 
-Milestone 2C People & Access implementation is authorised as of 11 August 2026 within the approved architecture: migrations, the invitation acceptance boundary, APIs, the outbox/Pub/Sub worker, provider-neutral email delivery, and frontend routes. The production first-administrator mechanism remains separately gated until the Encore Cloud operational mechanism is validated, and the concrete email provider remains a deferred selection.
+Milestone 2C People & Access is **IMPLEMENTED — ACCEPTANCE REMEDIATION IN PROGRESS** within the approved architecture and awaits targeted independent re-review and Product Owner acceptance: migrations, the invitation acceptance boundary, APIs, the outbox/Pub/Sub worker, provider-neutral development delivery, and frontend routes are present. The production first-administrator mechanism remains separately gated until the Encore Cloud operational mechanism is validated, and the concrete production email provider remains a deferred selection.
 
 Before the relevant later capability or production release, Bright Steps must still approve the data inventory/privacy plan; evidence and retention/legal-hold design; cloud region, backup, deployment, and support access; incident owners; and AI/wellbeing privacy decisions.
 
