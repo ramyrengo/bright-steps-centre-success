@@ -2,7 +2,9 @@
 
 ## Status and boundary
 
-**Milestone 3A remains IMPLEMENTED / ACCEPTANCE REMEDIATION IN PROGRESS. It is not Product Owner accepted.** This document records the approved Daily Success architecture, remediation evidence, and implementation boundary. The remediation gate is ready for targeted independent re-review, but every later milestone remains locked.
+**Milestone 3A is ACCEPTED / COMPLETE.** The Product Owner accepted the implementation on 12 August 2026 after implementation, acceptance remediation, an independent review returning PASS, a targeted remediation re-review returning PASS, a green local regression gate, green hosted Foundation CI and Encore Build, and merge to `main` through pull request #6. This document records the approved Daily Success architecture, remediation evidence, and implementation boundary. Every later milestone remains locked.
+
+Acceptance is an implementation acceptance only. Centre Success is not production-ready, and pilot/production readiness remains separately gated.
 
 Daily Success is a live, read-only orchestration and priority projection over existing Centre Success source workflows. Corrective actions, quarterly reviews, and People & Access remain authoritative. Daily Success may read, prioritise, safely summarise, and deep-link; it owns no workflow mutation or duplicate state.
 

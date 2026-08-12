@@ -40,6 +40,35 @@ cross-origin cookie authentication, and do not introduce a deployment workflow
 that publishes from an unreviewed branch. The exact local authenticated origin
 in ADR-0012 is the sole exception.
 
+## Deferred invitation delivery origin
+
+`InvitationPublicBaseUrl` is deliberately **left unset** in Encore Cloud. It is
+the origin of the link emailed to an invited employee, so it must be a real,
+approved, reachable Centre Success frontend. No such Development or Preview
+frontend origin has been approved. The confirmed staging URL recorded above is
+the API transport origin and must never be substituted for it, and the reviewed
+local value `http://localhost:3000` is not a cloud destination.
+
+The two Milestone 2C cryptographic secrets are configured for Development and
+Preview only, never Production. Their values are generated key material and
+appear in no document, example file, log, or commit.
+
+Current state, recorded 12 August 2026:
+
+- the Encore application build is green, and Foundation CI is green;
+- Encore Cloud **deployment** to Development/Preview fails while
+  `InvitationPublicBaseUrl` is undefined, which is the intended deferral rather
+  than a defect;
+- Preview and staging invitation delivery is therefore **unavailable**, and no
+  invitation email may be treated as operational in those environments until an
+  approved frontend origin exists;
+- this is a deployment-readiness item and did not block Milestone 3A
+  implementation acceptance.
+
+When the Next.js frontend is deployed to an approved Development/Preview origin,
+that exact URL is approved separately and only then is `InvitationPublicBaseUrl`
+set.
+
 ## What would unblock this
 
 - An approved hosting origin for the frontend in each environment.
