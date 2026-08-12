@@ -140,7 +140,7 @@ The workflow supports annual and directed review without assuming one national s
 ## 13. People & Access invitation and lifecycle — accepted / complete
 
 1. A current, appropriately scoped System Administrator creates a 72-hour invitation with intended delivery/correlation email, an approved role/scope package, explicit centres where required, and a reason. Pending proposals grant nothing.
-2. The invitation and transactional outbox intent commit together. An Encore Pub/Sub-backed worker later sends through an approved transactional provider; Microsoft Graph is not used.
+2. The invitation and transactional outbox intent commit together. An Encore Pub/Sub-backed worker later sends through the approved environment adapter: deterministic no-network local/test delivery, fixed-mailbox Microsoft Graph in exact staging under ADR-0016, and disabled Production delivery.
 3. The recipient presents the current one-time token and authenticates through the exact BSA Entra tenant. Centre Success validates the API token and correlation evidence; permanent identity is `tid + oid`, never email or UPN.
 4. A standard Educator, Assistant Director, Centre Director, or explicit-portfolio Area Manager package may activate atomically when the authorised System Administrator's unchanged invitation and all current checks pass.
 5. System Administrator, Executive, Finance, Compliance Manager, organisation-wide Operations Leadership, and future policy-designated privileged packages wait for a distinct current System Administrator to approve the exact package. The inviter/requester cannot self-approve.

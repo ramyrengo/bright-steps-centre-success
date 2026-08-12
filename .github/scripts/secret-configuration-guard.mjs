@@ -20,6 +20,8 @@ import { readFileSync, statSync } from "node:fs";
 const SELF = ".github/scripts/secret-configuration-guard.mjs";
 const SOURCE_PREFIX = "foundation/";
 const REQUIRED_ENVIRONMENT_TYPES = ["development", "preview"];
+const STAGING_GRAPH_SECRET = "MicrosoftGraphClientSecret";
+const STAGING_ENVIRONMENT = "staging";
 const SECRET_DECLARATION = /\bsecret\(\s*"([A-Za-z][A-Za-z0-9_]*)"\s*\)/gu;
 
 /** Secrets intentionally left unconfigured, each with its governing record. */
@@ -61,7 +63,7 @@ function declaredSecrets() {
  * `ID  Secret Key  Environment(s)` separated by runs of spaces. Key matching is
  * exact, so a row can only describe a key that was asked for.
  */
-function configuredEnvironmentTypes(names) {
+function configuredEnvironmentSelectors(names) {
   if (names.length === 0) return new Map();
   let output;
   try {
@@ -82,12 +84,12 @@ function configuredEnvironmentTypes(names) {
     const columns = line.trim().split(/\s{2,}/u);
     if (columns.length < 3) continue;
     const [, key, environments] = columns;
-    const types = configured.get(key) ?? new Set();
+    const selectors = configured.get(key) ?? new Set();
     for (const environment of environments.split(",")) {
       const value = environment.trim();
-      if (value.startsWith("type:")) types.add(value.slice("type:".length));
+      if (value) selectors.add(value);
     }
-    configured.set(key, types);
+    configured.set(key, selectors);
   }
   return configured;
 }
@@ -99,11 +101,35 @@ function main() {
     process.exit(1);
   }
 
-  const configured = configuredEnvironmentTypes([...declarations.keys()]);
+  const configured = configuredEnvironmentSelectors([...declarations.keys()]);
   const problems = [];
 
   for (const [name, sites] of declarations) {
-    const types = configured.get(name) ?? new Set();
+    const selectors = configured.get(name) ?? new Set();
+    if (name === STAGING_GRAPH_SECRET) {
+      const exactStaging = selectors.has(STAGING_ENVIRONMENT) || selectors.has(`env:${STAGING_ENVIRONMENT}`);
+      const unexpectedSelectors = [...selectors].filter(
+        (selector) => selector !== STAGING_ENVIRONMENT && selector !== `env:${STAGING_ENVIRONMENT}`,
+      );
+      if (!exactStaging) {
+        problems.push(
+          `${name} is required only for the exact Encore ${STAGING_ENVIRONMENT} environment. ` +
+            `Set it with \`encore secret set --env ${STAGING_ENVIRONMENT} ${name}\` after Product Owner review.`,
+        );
+      }
+      if (unexpectedSelectors.length > 0) {
+        problems.push(
+          `${name} is also scoped to ${unexpectedSelectors.join(", ")}; it must be scoped only to ` +
+            `the exact ${STAGING_ENVIRONMENT} environment.`,
+        );
+      }
+      continue;
+    }
+    const types = new Set(
+      [...selectors]
+        .filter((selector) => selector.startsWith("type:"))
+        .map((selector) => selector.slice("type:".length)),
+    );
     const missing = REQUIRED_ENVIRONMENT_TYPES.filter((type) => !types.has(type));
     const deferral = DEFERRED_SECRETS.get(name);
 

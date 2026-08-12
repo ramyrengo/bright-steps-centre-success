@@ -451,7 +451,7 @@ export async function sendInvitation(
   const tokenDigest = invitationTokenDigest(token, dependencies.tokenDigestKey);
   const encrypted = encryptInvitationToken(token, dependencies.deliveryEncryptionKey);
 
-  await inSerializableTransaction(async (transaction) => {
+  const outcome: "sent" | "expired" = await inSerializableTransaction(async (transaction) => {
     const invitation = await lockInvitation(transaction, organisationId, invitationId);
     await assertCurrentPeopleAuthority(
       transaction,
@@ -466,6 +466,45 @@ export async function sendInvitation(
     if ((!input.resend && invitation.status !== "DRAFT") ||
         (input.resend && !ACTIVE_INVITATION_STATUSES.has(invitation.status))) {
       throw new PeopleAccessError("invalid_state", "invitation cannot be sent");
+    }
+    if (
+      input.resend
+      && invitation.expires_at
+      && invitation.expires_at.getTime() <= occurredAt.getTime()
+    ) {
+      await transaction.exec`
+        UPDATE invitation_token_generations
+        SET status = 'EXPIRED', updated_at = ${occurredAt},
+            lock_version = lock_version + 1
+        WHERE invitation_id = ${invitationId} AND status = 'CURRENT'
+      `;
+      await transaction.exec`
+        UPDATE access_invitations
+        SET status = 'EXPIRED', updated_at = ${occurredAt},
+            lock_version = lock_version + 1
+        WHERE id = ${invitationId}
+      `;
+      await recordInvitationEvent(transaction, {
+        organisationId,
+        invitationId,
+        actorPrincipalId,
+        eventType: "INVITATION_EXPIRED",
+        fromStatus: invitation.status,
+        toStatus: "EXPIRED",
+        occurredAt,
+      });
+      await recordAuditEventWithExecutor(transaction, {
+        organisationId,
+        actorPrincipalId,
+        action: "invitation.expired",
+        resourceType: "access_invitation",
+        resourceId: invitationId,
+        scopeType: "organisation",
+        scopeId: organisationId,
+        context: { source: "resend_expiry_check" },
+        occurredAt,
+      });
+      return "expired";
     }
 
     const generation = await transaction.queryRow<{ next_generation: number }>`
@@ -534,7 +573,11 @@ export async function sendInvitation(
       context: { generation: generationNumber, expiresInHours: 72 },
       occurredAt,
     });
+    return "sent";
   });
+  if (outcome === "expired") {
+    throw new PeopleAccessError("invitation_expired", "invitation has expired");
+  }
   return getInvitationSummary(organisationId, invitationId);
 }
 

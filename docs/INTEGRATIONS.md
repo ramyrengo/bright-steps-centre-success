@@ -11,10 +11,11 @@
 7. Surface freshness/failure to users when it affects decisions.
 8. Never let an integration bypass backend authorisation or write final consequential states without a governed command.
 
-Microsoft Entra ID in the single Bright Steps Australia tenant is approved only
-as the Milestone 2A authentication provider. Two app registrations and the
-delegated Centre Success API scope do not approve business, HR, Microsoft Graph,
-or any other external application integration.
+Microsoft Entra ID in the single Bright Steps Australia tenant is the Milestone
+2A authentication provider. Two app registrations and the delegated Centre
+Success API scope do not approve business authority, HR, directory, or general
+external integration. ADR-0016 separately approves one app-only Microsoft Graph
+operation solely for staging People & Access invitation-email delivery.
 
 ## Candidate integration register
 
@@ -22,13 +23,13 @@ Actual vendors and scope require discovery.
 
 | Capability | Potential system of record | Direction | Centre Success purpose | Key constraints |
 | --- | --- | --- | --- | --- |
-| Identity | Microsoft Entra ID — single BSA tenant | Inbound/access token | Strictly verified `tid + oid` identity for mapped BSA workforce users only | Two app registrations; API access token and `access_as_user`; User assignment required = No; authentication alone grants nothing; no auto-provisioning, Graph, groups/app-role authority, or email identity; PostgreSQL-owned authorisation |
+| Identity | Microsoft Entra ID — single BSA tenant | Inbound/access token | Strictly verified `tid + oid` identity for mapped BSA workforce users only | Two app registrations; API access token and `access_as_user`; User assignment required = No; authentication alone grants nothing; no auto-provisioning, Graph identity/directory dependency, groups/app-role authority, or email identity; PostgreSQL-owned authorisation |
 | People/centre assignments | HR/people or operations master | Inbound | Person status, Centre Director/Area Manager assignments | Effective dates, rapid offboarding, no unnecessary HR fields |
 | Centre hierarchy | Operations/master data | Inbound | Organisation, region/state, centre scope | Jurisdiction/timezone and historical hierarchy |
 | Roster/staffing facts | Roster/workforce system | Inbound aggregates/facts | Approved compliance or readiness controls | Do not become a shadow roster; minimise personal details |
 | Training/certifications | LMS/HR/credential source | Inbound | Verified status and expiry | Source freshness, issuer, legal interpretation reviewed |
 | Finance | Accounting/budget/procurement system | Inbound | Approved/actual/committed/forecast context | Immutable batches, mapping, reconciliation, restricted detail |
-| Notifications | Transactional email provider (vendor deferred) | Outbound/status | People & Access invitations; later reminders/escalations require approval | Implemented PostgreSQL outbox plus Encore Pub/Sub worker and development no-op adapter; idempotent delivery; minimal content; no Graph; production provider, sender, retention, and support policy require approval |
+| Notifications | Microsoft Graph for staging; Production provider/enablement deferred | Outbound/status | People & Access invitations only; later reminders/escalations require approval | PostgreSQL outbox plus Encore Pub/Sub; local/test no-op; fixed mailbox-scoped staging `sendMail`; minimal content; Production, retention, and support policy require approval |
 | Document repository | Approved document system | Inbound/reference | Policies and knowledge sources | Licence, version, classification, deletion, no open crawl |
 | ACECQA/jurisdictional sources | Official sites/manual registrar | Controlled reference | Change monitoring and source registry | Human verification; no auto-activation or invented law |
 | AI provider | Approved model/embedding service | Request/response | Assistant functions | Privacy, region, retention/training, prompt injection, cost |
@@ -104,7 +105,9 @@ Domain workflows create a notification intent, not a provider call inline. Recip
 
 Respect approved mandatory categories, user channel preferences, quiet hours, centre time zone, digesting, deduplication, and escalation. Delivery failure does not roll back the business action and remains visible for retry/support.
 
-The implemented People & Access send transaction commits its current token generation and outbox intent together. A bounded dispatcher publishes to Encore Pub/Sub and an idempotent subscriber calls a provider-neutral adapter. Development/test delivery is a deterministic no-op; no production provider or credential is configured. Resend/cancel invalidates the old generation; durable business/audit records never contain the plaintext token, role/scope email content, Entra claims, or Microsoft object identifier. Microsoft Graph is not used to send invitations or classify guest/member identities. HR/recruitment integration is deferred and cannot silently activate access.
+The implemented People & Access send transaction commits its current token generation and outbox intent together. A bounded dispatcher durably claims due `PENDING` or stale `PUBLISHED` rows with an expiring lease before publishing to Encore Pub/Sub. Publish-failure recovery is compare-and-set against that lease, so it cannot overwrite a worker's later result; the periodic dispatcher automatically republishes expired leases. The subscriber commits a provider-attempt reservation before calling a provider-neutral adapter. Local/test delivery is a deterministic no-op. Exact Encore `staging` uses ADR-0016's fixed `centresuccess@brightstepsacademy.com.au` Microsoft Graph `sendMail` adapter; every other cloud environment, including Production, is disabled. Resend/cancel invalidates the old generation; elapsed invitations cannot be resent. Durable business/audit records never contain the plaintext token, Graph access token/client credential, role/scope email content, Entra claims, or Microsoft object identifier. Graph is not used to classify guest/member identities. HR/recruitment integration is deferred and cannot silently activate access.
+
+The Graph adapter uses client credentials with `https://graph.microsoft.com/.default`, an in-memory expiry-aware/singleflight token cache, bounded timeouts and safe provider error classes. A `401` invalidates cache and permits one fresh-token resend inside the same provider reservation; a second `401` is terminal. A `403` invalidates cache and records retryable `graph.mailbox_authorization`; `429`, `5xx`, timeout or temporary network failure are also retryable. The database accepts only contiguous provider reservations 1–3 for a generation/outbox. A reservation commits before Graph is reachable and remains consumed after crash, transaction rollback or an ambiguous accepted response. Attempts one and two may reschedule; retryable or stale-ambiguous exhaustion at reservation three records terminal `delivery_attempts_exhausted`. `Retry-After` must be valid and non-negative and is clamped at ten minutes. The payload omits `message.from` and uses `saveToSentItems = false`. Microsoft Graph `sendMail` offers no provider idempotency key, so an ambiguous lost response can produce duplicate email within the three-reservation bound; this is bounded exposure, not exactly-once delivery. The worker re-locks and revalidates after reservation, then holds its invitation lock/transaction across bounded HTTP. This is accepted for staging/pilot volume; a future claim/call/reverify refinement must preserve the durable pre-call reservation, hard cap and cancel/resend/current-generation ordering.
 
 ## Official-source monitoring
 
@@ -138,7 +141,7 @@ Automated monitoring may flag that an ACECQA or jurisdictional page/document cha
 - Finance definitions and integration mechanism.
 - Required refresh/freshness and outage behaviour by domain.
 - Notification channels/providers and communication policy.
-- People & Access transactional email provider, sender domain, invitation template ownership, delivery retry/support policy, and retention.
+- Production People & Access email enablement/provider, invitation template ownership, delivery monitoring/support policy, and retention. Staging sender/provider are fixed by ADR-0016.
 - Approved source-monitoring method.
 - Data residency, subprocessors, support access, and retention for every provider.
 - Integration priorities within MVP.

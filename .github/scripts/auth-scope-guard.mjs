@@ -4,6 +4,13 @@ import { readFileSync, statSync } from "node:fs";
 const SELF = ".github/scripts/auth-scope-guard.mjs";
 const ADR_0011 =
   "docs/adr/0011-clerk-authentication-centre-success-authorisation.md";
+const GRAPH_INVITATION_ADAPTER =
+  "foundation/people-access/microsoft-graph-invitation-email.ts";
+const GRAPH_INVITATION_RUNTIME_FILES = new Set([
+  GRAPH_INVITATION_ADAPTER,
+  "foundation/people-access/configuration.ts",
+  "foundation/people-access/outbox.ts",
+]);
 
 function repositoryFiles() {
   const output = execFileSync(
@@ -75,6 +82,9 @@ const migrationFiles = productionFiles.filter((file) =>
 const environmentExampleFiles = productionFiles.filter((file) =>
   /(^|\/)\.env\.example$/u.test(file),
 );
+const nonGraphInvitationProductionFiles = productionFiles.filter(
+  (file) => !GRAPH_INVITATION_RUNTIME_FILES.has(file),
+);
 
 const violations = [];
 
@@ -117,24 +127,110 @@ scan(
 );
 
 scan(
-  productionFiles,
+  nonGraphInvitationProductionFiles,
   "Microsoft Graph source path",
   /(?:^|\/)(?:microsoft[-_.]?graph|msgraph|graph[-_.]?(?:api|client))(?:[./_-]|$)/giu,
   { inspectPath: true },
 );
 
 scan(
-  productionFiles,
+  nonGraphInvitationProductionFiles,
   "Microsoft Graph endpoint or User.Read scope",
   /https?:\/\/[^\s"']*graph\.microsoft\.(?:com|us)\b|\bUser\.Read[A-Za-z]*(?:\.[A-Za-z]+)*\b/giu,
 );
 
 scan(
-  productionFiles,
+  nonGraphInvitationProductionFiles,
   "client secret configuration",
   /\bclient[_-]?secret\b|\bclientSecret\b|\bNEXT_PUBLIC_[A-Z0-9_]*SECRET\b/gu,
   { inspectPath: true },
 );
+
+const graphAdapterSource = readText(GRAPH_INVITATION_ADAPTER);
+const graphConfigurationSource = readText("foundation/people-access/configuration.ts");
+const graphRuntimeSources = [...GRAPH_INVITATION_RUNTIME_FILES].map((file) => ({
+  file,
+  content: readText(file),
+}));
+for (const required of [
+  'GRAPH_SENDER_ADDRESS = "centresuccess@brightstepsacademy.com.au"',
+  'GRAPH_SCOPE = "https://graph.microsoft.com/.default"',
+  'GRAPH_PROVIDER_REFERENCE = "microsoft-graph:accepted"',
+  "https://graph.microsoft.com/v1.0/users/${GRAPH_SENDER_ADDRESS}/sendMail",
+  'environment.cloud === "encore"',
+  'environment.name === "staging"',
+  'environment.type === "development"',
+]) {
+  if (graphAdapterSource === null || !graphAdapterSource.includes(required)) {
+    violations.push(
+      `${GRAPH_INVITATION_ADAPTER}:1 [approved Graph invitation boundary] missing ${required}`,
+    );
+  }
+}
+
+if (
+  graphConfigurationSource === null ||
+  (graphConfigurationSource.match(/secret\("MicrosoftGraphClientSecret"\)/gu) ?? []).length !== 1
+) {
+  violations.push(
+    "foundation/people-access/configuration.ts:1 [approved Graph invitation boundary] expected exactly one MicrosoftGraphClientSecret declaration",
+  );
+}
+
+const graphRuntimeProhibitedPatterns = [
+  /\/me(?:\/|\b)/iu,
+  /\bUser\.Read[A-Za-z.]*/u,
+  /\bMail\.Read(?:Write)?\b/u,
+  /\bMail\.Send\b/u,
+  /\/users\?\$filter/iu,
+  /\/(?:groups|directoryObjects|applications|servicePrincipals)(?:[/?'"`]|\b)/iu,
+  /client[_-]?secret\s*[:=]\s*["'`][^"'`]+["'`]/iu,
+  /secret\s*\([^)]*sender/iu,
+  /process\.env\.[A-Z0-9_]*SENDER/iu,
+  /sender(?:Address|Mailbox)\s*:/iu,
+  /\bfrom\s*:/u,
+];
+
+for (const { file, content } of graphRuntimeSources) {
+  if (content === null) continue;
+  for (const prohibited of graphRuntimeProhibitedPatterns) {
+    const match = prohibited.exec(content);
+    if (match) report(file, "approved Graph invitation boundary", content, match.index);
+  }
+  const permittedGraphReferencesRemoved = content
+    .replaceAll('"https://graph.microsoft.com/.default"', '"approved-graph-scope"')
+    .replaceAll(
+      "`https://graph.microsoft.com/v1.0/users/${GRAPH_SENDER_ADDRESS}/sendMail`",
+      '"approved-graph-send-endpoint"',
+    );
+  const arbitraryGraphReference = /https:\/\/graph\.microsoft\.com/iu.exec(
+    permittedGraphReferencesRemoved,
+  );
+  if (arbitraryGraphReference) {
+    report(
+      file,
+      "unapproved Microsoft Graph endpoint",
+      content,
+      arbitraryGraphReference.index,
+    );
+  }
+}
+
+for (const syntheticViolation of [
+  'https://graph.microsoft.com/v1.0/me',
+  'scope: "User.Read"',
+  'permission: "Mail.ReadWrite"',
+  'https://graph.microsoft.com/v1.0/groups',
+  'clientSecret: "hardcoded-value"',
+  'senderAddress: configuration.sender',
+  'from: { emailAddress: sender }',
+]) {
+  if (!graphRuntimeProhibitedPatterns.some((pattern) => pattern.test(syntheticViolation))) {
+    violations.push(
+      `${SELF}:1 [Graph guard self-test] failed to reject ${syntheticViolation}`,
+    );
+  }
+}
 
 scan(
   productionFiles,
