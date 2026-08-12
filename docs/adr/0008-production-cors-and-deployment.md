@@ -51,9 +51,12 @@ emailed to an invited employee and is kept distinct from the Encore staging API
 transport origin. The reviewed local value `http://localhost:3000` is not a
 cloud invitation destination.
 
-The two Milestone 2C cryptographic secrets are configured for Development and
-Preview only, never Production. Their values are generated key material and
-appear in no document, example file, log, or commit.
+The two Milestone 2C invitation cryptographic secrets are configured for
+Development and Preview only, never Production. ADR-0016 declares a separate
+`MicrosoftGraphClientSecret` for the exact `staging` environment only; it is not
+configured during implementation and must never be assigned by broad
+environment type. Secret values appear in no document, example file, log, or
+commit.
 
 Current state, recorded 12 August 2026:
 
@@ -61,6 +64,8 @@ Current state, recorded 12 August 2026:
 - the exact Vercel staging origin is approved for authenticated Encore CORS;
 - the Entra staging redirect URIs and Pre-Production
   `InvitationPublicBaseUrl` are configured separately;
+- the Graph staging invitation adapter is code-complete only after review; its
+  exact staging secret and deployment/live-email proof remain operator gates;
 - this is a deployment-readiness item and did not block Milestone 3A
   implementation acceptance.
 

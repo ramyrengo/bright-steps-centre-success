@@ -20,7 +20,7 @@ The local synthetic first-administrator and identity-linking tools are not a pro
 - Multiple assignments remain independent and cannot recombine capability and scope.
 - Principal states are `pending`, `active`, `suspended`, and terminal `revoked`.
 - Every access mutation preserves at least one reachable active System Administrator; operations target at least two.
-- Invitation delivery uses a transactional provider behind a PostgreSQL outbox and Encore Pub/Sub worker. Microsoft Graph is not used merely for delivery or guest/member discovery.
+- Invitation delivery uses a transactional provider behind a PostgreSQL outbox and Encore Pub/Sub worker. ADR-0016 later approves Microsoft Graph only for the fixed-sender staging email adapter; Graph remains prohibited for guest/member discovery, directory lookup, provisioning, authorisation, and mailbox reads.
 - Production first-administrator bootstrap requires a separately validated Encore Cloud operational mechanism and Product Owner approval; no permanent bootstrap endpoint is permitted.
 - Centre Success manages application access, not employment records or Microsoft accounts. HR integration is deferred.
 
@@ -28,7 +28,7 @@ Detailed workflows, schemas, capabilities, routes, APIs, threats and tests are n
 
 ## Consequences
 
-The normal business authoriser remains unchanged because pending proposals never enter active grant tables. Activation is a security-sensitive serializable transaction. Privileged onboarding needs two reachable administrators. Invitation acceptance is a single sensitive public workflow endpoint that manually reuses the exact Milestone 2A Entra verifier but never creates Encore AuthData for an unmapped candidate; all existing business endpoints remain `auth: true` and provisioned-only. Exact verified `email` is correlation evidence; missing, mismatched, ambiguous or guest evidence moves to administrator review with zero grants. The production email provider, retention policy and production bootstrap operations remain release/operations gates.
+The normal business authoriser remains unchanged because pending proposals never enter active grant tables. Activation is a security-sensitive serializable transaction. Privileged onboarding needs two reachable administrators. Invitation acceptance is a single sensitive public workflow endpoint that manually reuses the exact Milestone 2A Entra verifier but never creates Encore AuthData for an unmapped candidate; all existing business endpoints remain `auth: true` and provisioned-only. Exact verified `email` is correlation evidence; missing, mismatched, ambiguous or guest evidence moves to administrator review with zero grants. ADR-0016 resolves only the staging email-provider decision. Production email delivery, retention policy and production bootstrap operations remain release/operations gates.
 
 ## Rejected alternatives
 
@@ -36,6 +36,6 @@ The normal business authoriser remains unchanged because pending proposals never
 - Email/UPN as a permanent identity key.
 - Pending rows in active membership/assignment/scope tables.
 - Automatic activation of any same-tenant identity.
-- Microsoft Graph solely for invitation email or guest/member classification.
+- Microsoft Graph for guest/member classification or any broader directory/provisioning/authorisation purpose. The later, narrowly superseding ADR-0016 permits only staging invitation email.
 - Plaintext, replayable, non-expiring, or permission-bearing invitation links.
 - A permanent production bootstrap API, default administrator, magic header, or local-script reuse.

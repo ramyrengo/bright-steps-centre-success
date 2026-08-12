@@ -30,13 +30,13 @@ Consequently:
 - the protected self-context endpoint reloads `PrincipalAuthorisationContext` from PostgreSQL for every request; and
 - the public health API remains minimal and non-sensitive.
 
-No temporary login, trusted test identity header, public self-registration, auto-provisioning, Microsoft Graph permission, or business endpoint is approved. MFA, recovery, Conditional Access, step-up, multi-organisation selection, and future business API decisions remain separately gated. See ADR-0012.
+No temporary login, trusted test identity header, public self-registration, auto-provisioning, Microsoft Graph identity/authorisation/directory permission, or unapproved business endpoint is approved. ADR-0016 separately permits one app-only fixed-mailbox staging invitation-send adapter without changing authentication or PostgreSQL authorisation. MFA, recovery, Conditional Access, step-up, multi-organisation selection, and future business API decisions remain separately gated. See ADR-0012 and ADR-0016.
 
 ### Implemented People & Access boundary
 
 ADR-0014 supersedes the earlier operational recommendation to require Entra enterprise-application user assignment. The approved setting is **User assignment required = No**. An exact-tenant Entra identity may authenticate, but authentication creates no internal principal mapping, membership, capability, scope, or application access; unmapped and uninvited identities remain `not_provisioned`.
 
-Milestone 2C is **ACCEPTED / COMPLETE**. The workflow uses System-Administrator-created invitations, 72-hour one-time token generations, pending proposals outside active authorisation tables, permanent `tid + oid` identity, standard atomic activation, independent approval for privileged packages, non-recombining assignments, and at least one reachable active System Administrator. Microsoft Graph, Entra groups/app roles, email identity, HR synchronisation, and a permanent production bootstrap remain outside the approved boundary. See `docs/PEOPLE_AND_ACCESS.md` and ADR-0014.
+Milestone 2C is **ACCEPTED / COMPLETE**. The workflow uses System-Administrator-created invitations, 72-hour one-time token generations, pending proposals outside active authorisation tables, permanent `tid + oid` identity, standard atomic activation, independent approval for privileged packages, non-recombining assignments, and at least one reachable active System Administrator. ADR-0016 later approves Graph solely for staging invitation email; Graph directory/provisioning/authorisation, Entra groups/app roles, email identity, HR synchronisation, and a permanent production bootstrap remain outside the boundary. See `docs/PEOPLE_AND_ACCESS.md`, ADR-0014 and ADR-0016.
 
 ### Implemented Daily Success boundary
 
@@ -108,6 +108,7 @@ Database integration evidence also covers nested state/region ancestry, centre m
 - Browser calls to protected Encore APIs carry only a Centre Success API access token as a Bearer header. The committed authenticated CORS origins are exactly `http://localhost:3000` for local development and `https://bright-steps-centre-success-staging.vercel.app` for approved staging; Encore's all-origin local-development convenience does not change the deployed allowlist.
 - The confirmed staging backend/API origin is `https://staging-bright-steps-centre-success-uwhi.encr.app`. It is an API transport origin only, not an Entra SPA redirect URI, post-logout URI, or authentication audience.
 - The approved staging frontend origin is `https://bright-steps-centre-success-staging.vercel.app`. Its Microsoft Entra staging redirect URIs and Pre-Production `InvitationPublicBaseUrl` are configured separately; neither is derived from the Encore API origin.
+- The staging invitation-email adapter is selected only by exact Encore environment metadata (`encore` / `staging` / `development`). Local/test remain no-network and Production remains disabled. Its one credential is `MicrosoftGraphClientSecret`, scoped to the exact staging environment after implementation review; its fixed Exchange-scoped sender is `centresuccess@brightstepsacademy.com.au`.
 - The API app registration defines authentication trust: Application ID URI `api://5e8ce11c-ade3-4baa-82f6-351919b444ca`, delegated scope `api://5e8ce11c-ade3-4baa-82f6-351919b444ca/access_as_user`, and exact version 2 token `aud = 5e8ce11c-ade3-4baa-82f6-351919b444ca`. Never derive these from an Encore deployment URL.
 - Do not enable wildcard origins or cookie-based cross-origin credentials.
 - The frontend calls the real local Encore public health and protected self-context endpoints.
@@ -125,4 +126,4 @@ Database integration evidence also covers nested state/region ancestry, centre m
 - break-glass or support impersonation;
 - production CORS origins and deployment/security operations; and
 - capabilities, data policies, and workflows for later business modules.
-- People & Access operational decisions still enumerated in `docs/PEOPLE_AND_ACCESS.md`, including the production email provider, correlation-claim operations, retention, JML operating source/SLA, production first-administrator mechanism, and break-glass/recovery policy.
+- People & Access operational decisions still enumerated in `docs/PEOPLE_AND_ACCESS.md`, including Production email enablement/provider, correlation-claim operations, retention, JML operating source/SLA, production first-administrator mechanism, and break-glass/recovery policy.

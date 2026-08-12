@@ -80,7 +80,7 @@ The invitation-acceptance boundary is narrower than a normal business endpoint b
 
 ## D. Implemented database model
 
-Migrations 016–018 implement these reviewed organisation-owned records:
+Migrations 016–019 implement these reviewed organisation-owned records and delivery-infrastructure controls:
 
 | Concept | Purpose and key invariants |
 | --- | --- |
@@ -90,7 +90,8 @@ Migrations 016–018 implement these reviewed organisation-owned records:
 | `invitation_token_generations` | Generation number, keyed digest, created/expiry/consumed/invalidated metadata; only one current generation |
 | `invitation_events` | Append-only invitation transition history with actor, reason, safe before/after summary and correlation ID |
 | `privileged_invitation_approvals` | Exact package digest/version, requester, distinct approver, decision, reason and time; invalid after package mutation |
-| `people_notification_outbox` | Transactional delivery intent, authenticated-encrypted delivery credential, idempotency key and publish state |
+| `people_notification_outbox` | Transactional delivery intent, authenticated-encrypted delivery credential, idempotency key, publish state and expiring dispatch lease |
+| `people_notification_provider_attempts` | Durable pre-provider reservation ledger, contiguous per-generation/outbox attempts 1–3, honest terminal/ambiguous/not-sent outcomes; never message secrets |
 | `people_notification_delivery_attempts` | Provider reference, redacted result, retry state and timestamps; never message secrets |
 | `organisation_access_invariants` | Per-organisation row used by transactional/database last-reachable-administrator guards |
 | `people_admin_guard_validation_queue` | Transaction-local affected-organisation set; drives one deferred reachability validation per organisation at commit |
@@ -154,14 +155,14 @@ No screen displays raw access tokens, JWT claims, invitation digests, unnecessar
 ## H. Invitation email architecture
 
 1. The invitation transaction writes the invitation generation and an outbox intent together.
-2. A bounded outbox dispatcher claims unpublished rows and publishes an idempotent Encore Pub/Sub message after commit.
-3. A Pub/Sub subscriber renders the reviewed Bright Steps template and sends through a transactional email provider.
-4. Delivery attempts persist provider reference, safe status, retry count and redacted error class.
-5. Duplicate Pub/Sub delivery is harmless because the generation/idempotency key is stable.
+2. A bounded outbox dispatcher commits a `PUBLISHED` dispatch lease before publication. Expired leases are automatically reclaimable, and compare-and-set failure handling cannot overwrite a worker's later result.
+3. A Pub/Sub subscriber commits one of at most three contiguous provider-attempt reservations before the provider is reachable, then re-locks and revalidates invitation status, current generation and expiry before sending.
+4. Provider reservations and delivery outcomes preserve accepted, retryable, permanent, ambiguous/interrupted and not-sent-after-revalidation history with redacted error classes. A crash never deletes or decrements a reserved slot.
+5. Duplicate Pub/Sub delivery is safe because active work is locked and a generation can never reserve a duplicate number or a fourth provider call.
 
-The production provider remains deferred. Development and deterministic tests use a no-network no-op adapter; the provider-neutral interface and retryable delivery-attempt model are implemented. Microsoft Graph is not used for email. The delivery request contains a generic Centre Success acceptance URL and a separate opaque invitation code; it contains no role, scope, permission, token claim, child/staff data, or sensitive access detail.
+ADR-0016 approves Microsoft Graph only as the exact Encore staging invitation-email adapter. Development and deterministic tests keep the no-network no-op adapter; Production and every other cloud environment remain disabled. The fixed sender is `Bright Steps Centre Success <centresuccess@brightstepsacademy.com.au>`, protected by Exchange Application RBAC scoped to that mailbox. The adapter uses the existing API app's tenant/client identifiers and one staging-only Encore secret, caches the app-only token in memory, and calls only the fixed sender's `sendMail` endpoint. It omits `message.from`, retains fixed `replyTo`, and uses `saveToSentItems = false` so the live invitation credential is not copied into the mailbox's Sent Items. The delivery request contains the `InvitationPublicBaseUrl` acceptance link and a separate opaque invitation code; it contains no role, scope, permission, token claim, child/staff data, Microsoft object identifier, or sensitive access detail. Production delivery remains deferred.
 
-Invitation secrets are generated with 256 bits of cryptographic randomness. Plaintext exists only in command/subscriber memory long enough to hand the code to the provider adapter. The verifier table stores only an HMAC-SHA-256 digest. The outbox stores authenticated AES-256-GCM ciphertext under a separate Encore secret only while asynchronous delivery or retry may still need it; business and audit projections never expose it. A successful terminal delivery atomically preserves non-sensitive delivery metadata and clears the ciphertext, IV, and authentication tag. Verification compares digests in constant time. Expiry is exactly 72 hours. Consumption, cancellation, and resend invalidate the generation; resend rotates the secret before creating the new outbox intent.
+Invitation secrets are generated with 256 bits of cryptographic randomness. Plaintext exists only in command/subscriber memory long enough to hand the code to the provider adapter. The verifier table stores only an HMAC-SHA-256 digest. The outbox stores authenticated AES-256-GCM ciphertext under a separate Encore secret only while asynchronous delivery or retry may still need it; business and audit projections never expose it. A successful terminal delivery atomically preserves non-sensitive delivery metadata and clears the ciphertext, IV, and authentication tag. Verification compares digests in constant time. Expiry is exactly 72 hours. Consumption and cancellation invalidate the generation. Resend rechecks `expires_at <= trusted now` while holding the invitation lock: an elapsed invitation and its current generation become `EXPIRED`, and no replacement generation or outbox row is created. A valid unexpired resend rotates the secret before creating the new outbox intent.
 
 ## I. Joiner, mover and leaver
 
@@ -276,13 +277,13 @@ Milestone 2C implementation must include:
 - tenant/cross-centre list/object negative tests and generic non-disclosing errors;
 - accessible mobile People & Access, invite, review, mismatch, expiry, approval and lifecycle states;
 - generated-client reproducibility, migrations on clean and representative data, dependency/security audits, auth-scope guard, and all Milestone 1/2A/2B regression gates;
-- no Graph SDK/permission, Entra group/app-role business authority, local/temporary auth bypass, production bootstrap endpoint, client secret, raw token, or real employee fixture.
+- no Graph SDK, broad Entra `Mail.Send` permission, Entra group/app-role business authority, local/temporary auth bypass, production bootstrap endpoint, source-stored credential, raw token, or real employee fixture. ADR-0016's one staging-only Graph credential and mailbox-scoped invitation send are the sole narrow exception.
 
 ## P. Remaining Product Owner decisions
 
-The architecture decisions and Milestone 2C implementation in this document are **ACCEPTED / COMPLETE**. The email-provider architecture is implemented through the outbox/Pub/Sub design with a provider-neutral adapter; acceptance does not approve production readiness or a concrete production provider. Still-open bounded decisions:
+The architecture decisions and Milestone 2C implementation in this document are **ACCEPTED / COMPLETE**. The email-provider architecture is implemented through the outbox/Pub/Sub design with a provider-neutral adapter. ADR-0016 subsequently approves a concrete provider only for staging; acceptance does not approve Production readiness or Production email delivery. Still-open bounded decisions:
 
-- transactional email provider, sender domain, template owner, support path, and operational delivery configuration;
+- Production transactional email provider/enablement, template owner, support path, and operational delivery configuration; staging uses the fixed ADR-0016 sender;
 - exact safe email-correlation claim/procedure available in the BSA token configuration, with uncertain guest/member cases remaining review-only;
 - retention periods for invitations, intended-email data, delivery attempts and access history;
 - invitation and acceptance rate/abuse controls;
@@ -307,7 +308,7 @@ Scope after the implementation gate opens:
 - complete audit history and deterministic security/concurrency tests;
 - preserved M2A authentication and M2B business-authorisation boundaries.
 
-Out of scope: HR sync, Microsoft Graph, Entra groups/app roles as business authority, password/local login, production bootstrap implementation, break-glass, support impersonation, other business modules, and real employee seed data.
+Out of scope: HR sync; Microsoft Graph outside the narrow ADR-0016 staging invitation-send adapter; Entra groups/app roles as business authority; password/local login; production bootstrap implementation; break-glass; support impersonation; other business modules; and real employee seed data.
 
 ## R. Authorised implementation checklist — delivered
 
@@ -318,7 +319,7 @@ The authorised implementation followed this checklist:
 3. Add only reviewed forward migrations for invitation proposals/token generations/events/approval/outbox/delivery concepts, principal lifecycle, capabilities and last-admin database protection.
 4. Keep all pending proposals out of active membership/assignment/scope tables.
 5. Implement workflow commands/queries with backend actor/tenant resolution, serializable activation, optimistic concurrency, safe audit events and generic errors.
-6. Reuse the strict Entra verifier; bind permanent identity only as `tid + oid`; add no Graph, client secret, group/app-role authority, email identity, or auth bypass.
+6. Reuse the strict Entra verifier; bind permanent identity only as `tid + oid`; add no Graph identity/authorisation/provisioning dependency, group/app-role authority, email identity, or auth bypass. ADR-0016 later adds one isolated staging email-delivery credential without changing this boundary.
 7. Implement standard activation and independent privileged approval exactly as classified, including last-admin protection.
 8. Add the outbox/Pub/Sub boundary and a provider interface; use only a separately approved provider/configuration and never log invitation secrets.
 9. Build only the approved task-oriented routes with generated Encore client calls and accessible mobile states.
@@ -334,4 +335,10 @@ The contained 12 August 2026 remediation preserves the accepted security core wh
 
 The following non-blocking engineering follow-ups do not expand Milestone 2C: dialog focus trapping and Escape handling, the privileged-approval confirmation UX decision, human-readable history labels, remaining internal PostgreSQL wording, invitation-code clearing after failed acceptance, and multi-centre authorisation batching before broad 20+ centre rollout.
 
-Milestone acceptance is not a production-readiness declaration. Production release remains gated by the transactional-email provider and sender/domain/template/support process, Entra email-claim operational configuration, retention policy, rate/abuse controls, the authoritative JML source and SLA, the production first-administrator ceremony, access reviews, and break-glass/recovery.
+Milestone acceptance is not a production-readiness declaration. ADR-0016 resolves staging sender/provider implementation only. Production release remains gated by explicit Production email enablement and sender/domain/template/support process, Entra email-claim operational configuration, retention policy, rate/abuse controls, the authoritative JML source and SLA, the production first-administrator ceremony, access reviews, and break-glass/recovery.
+
+## U. Post-acceptance staging invitation-email adapter
+
+ADR-0016 is **IMPLEMENTED — ACCEPTANCE REMEDIATION IN PROGRESS** and is not operationally enabled. Forward migration 019 adds a delivery-infrastructure-only provider-reservation ledger and expiring dispatch leases; it adds no API or invitation source of truth. Every possible Graph send consumes a durably committed, contiguous attempt number before Graph is reachable. The database permits only 1–3 per generation/outbox; crash, rollback and ambiguous completion keep the reservation consumed. Attempts one and two may reschedule; retryable or ambiguous exhaustion after reservation three terminally records `delivery_attempts_exhausted`; explicit valid administrator resend is the only recovery that creates a new generation. Elapsed invitations cannot be resent or revived. A send `401` permits one cache invalidation/fresh-token retry within the same reservation, while `403` records `graph.mailbox_authorization` and is retryable only inside the same three-slot cap. The worker revalidates under the invitation lock and holds that lock/transaction through the bounded provider operation to preserve cancel/resend/current-generation ordering; that trade-off is accepted for staging/pilot volume and must be redesigned safely before scale if contention appears. The separate secret guard intentionally remains red until targeted review passes and the Product Owner configures `MicrosoftGraphClientSecret` for exact `staging`; no Graph request, deployment or invitation resend occurs during remediation.
+
+Expired `PUBLISHED` leases are swept by the existing periodic dispatcher. A crash before publish, after publish or during provider reconciliation therefore returns to at-least-once processing without permitting a fourth provider reservation. Non-blocking delivery follow-ups are permanently-failed ciphertext retention, HTML/plain-text multipart content, GUID-validator generalisation, and monitoring lock duration before broader volume.
