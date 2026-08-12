@@ -2,7 +2,7 @@
 
 ## Status and boundary
 
-**Milestone 3A is ACCEPTED / COMPLETE.** The Product Owner accepted the implementation on 12 August 2026 after implementation, acceptance remediation, an independent review returning PASS, a targeted remediation re-review returning PASS, a green local regression gate, green hosted Foundation CI and Encore Build, and merge to `main` through pull request #6. This document records the approved Daily Success architecture, remediation evidence, and implementation boundary. Every later milestone remains locked.
+**Milestone 3A is ACCEPTED / COMPLETE.** The Product Owner accepted the implementation on 12 August 2026 after, in sequence, implementation, a first independent review returning PASS WITH CHANGES, acceptance remediation, a targeted independent re-review returning PASS, a green local regression gate, green hosted Foundation CI and Encore Build, and merge to `main` through pull request #6. This document records the approved Daily Success architecture, remediation evidence, and implementation boundary. Every later milestone remains locked.
 
 Acceptance is an implementation acceptance only. Centre Success is not production-ready, and pilot/production readiness remains separately gated.
 
@@ -148,4 +148,4 @@ Independent review should verify:
 29. Milestones 1, 2A, 2B and 2C regressions pass.
 30. No later/deferred module or notification/manual-priority work is present.
 
-Passing this baseline means **READY FOR TARGETED INDEPENDENT RE-REVIEW**, not accepted or production-ready.
+This baseline passed, the targeted independent re-review returned **PASS**, and the Product Owner accepted Milestone 3A on 12 August 2026. Acceptance is an implementation acceptance only and does not make Centre Success production-ready.

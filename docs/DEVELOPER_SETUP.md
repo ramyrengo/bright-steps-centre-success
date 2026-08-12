@@ -378,9 +378,8 @@ server-resolved internal identity plus current PostgreSQL capability,
 assignment, effective-date, and resource-scope checks. The candidate command
 reuses strict Entra verification but confers no authority before atomic
 activation. No generic administrator table-CRUD surface exists. Frontend routes
-are usability surfaces, not authority. Milestone 2C is **IMPLEMENTED —
-ACCEPTANCE REMEDIATION IN PROGRESS** pending targeted independent re-review;
-production email delivery and production first-administrator
+are usability surfaces, not authority. Milestone 2C is **ACCEPTED /
+COMPLETE**; production email delivery and production first-administrator
 bootstrap remain separately gated.
 
 ## Framework references

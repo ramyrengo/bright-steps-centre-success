@@ -40,7 +40,7 @@ Milestone 2C is **ACCEPTED / COMPLETE**. The workflow uses System-Administrator-
 
 ### Implemented Daily Success boundary
 
-Milestone 3A is implemented for independent review, not accepted. ADR-0015 adds one protected read-only request-time projection and makes `/` the operational home without changing the provider-neutral principal, PostgreSQL authorization source, modular-monolith deployment, or database ownership model. Current source capabilities and scopes—not role names or selected perspectives—derive Centre, Portfolio, Compliance, and administration-only views. One set-wise hierarchy query replaces per-centre authorizer calls. There is no Daily Success persistence, source-fact copy, notification, task mutation, or authorization cache. See `docs/DAILY_SUCCESS.md`.
+Milestone 3A is **ACCEPTED / COMPLETE**. ADR-0015 adds one protected read-only request-time projection and makes `/` the operational home without changing the provider-neutral principal, PostgreSQL authorization source, modular-monolith deployment, or database ownership model. Current source capabilities and scopes—not role names or selected perspectives—derive Centre, Portfolio, Compliance, and administration-only views. One set-wise hierarchy query replaces per-centre authorizer calls. There is no Daily Success persistence, source-fact copy, notification, task mutation, or authorization cache. See `docs/DAILY_SUCCESS.md`.
 
 ## Authorisation model
 
