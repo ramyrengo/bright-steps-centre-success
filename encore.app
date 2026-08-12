@@ -6,7 +6,8 @@
 			"http://localhost:3000"
 		],
 		"allow_origins_with_credentials": [
-			"http://localhost:3000"
+			"http://localhost:3000",
+			"https://bright-steps-centre-success-staging.vercel.app"
 		]
 	}
 }

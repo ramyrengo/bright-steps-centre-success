@@ -105,9 +105,9 @@ Database integration evidence also covers nested state/region ancestry, centre m
 
 ## Environment frontend/backend contract
 
-- Local browser calls to protected Encore APIs carry only a Centre Success API access token as a Bearer header. The committed authenticated CORS origin is exactly `http://localhost:3000`; Encore's all-origin local-development convenience does not change the deployed allowlist.
+- Browser calls to protected Encore APIs carry only a Centre Success API access token as a Bearer header. The committed authenticated CORS origins are exactly `http://localhost:3000` for local development and `https://bright-steps-centre-success-staging.vercel.app` for approved staging; Encore's all-origin local-development convenience does not change the deployed allowlist.
 - The confirmed staging backend/API origin is `https://staging-bright-steps-centre-success-uwhi.encr.app`. It is an API transport origin only, not an Entra SPA redirect URI, post-logout URI, or authentication audience.
-- No staging frontend has been approved or deployed. Its browser origin, CORS entry, Entra redirect URI, and post-logout URI remain unconfigured until separately approved.
+- The approved staging frontend origin is `https://bright-steps-centre-success-staging.vercel.app`. Its Microsoft Entra staging redirect URIs and Pre-Production `InvitationPublicBaseUrl` are configured separately; neither is derived from the Encore API origin.
 - The API app registration defines authentication trust: Application ID URI `api://5e8ce11c-ade3-4baa-82f6-351919b444ca`, delegated scope `api://5e8ce11c-ade3-4baa-82f6-351919b444ca/access_as_user`, and exact version 2 token `aud = 5e8ce11c-ade3-4baa-82f6-351919b444ca`. Never derive these from an Encore deployment URL.
 - Do not enable wildcard origins or cookie-based cross-origin credentials.
 - The frontend calls the real local Encore public health and protected self-context endpoints.

@@ -54,8 +54,9 @@ dedicated bridge.
 The confirmed Encore staging backend/API origin is
 `https://staging-bright-steps-centre-success-uwhi.encr.app`. It is a transport
 origin only and is not a Web SPA redirect URI, post-logout URI, Application ID
-URI, requested scope, or token audience. No staging frontend is yet approved or
-deployed, so its redirect and post-logout URIs remain undecided under ADR-0008.
+URI, requested scope, or token audience. The approved staging frontend origin is
+`https://bright-steps-centre-success-staging.vercel.app`; its Entra redirect
+URIs are configured independently of the Encore API URL under ADR-0008.
 The API registration—not the Encore deployment URL—continues to define the
 `api://5e8ce11c-ade3-4baa-82f6-351919b444ca` Application ID URI and the
 delegated `api://5e8ce11c-ade3-4baa-82f6-351919b444ca/access_as_user` scope;
