@@ -36,7 +36,7 @@ No temporary login, trusted test identity header, public self-registration, auto
 
 ADR-0014 supersedes the earlier operational recommendation to require Entra enterprise-application user assignment. The approved setting is **User assignment required = No**. An exact-tenant Entra identity may authenticate, but authentication creates no internal principal mapping, membership, capability, scope, or application access; unmapped and uninvited identities remain `not_provisioned`.
 
-Milestone 2C is **IMPLEMENTED — ACCEPTANCE REMEDIATION IN PROGRESS** and is not yet accepted. The workflow uses System-Administrator-created invitations, 72-hour one-time token generations, pending proposals outside active authorisation tables, permanent `tid + oid` identity, standard atomic activation, independent approval for privileged packages, non-recombining assignments, and at least one reachable active System Administrator. Microsoft Graph, Entra groups/app roles, email identity, HR synchronisation, and a permanent production bootstrap remain outside the approved boundary. See `docs/PEOPLE_AND_ACCESS.md` and ADR-0014.
+Milestone 2C is **ACCEPTED / COMPLETE**. The workflow uses System-Administrator-created invitations, 72-hour one-time token generations, pending proposals outside active authorisation tables, permanent `tid + oid` identity, standard atomic activation, independent approval for privileged packages, non-recombining assignments, and at least one reachable active System Administrator. Microsoft Graph, Entra groups/app roles, email identity, HR synchronisation, and a permanent production bootstrap remain outside the approved boundary. See `docs/PEOPLE_AND_ACCESS.md` and ADR-0014.
 
 ## Authorisation model
 

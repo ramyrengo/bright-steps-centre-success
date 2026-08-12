@@ -2,7 +2,7 @@
 
 ## Status and implementation gate
 
-**Architecture approved; IMPLEMENTED — ACCEPTANCE REMEDIATION IN PROGRESS for Milestone 2C — People & Access + User Invitations.** The Product Owner accepted Milestone 2B and separately authorised Milestone 2C implementation on 11 August 2026. An independent review returned PASS WITH CHANGES. Forward migrations 016–018, workflow APIs, the candidate-only identity boundary, task routes, outbox worker and regression tests implement this design without expanding it. Targeted independent re-review, Product Owner acceptance, a production email provider and production first-administrator bootstrap remain separate gates.
+**Architecture and Milestone 2C — People & Access + User Invitations implementation are ACCEPTED / COMPLETE.** The implementation gate, acceptance remediation, independent review, and final targeted review passed. Pull request #4 then passed hosted Foundation CI and Encore Build and merged to `main` before Product Owner closure. Forward migrations 016–018, workflow APIs, the candidate-only identity boundary, task routes, outbox worker and regression tests implement this design without expanding it. Production readiness, the concrete email provider, and the production first-administrator ceremony remain separate gates.
 
 This document is the approved product and engineering design. Microsoft Entra proves identity. Centre Success PostgreSQL owns application access. Centre Success is not an HR system and does not manage Microsoft accounts.
 
@@ -280,11 +280,12 @@ Milestone 2C implementation must include:
 
 ## P. Remaining Product Owner decisions
 
-The architecture decisions in this document are approved, Milestone 2B was accepted, and Milestone 2C is **IMPLEMENTED — ACCEPTANCE REMEDIATION IN PROGRESS** pending targeted independent re-review and Product Owner acceptance. The email-provider architecture is implemented through the outbox/Pub/Sub design with a provider-neutral adapter; concrete production provider selection remains deferred. Still-open bounded decisions:
+The architecture decisions and Milestone 2C implementation in this document are **ACCEPTED / COMPLETE**. The email-provider architecture is implemented through the outbox/Pub/Sub design with a provider-neutral adapter; acceptance does not approve production readiness or a concrete production provider. Still-open bounded decisions:
 
-- transactional email provider, sender domain, template owner, delivery/retention policy and support path;
+- transactional email provider, sender domain, template owner, support path, and operational delivery configuration;
 - exact safe email-correlation claim/procedure available in the BSA token configuration, with uncertain guest/member cases remaining review-only;
 - retention periods for invitations, intended-email data, delivery attempts and access history;
+- invitation and acceptance rate/abuse controls;
 - authoritative operational source and SLA for joiner/mover/leaver requests until HR integration exists;
 - exact policy classification for any role/scope package not in the four standard combinations;
 - production first-administrator Encore Cloud mechanism and separate approval;
@@ -327,4 +328,10 @@ The authorised implementation followed this checklist:
 
 ## S. Acceptance-remediation evidence
 
-The contained 12 August 2026 remediation preserves the accepted security core while adding migration 018's transaction-local last-administrator validation set, canonical package-format version 2, successful-delivery ciphertext erasure, complete atomic portfolio replacement, exact human-readable approval packages, action-specific destructive confirmations, safe reason-code guidance, and focused migration/replay/tamper/tenant/self-approval/real-verifier/audit-leakage tests. The local gate passed 101 unit, 72 Encore/PostgreSQL integration, and 70 frontend tests plus typecheck, lint, production build, generated-client reproduction, dependency/security guards, fresh migrations through version 18 with `dirty = false`, the unchanged-timeout M2B regression, concurrent mutual-administrator removal, and deployment-style Encore build. Milestone 2C remains **IMPLEMENTED — ACCEPTANCE REMEDIATION IN PROGRESS** until targeted independent re-review and Product Owner acceptance.
+The contained 12 August 2026 remediation preserves the accepted security core while adding migration 018's transaction-local last-administrator validation set, canonical package-format version 2, successful-delivery ciphertext erasure, complete atomic portfolio replacement, exact human-readable approval packages, action-specific destructive confirmations, safe reason-code guidance, and focused migration/replay/tamper/tenant/self-approval/real-verifier/audit-leakage tests. The local gate passed 101 unit, 72 Encore/PostgreSQL integration, and 74 frontend tests after the final in-dialog error acceptance fix, plus typecheck, lint, production build, generated-client reproduction, dependency/security guards, fresh migrations through version 18 with `dirty = false`, the unchanged-timeout M2B regression, concurrent mutual-administrator removal, and deployment-style Encore build. Independent review and final targeted review returned PASS; hosted Foundation CI and Encore Build passed; pull request #4 merged to `main`; and the Product Owner accepted Milestone 2C.
+
+## T. Accepted follow-ups and production-readiness gates
+
+The following non-blocking engineering follow-ups do not expand Milestone 2C: dialog focus trapping and Escape handling, the privileged-approval confirmation UX decision, human-readable history labels, remaining internal PostgreSQL wording, invitation-code clearing after failed acceptance, and multi-centre authorisation batching before broad 20+ centre rollout.
+
+Milestone acceptance is not a production-readiness declaration. Production release remains gated by the transactional-email provider and sender/domain/template/support process, Entra email-claim operational configuration, retention policy, rate/abuse controls, the authoritative JML source and SLA, the production first-administrator ceremony, access reviews, and break-glass/recovery.

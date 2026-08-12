@@ -4,7 +4,7 @@ Bright Steps Centre Success is a proposed operational success system for Austral
 
 ## Current status
 
-**Milestone 1, Milestone 2A — Authentication Gate, and Milestone 2B — Area Manager Audit to Corrective Action are accepted and complete. Milestone 2C — People & Access + User Invitations is IMPLEMENTED — ACCEPTANCE REMEDIATION IN PROGRESS and is not yet accepted.**
+**Milestone 1, Milestone 2A — Authentication Gate, Milestone 2B — Area Manager Audit to Corrective Action, and Milestone 2C — People & Access + User Invitations are accepted and complete. No later milestone is authorised.**
 
 Milestone 0 architecture, Milestone 1 foundation, Milestone 2A authentication, and Milestone 2B quarterly review are complete. The repository contains one Encore `foundation` service with the organisation/centre/principal/access/audit foundation, Microsoft Entra authentication, the synthetic quarterly-review vertical slice, and the implemented Milestone 2C invitation-based People & Access workflow. The responsive Next.js application uses the generated client; database-backed authorisation and workflow tests plus automated quality checks preserve the authentication/authorisation boundary.
 
