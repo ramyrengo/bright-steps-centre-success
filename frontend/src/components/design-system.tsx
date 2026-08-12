@@ -1,7 +1,7 @@
 "use client";
 
 import Link from "next/link";
-import { useId, type ReactNode } from "react";
+import { useEffect, useId, useRef, type ReactNode } from "react";
 
 /**
  * Bright Steps Centre Success design-system primitives.
@@ -294,6 +294,102 @@ export function DataListRow({
       {action}
     </li>
   );
+}
+
+const FOCUSABLE = [
+  "a[href]",
+  "button:not([disabled])",
+  "textarea:not([disabled])",
+  "input:not([disabled]):not([type='hidden'])",
+  "select:not([disabled])",
+  "[tabindex]:not([tabindex='-1'])",
+].join(",");
+
+/**
+ * A modal dialog with a real focus trap.
+ *
+ * Focus enters the dialog on open, cycles inside it while it is open, Escape
+ * dismisses it, and focus returns to the control that opened it. This closes
+ * the Milestone 3A follow-up that recorded dialogs as not focus-trapping.
+ *
+ * Mark the element that should receive initial focus with `data-autofocus`;
+ * otherwise the first focusable element is used.
+ */
+export function Dialog({
+  eyebrow,
+  title,
+  onDismiss,
+  children,
+  footer,
+}: Readonly<{
+  eyebrow?: string;
+  title: string;
+  onDismiss: () => void;
+  children: ReactNode;
+  footer: ReactNode;
+}>) {
+  const titleId = useId();
+  const surface = useRef<HTMLElement>(null);
+
+  // Move focus in on open and hand it back to the opening control on close.
+  useEffect(() => {
+    const node = surface.current;
+    const opener = document.activeElement as HTMLElement | null;
+    const first = node?.querySelectorAll<HTMLElement>(FOCUSABLE)[0];
+    (node?.querySelector<HTMLElement>("[data-autofocus]") ?? first)?.focus();
+    return () => opener?.focus?.();
+  }, []);
+
+  // Trap Tab inside the dialog and let Escape dismiss it.
+  useEffect(() => {
+    function onKeyDown(event: KeyboardEvent) {
+      if (event.key === "Escape") {
+        event.preventDefault();
+        onDismiss();
+        return;
+      }
+      if (event.key !== "Tab") return;
+      const node = surface.current;
+      const items = Array.from(node?.querySelectorAll<HTMLElement>(FOCUSABLE) ?? []);
+      if (items.length === 0) return;
+      const first = items[0];
+      const last = items[items.length - 1];
+      const active = document.activeElement;
+      if (event.shiftKey && (active === first || !node?.contains(active))) {
+        event.preventDefault();
+        last.focus();
+      } else if (!event.shiftKey && active === last) {
+        event.preventDefault();
+        first.focus();
+      }
+    }
+    document.addEventListener("keydown", onKeyDown, true);
+    return () => document.removeEventListener("keydown", onKeyDown, true);
+  }, [onDismiss]);
+
+  return (
+    <div className="workflow-dialog-backdrop">
+      <section
+        aria-labelledby={titleId}
+        aria-modal="true"
+        className="workflow-dialog workflow-stack"
+        ref={surface}
+        role="dialog"
+      >
+        <div>
+          {eyebrow ? <p className="page-header__eyebrow">{eyebrow}</p> : null}
+          <h2 id={titleId}>{title}</h2>
+        </div>
+        {children}
+        <div className="people-actions">{footer}</div>
+      </section>
+    </div>
+  );
+}
+
+/** A short reason explaining why a control is unavailable, tied to it by id. */
+export function DisabledReason({ id, children }: Readonly<{ id: string; children: ReactNode }>) {
+  return <p className="metric__note" id={id}>{children}</p>;
 }
 
 export function formatDate(value: string): string {

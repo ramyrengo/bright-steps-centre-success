@@ -607,7 +607,7 @@ textarea {
   margin: 0;
 }
 
-@media (min-width: 30rem) {
+@media (min-width: 22rem) {
   .metric-row { grid-template-columns: repeat(2, minmax(0, 1fr)); }
 }
 
