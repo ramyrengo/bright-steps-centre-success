@@ -23,12 +23,7 @@ const REQUIRED_ENVIRONMENT_TYPES = ["development", "preview"];
 const SECRET_DECLARATION = /\bsecret\(\s*"([A-Za-z][A-Za-z0-9_]*)"\s*\)/gu;
 
 /** Secrets intentionally left unconfigured, each with its governing record. */
-const DEFERRED_SECRETS = new Map([
-  [
-    "InvitationPublicBaseUrl",
-    "no approved Development/Preview frontend origin exists; see docs/adr/0008-production-cors-and-deployment.md",
-  ],
-]);
+const DEFERRED_SECRETS = new Map();
 
 function isSourceFile(file) {
   return (

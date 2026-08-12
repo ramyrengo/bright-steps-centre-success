@@ -59,8 +59,10 @@ are `http://localhost:3000` and `http://localhost:4000`. The confirmed staging
 backend/API origin is
 `https://staging-bright-steps-centre-success-uwhi.encr.app`; it is not an Entra
 SPA redirect URI, post-logout URI, Application ID URI, scope, or token audience.
-No staging frontend origin is approved or deployed, so no staging browser CORS
-or Entra redirect value is approved. The API registration continues to define
+The approved staging frontend origin is
+`https://bright-steps-centre-success-staging.vercel.app`; it is allowed by exact
+match for authenticated browser CORS, and its Entra redirect URIs are configured
+separately. The API registration continues to define
 the confirmed `api://5e8ce11c-ade3-4baa-82f6-351919b444ca` Application ID URI,
 delegated scope, and exact `aud = 5e8ce11c-ade3-4baa-82f6-351919b444ca`
 version 2 token validation.
@@ -104,7 +106,7 @@ Supabase RLS is not used. PostgreSQL RLS is not assumed as the primary control; 
 - Type and schema validation at API boundaries with size, range, enum, and normalisation constraints.
 - Parameterised database access and explicit response schemas.
 - Output encoding and sanitised rich text; never render imported or AI content as trusted executable markup.
-- Cross-origin Encore calls use only a Bearer header, and the committed authenticated CORS allowlist contains exactly `http://localhost:3000`; wildcard and production origins are absent. Encore's documented `encore run` convenience permits all origins locally, so the committed exact list governs deployed behaviour rather than providing a local runtime origin rejection. Exact API `aud` and Web-client `azp` validation remain mandatory. The frontend does not use cookie authentication, cross-origin cookie forwarding, or browser `credentials: include`.
+- Cross-origin Encore calls use only a Bearer header, and the committed authenticated CORS allowlist contains exactly `http://localhost:3000` and `https://bright-steps-centre-success-staging.vercel.app`; wildcard and production origins are absent. Encore's documented `encore run` convenience permits all origins locally, so the committed exact list governs deployed behaviour rather than providing a local runtime origin rejection. Exact API `aud` and Web-client `azp` validation remain mandatory. The frontend does not use cookie authentication, cross-origin cookie forwarding, or browser `credentials: include`.
 - Rate limits and abuse controls by endpoint, identity, organisation, and IP where appropriate.
 - Idempotency for retried commands, webhook events, Pub/Sub subscribers, imports, and action generation.
 - Optimistic concurrency and state-machine validation for material workflows.

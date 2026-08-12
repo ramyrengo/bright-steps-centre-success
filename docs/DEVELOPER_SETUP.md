@@ -69,13 +69,13 @@ These install the dependency graphs recorded in the two lockfiles. The Milestone
 | Environment | Frontend origin | Backend/API origin | Entra SPA redirect URI |
 | --- | --- | --- | --- |
 | Local | `http://localhost:3000` | `http://localhost:4000` | `http://localhost:3000/redirect` for the MSAL v5 bridge; root is the post-logout landing |
-| Staging | Not yet approved or deployed | `https://staging-bright-steps-centre-success-uwhi.encr.app` | Not approved; the staging backend URL is not a redirect URI |
+| Staging | `https://bright-steps-centre-success-staging.vercel.app` | `https://staging-bright-steps-centre-success-uwhi.encr.app` | Configured separately in Entra; the staging backend URL is not a redirect URI |
 
-The confirmed staging value is the Encore API transport/base origin only. A
-future approved staging frontend may use it as `NEXT_PUBLIC_ENCORE_API_URL`, but
-no staging frontend origin, browser CORS origin, Entra redirect URI, or
-post-logout URI is approved yet. Do not invent those values or register the
-Encore deployment URL as a SPA redirect.
+The confirmed staging backend value is the Encore API transport/base origin
+used by the approved Vercel staging frontend as `NEXT_PUBLIC_ENCORE_API_URL`.
+The exact Vercel origin is approved in Encore's authenticated CORS allowlist,
+and its Entra staging redirect URIs are configured separately. Do not register
+the Encore deployment URL as a SPA redirect or derive token trust from it.
 
 The Entra API trust boundary remains tied to the Centre Success API app
 registration. Its confirmed Application ID URI is
@@ -134,8 +134,9 @@ and tenant OIDC discovery endpoint, expects the API client-ID GUID—not the
 It obtains rotating signing keys from tenant metadata; do not configure a
 pinned PEM, SPA client secret, or API client secret merely to validate inbound
 tokens. Empty, malformed, conflicting, or non-GUID values fail closed. The
-staging backend/API origin is confirmed above, but staging frontend, CORS,
-redirect, post-logout, and production values remain separately gated.
+staging backend/API and frontend origins are confirmed above. The exact staging
+frontend origin is approved for authenticated CORS, its Entra redirect URIs are
+configured separately, and Production values remain separately gated.
 
 The JWKS resolver makes remote work single-flight, attempts its normal refresh hourly, refuses to trust a cached key set after 24 hours, applies a five-second remote timeout, and shares a five-minute cooldown across normal and unknown-`kid` refreshes. Network, metadata, stale-cache, or still-unknown-key failure denies authentication. These values are part of the reviewed Milestone 2A trust policy, not ad hoc local tuning.
 
@@ -202,7 +203,7 @@ UPN, or other user identifier is persisted in repository evidence. The linked
 principal and organisation records are synthetic local-development data and
 must not be described or reused as a production user-provisioning process.
 
-The committed authenticated CORS allowlist contains only `http://localhost:3000` for Bearer-token requests. Encore's development server permits all origins as a documented local convenience, so that exact list describes deployed behaviour and is not a local runtime origin rejection. The backend still requires exact API `aud` and approved Web-client `azp`. No wildcard or production origin, cookie authentication, `credentials: include`, trusted test identity header, or environment verification bypass is configured.
+The committed authenticated CORS allowlist contains exactly `http://localhost:3000` and `https://bright-steps-centre-success-staging.vercel.app` for Bearer-token requests. Encore's development server permits all origins as a documented local convenience, so that exact list describes deployed behaviour and is not a local runtime origin rejection. The backend still requires exact API `aud` and approved Web-client `azp`. No wildcard or production origin, cookie authentication, `credentials: include`, trusted test identity header, or environment verification bypass is configured.
 
 ## Tests and quality checks
 
