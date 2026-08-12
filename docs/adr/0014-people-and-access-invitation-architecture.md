@@ -2,7 +2,7 @@
 
 ## Status
 
-Accepted as architecture. Implementation authorised 11 August 2026, following Milestone 2B Product Owner acceptance. The production first-administrator bootstrap remains separately gated.
+Accepted architecture; **IMPLEMENTED — ACCEPTANCE REMEDIATION IN PROGRESS** following an independent PASS WITH CHANGES review. Milestone 2C is not yet accepted. Implementation was authorised 11 August 2026 following Milestone 2B Product Owner acceptance. Production first-administrator bootstrap remains separately gated.
 
 ## Context
 
@@ -24,11 +24,11 @@ The local synthetic first-administrator and identity-linking tools are not a pro
 - Production first-administrator bootstrap requires a separately validated Encore Cloud operational mechanism and Product Owner approval; no permanent bootstrap endpoint is permitted.
 - Centre Success manages application access, not employment records or Microsoft accounts. HR integration is deferred.
 
-Detailed workflows, schemas, capabilities, routes, APIs, threats, tests and the future implementation prompt are normative in `docs/PEOPLE_AND_ACCESS.md`.
+Detailed workflows, schemas, capabilities, routes, APIs, threats and tests are normative in `docs/PEOPLE_AND_ACCESS.md`. Migrations 016–018 implement the approved principal lifecycle, System Administrator capability-template version, invitation/proposal/token/event/approval/outbox records, a canonical version-2 package digest, terminal-delivery credential erasure, and the last-reachable-administrator invariant with one deferred reachability validation per affected organisation and transaction.
 
 ## Consequences
 
-The normal business authoriser remains unchanged because pending proposals never enter active grant tables. Activation is a security-sensitive serializable transaction. Privileged onboarding needs two reachable administrators. Invitation acceptance needs a narrow pre-provisioning identity-proof boundary that must be validated against Encore gateway behavior before implementation. Email provider, retention, correlation evidence and production bootstrap operations remain implementation gates.
+The normal business authoriser remains unchanged because pending proposals never enter active grant tables. Activation is a security-sensitive serializable transaction. Privileged onboarding needs two reachable administrators. Invitation acceptance is a single sensitive public workflow endpoint that manually reuses the exact Milestone 2A Entra verifier but never creates Encore AuthData for an unmapped candidate; all existing business endpoints remain `auth: true` and provisioned-only. Exact verified `email` is correlation evidence; missing, mismatched, ambiguous or guest evidence moves to administrator review with zero grants. The production email provider, retention policy and production bootstrap operations remain release/operations gates.
 
 ## Rejected alternatives
 

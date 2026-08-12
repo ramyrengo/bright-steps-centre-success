@@ -375,7 +375,7 @@ describe("foundation capability and scope policy", () => {
 
     expect(
       decision(
-        principal([activeAssignment], { principalStatus: "inactive" }),
+        principal([activeAssignment], { principalStatus: "suspended" }),
         capability.centreRead,
         resource,
       ),

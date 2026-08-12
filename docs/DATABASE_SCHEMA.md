@@ -2,7 +2,7 @@
 
 ## Status
 
-This document remains the logical data architecture for the whole product. The foundation and authentication physical subsets are implemented. Milestone 2B authorises only the quarterly-review, finding/action, acknowledgement, positive-observation, and private-evidence records described below. Milestone 2C People & Access implementation is authorised as of 11 August 2026; its physical tables are created only through reviewed forward migrations within the approved architecture.
+This document remains the logical data architecture for the whole product. The foundation, authentication, Milestone 2B quarterly-review and Milestone 2C People & Access physical subsets are implemented through reviewed forward migrations. Later modules remain logical architecture only until separately authorised.
 
 ## Persistence strategy
 
@@ -247,13 +247,13 @@ Snapshots are append-only. Corrections publish a new snapshot or explicit recalc
 | Webhook receipt | Provider event ID, signature result, replay/idempotency state |
 | Outbox event | Transactionally recorded event awaiting publication |
 
-### Approved People & Access logical proposal — not implemented
+### Implemented People & Access physical subset
 
-Milestone 2C proposes organisation-owned invitations, immutable role/scope proposals, one-time token generations, invitation events, privileged approvals, outbox events, and delivery attempts. Pending proposal rows must remain outside `organisation_memberships`, `role_assignments`, and `assignment_scopes`; they confer no current authority. Activation alone may write the active external mapping, membership, independent assignments/scopes, and audit events in one serializable transaction after identity, package, scope, approval, and uniqueness checks.
+Migrations 016–018 implement organisation-owned `access_invitations`, immutable `invitation_role_proposals` and `invitation_scope_proposals`, one-time `invitation_token_generations`, append-only `invitation_events`, `privileged_invitation_approvals`, `people_notification_outbox`, append-only delivery attempts, and a transaction-local administrator-guard validation queue. Pending proposal rows remain outside `organisation_memberships`, `role_assignments`, and `assignment_scopes` and confer no current authority. Activation alone writes the active external mapping, membership, independent assignments/scopes, and audit events in one serializable transaction after identity, package, scope, approval, and uniqueness checks.
 
-The principal lifecycle requires a reviewed forward migration to `pending`, `active`, `suspended`, and terminal `revoked`. Existing `inactive` rows must be explicitly classified during migration preflight rather than silently translated. Invitation generations store only keyed digests, generation/expiry/consumption/invalidation facts, and never plaintext. Privileged approvals bind a distinct approver to the exact package digest/version. Cross-table protection must preserve at least one reachable active System Administrator under concurrent mapping, membership, principal, assignment, scope, role-template, or capability changes.
+Principal lifecycle states are `pending`, `active`, `suspended`, and terminal `revoked`; migration 016 fails closed if a legacy `inactive` row requires human classification. Invitation generations store only keyed digests, generation/expiry/consumption/invalidation facts, and never plaintext. Delivery-only token material is authenticated-encrypted in the transactional outbox, excluded from business/audit projections, and erased after terminal successful delivery while retry metadata remains. Privileged approvals bind a distinct approver to the exact canonical package digest/version. Row-level collectors, a transaction-local affected-organisation set, one deferred validation per affected organisation, and transaction advisory locks preserve at least one reachable active System Administrator under concurrent mapping, membership, principal, assignment, scope, role-template, or capability changes.
 
-The full proposed entities, invariants, activation transaction, migration preflight, and tests are in `PEOPLE_AND_ACCESS.md`. No physical People & Access schema exists until Milestone 2B is accepted and a separate implementation prompt authorises it.
+The implemented entities, invariants, activation transaction, migration preflight, and test matrix are detailed in `PEOPLE_AND_ACCESS.md`. Production email-provider configuration and production first-administrator operations are deliberately absent.
 
 ## AI and knowledge module
 

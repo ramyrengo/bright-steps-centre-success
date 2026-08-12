@@ -1555,7 +1555,7 @@ describe.sequential("Milestone 2B quarterly review vertical slice", () => {
 
   test("fails closed for inactive and cross-organisation principals", async () => {
     await centreSuccessDB.exec`
-      UPDATE principals SET status = 'inactive', updated_at = now(), lock_version = lock_version + 1
+      UPDATE principals SET status = 'suspended', updated_at = now(), lock_version = lock_version + 1
       WHERE id = ${ids.areaManagerPrincipalId}
     `;
     await expect(

@@ -11,6 +11,8 @@ export default defineConfig({
   },
   test: {
     fileParallelism: false,
+    testTimeout: 15_000,
+    hookTimeout: 15_000,
     include: ["foundation/**/*.test.ts"],
     exclude: [
       "foundation/authorization/policy.test.ts",

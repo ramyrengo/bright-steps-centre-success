@@ -1,6 +1,11 @@
 import type { FoundationCapability } from "./capabilities";
 
 export type AuthorisationStatus = "active" | "inactive";
+export type PrincipalAuthorisationStatus =
+  | "pending"
+  | "active"
+  | "suspended"
+  | "revoked";
 
 export interface AuthorisationMembership {
   id: string;
@@ -30,7 +35,7 @@ export interface AuthorisationAssignment {
 
 export interface PrincipalAuthorisationContext {
   principalId: string;
-  principalStatus: AuthorisationStatus;
+  principalStatus: PrincipalAuthorisationStatus;
   activeOrganisationId: string;
   memberships: readonly AuthorisationMembership[];
   assignments: readonly AuthorisationAssignment[];

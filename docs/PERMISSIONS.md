@@ -67,9 +67,9 @@ Template publication remains migration/local-development seed governance in this
 
 When a principal has multiple roles, access is the union of complete valid grants. Each allow path must independently supply both the requested capability and a matching current scope. Capabilities and scopes from unrelated assignments cannot be recombined to manufacture broader access.
 
-### Approved Milestone 2C architecture capability boundary
+### Implemented Milestone 2C capability boundary
 
-Milestone 2C implementation is authorised as of 11 August 2026. Its approved architecture retains existing `principal.read`, `principal.manage`, `identity.mapping.manage`, `assignment.read`, and `assignment.manage`, and proposes the narrowly reviewed keys `invitation.read`, `invitation.manage`, `privileged_access.approve`, and `access_history.read` for a future canonical System Administrator template version. `access.change.request` is reserved for a later Operations Leadership request workflow and is not direct grant or activation authority. No other role receives People & Access administration automatically.
+Milestone 2C implements the reviewed keys `invitation.read`, `invitation.manage`, `privileged_access.approve`, and `access_history.read` alongside existing `principal.read`, `principal.manage`, `identity.mapping.manage`, `assignment.read`, and `assignment.manage`. Canonical System Administrator template version 2 owns that exact technical administration bundle. `access.change.request` is registered but remains ungranted and reserved for a later approved Operations Leadership request workflow; it is not direct grant or activation authority. No other canonical role receives People & Access administration automatically.
 
 Only a current, appropriately scoped System Administrator may initially create/manage invitations. The four standard packages—Educator with explicit centre(s), Assistant Director with centre scope, Centre Director with centre scope, and Area Manager with an explicit selected-centre portfolio—may activate after verified identity without another approval when the current invitation package passes all checks. System Administrator, Executive, Finance, Compliance Manager, organisation-wide Operations Leadership, and any policy-designated privileged package require a distinct current System Administrator to approve the exact package. The requester/inviter cannot provide their own independent approval.
 
@@ -213,7 +213,7 @@ Always audit privileged assignment changes, control/template approval, audit fin
 
 - MFA, recovery, session-revocation, assurance and step-up policy before affected high-risk operations.
 - Multi-organisation active-context selection/persistence beyond the Milestone 2A exact-one fail-closed rule.
-- Physical implementation of the approved Milestone 2C People & Access capability/template changes; architecture approval does not authorise a migration.
+- Any People & Access capability/template expansion beyond the implemented System Administrator version-2 bundle, including an Operations Leadership request workflow.
 - Future domain capability catalogues and role-bundle changes beyond the approved Milestone 2B and People & Access architecture sets.
 - Authoritative organisation/portfolio source, assignment owner, and propagation SLA; recursive foundation hierarchy evaluation is implemented.
 - Wellbeing aggregation thresholds and support roles.

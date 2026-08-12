@@ -180,7 +180,7 @@ cd frontend
 npm run dev
 ```
 
-Open `http://localhost:3000`. Signed-out visitors can start `loginRedirect`; Entra returns only to the registered `/redirect` bridge. After MSAL establishes an explicit active account, the central adapter calls `acquireTokenSilent` for the derived Centre Success API scope and configures the generated Encore client. Interactive renewal is used only for `InteractionRequiredAuthError` and must not loop. The authenticated shell links to the approved `/area-manager`, `/centre`, and `/compliance` Milestone 2B workspaces. These links are navigation only: each business request is independently authorised by Encore and PostgreSQL.
+Open `http://localhost:3000`. Signed-out visitors can start `loginRedirect`; Entra returns only to the registered `/redirect` bridge. After MSAL establishes an explicit active account, the central adapter calls `acquireTokenSilent` for the derived Centre Success API scope and configures the generated Encore client. Interactive renewal is used only for `InteractionRequiredAuthError` and must not loop. The authenticated shell links to the approved `/area-manager`, `/centre`, `/compliance`, and `/admin/people` workspaces. These links are navigation only: each business request is independently authorised by Encore and PostgreSQL.
 
 Connected smoke evidence on 11 August 2026 used an approved BSA development
 session and the confirmed public registration IDs. Microsoft returned through
@@ -302,7 +302,7 @@ operator-principal-id:
 b5c00000-0000-4000-8000-000000000002
 ```
 
-The utility reads the actual Encore environment and refuses staging, preview, production, every cloud environment, and local near misses before opening a transaction. It uses stable identifiers and a transaction-scoped advisory lock, rejects conflicting or ambiguous records, and is idempotent under sequential or concurrent invocation. It creates only the synthetic **Bright Steps Academy — Local Development** organisation, **Local Bootstrap Operator**, and **Local System Administrator**, with one active membership each. Both principals receive one organisation-scoped assignment to the existing persisted canonical `system_administrator` definition because no narrower approved canonical role contains `identity.mapping.manage`; no role or capability is invented. The role's exact seven technical capabilities are validated, and it contains no organisation, centre, budget, or other business-content capability. Each privileged assignment has a separate append-only bootstrap audit event. The utility creates no Entra identity, external identity mapping, email, employee profile, token, credential, HTTP route, authentication bypass, or cloud provisioning mechanism.
+The utility reads the actual Encore environment and refuses staging, preview, production, every cloud environment, and local near misses before opening a transaction. It uses stable identifiers and a transaction-scoped advisory lock, rejects conflicting or ambiguous records, and is idempotent under sequential or concurrent invocation. It creates only the synthetic **Bright Steps Academy — Local Development** organisation, **Local Bootstrap Operator**, and **Local System Administrator**, with one active membership each. Both principals receive one organisation-scoped assignment to the existing persisted canonical `system_administrator` definition because no narrower approved canonical role contains `identity.mapping.manage`; no role or capability is invented. The role's current exact technical capability bundle is validated, and it contains no organisation, centre, budget, or other business-content capability. Each privileged assignment has a separate append-only bootstrap audit event. The utility creates no Entra identity, external identity mapping, email, employee profile, token, credential, HTTP route, authentication bypass, or cloud provisioning mechanism.
 
 ## Seed the synthetic Milestone 2B review data
 
@@ -353,17 +353,35 @@ The local database inspected during the initial 11 August 2026 connected smoke c
 
 This command links an identity only. It never creates an Entra account, principal, organisation membership, role definition, role assignment, capability, or scope, and it is not an authentication/authorisation bootstrap or production onboarding path. Use synthetic Centre Success data only; do not enter real employee information into application fixtures. There is no public identity-linking API in Milestone 2A.
 
+## Milestone 2C local invitation delivery configuration
+
+People & Access uses three additional Encore-managed values. Configure only local development values through the prompt-driven CLI; do not place their values in source or shell arguments:
+
+```sh
+encore secret set --type local InvitationTokenDigestKey
+encore secret set --type local InvitationDeliveryEncryptionKey
+encore secret set --type local InvitationPublicBaseUrl
+```
+
+`InvitationTokenDigestKey` is independent HMAC key material. `InvitationDeliveryEncryptionKey` is a base64-encoded 32-byte AES key and must be independent from the digest key. `InvitationPublicBaseUrl` is an origin only; the reviewed local value is `http://localhost:3000`. Non-loopback HTTP, credentials, paths, query strings and fragments fail closed. Production/staging values are not approved merely because these local names exist.
+
+The development adapter is deliberately deterministic and performs no network or email delivery. Send/resend still exercises the real transaction, HMAC verifier record, AES-GCM outbox ciphertext, Pub/Sub dispatch boundary, idempotency and delivery-attempt state. After a successful terminal delivery, the implementation clears the ciphertext, IV and authentication tag while retaining non-sensitive delivery metadata; retryable/unpublished rows retain the complete encrypted tuple. A broader production retention policy remains a Product Owner/operations decision. A real production email provider, sender domain, template ownership, retention and support process remain separately deferred. Never use Microsoft Graph for this delivery path and never put role/scope details in the email.
+
+For browser testing, use only synthetic Centre Success people/invitations. An authorised System Administrator can create a draft at `/admin/people/invite`; the candidate opens `/invitations/accept`, authenticates through the existing BSA Entra flow and enters the separately delivered opaque code. The candidate endpoint is the sole pre-provisioning boundary. It does not create Encore AuthData for an unmapped identity, and every administration/business endpoint remains provisioned-only. Exact verified `email` is correlation evidence for automatic activation; missing, mismatched or guest evidence results in administrator review with zero grants.
+
 ## Current boundary
 
-The public API remains the non-sensitive health endpoint. The self-context and
-Milestone 2B quarterly-review/action/evidence/oversight workflow APIs are all
-`auth: true`; they use server-resolved internal identity plus current PostgreSQL
-capability, assignment, effective-date, and resource-scope checks. No generic
-administrator CRUD surface exists. The frontend routes are usability surfaces,
-not authority. Milestone 2B includes only the synthetic internal vertical slice.
-Milestone 2B was accepted and Milestone 2C People & Access implementation was
-authorised on 11 August 2026 within the approved architecture; the production
-first-administrator bootstrap remains separately gated.
+The public non-sensitive surface remains health plus the single sensitive
+candidate command `POST /invitations/accept`. The self-context, Milestone 2B,
+and People & Access administration/workflow APIs are `auth: true`; they use
+server-resolved internal identity plus current PostgreSQL capability,
+assignment, effective-date, and resource-scope checks. The candidate command
+reuses strict Entra verification but confers no authority before atomic
+activation. No generic administrator table-CRUD surface exists. Frontend routes
+are usability surfaces, not authority. Milestone 2C is **IMPLEMENTED —
+ACCEPTANCE REMEDIATION IN PROGRESS** pending targeted independent re-review;
+production email delivery and production first-administrator
+bootstrap remain separately gated.
 
 ## Framework references
 

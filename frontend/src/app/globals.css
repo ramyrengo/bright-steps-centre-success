@@ -721,6 +721,196 @@ textarea {
   border-top: 1px solid var(--border-default);
 }
 
+.people-toolbar,
+.people-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-3);
+  align-items: end;
+  justify-content: space-between;
+}
+
+.people-toolbar {
+  margin-bottom: var(--space-6);
+}
+
+.people-toolbar label,
+.people-form label,
+.people-form fieldset,
+.workflow-card > label {
+  display: grid;
+  gap: var(--space-2);
+  color: var(--text-primary);
+  font-weight: 680;
+}
+
+.people-toolbar label {
+  flex: 1 1 18rem;
+}
+
+.people-toolbar input,
+.people-form input,
+.people-form select,
+.people-form textarea,
+.workflow-card > label textarea {
+  width: 100%;
+  padding: var(--space-3);
+  color: var(--text-primary);
+  background: var(--surface-raised);
+  border: 1px solid #a9b7c4;
+  border-radius: var(--space-2);
+}
+
+.people-form {
+  display: grid;
+  gap: var(--space-5);
+}
+
+.people-form fieldset {
+  padding: var(--space-4);
+  border: 1px solid var(--border-default);
+  border-radius: var(--radius-medium);
+}
+
+.people-checklist {
+  display: grid;
+  gap: var(--space-2);
+  max-height: 20rem;
+  overflow: auto;
+}
+
+.people-checklist label {
+  display: flex;
+  gap: var(--space-3);
+  align-items: center;
+  min-block-size: 2.75rem;
+  padding: var(--space-2);
+  font-weight: 600;
+}
+
+.people-checklist input {
+  width: 1.25rem;
+  min-block-size: 1.25rem;
+}
+
+.people-facts {
+  display: grid;
+  gap: var(--space-3);
+  margin: var(--space-4) 0;
+}
+
+.people-facts > div {
+  padding: var(--space-3);
+  background: var(--surface-subtle);
+  border-radius: var(--space-2);
+}
+
+.people-facts dt {
+  color: var(--text-secondary);
+  font-size: 0.78rem;
+  font-weight: 700;
+  text-transform: uppercase;
+}
+
+.people-facts dd {
+  margin: var(--space-1) 0 0;
+  font-weight: 680;
+}
+
+.workflow-button--danger {
+  color: var(--status-negative);
+  background: var(--surface-raised);
+  border-color: #e7a19b;
+}
+
+.workflow-link-button--secondary {
+  color: var(--focus-ring);
+  background: var(--surface-raised);
+}
+
+.workflow-dialog-backdrop {
+  position: fixed;
+  inset: 0;
+  z-index: 20;
+  display: grid;
+  align-items: end;
+  padding: var(--space-3);
+  overflow-y: auto;
+  background: rgba(18, 30, 41, 0.62);
+}
+
+.workflow-dialog {
+  width: min(100%, 42rem);
+  max-height: calc(100vh - 2rem);
+  margin: auto;
+  padding: var(--space-5);
+  overflow-y: auto;
+  background: var(--surface-raised);
+  border: 1px solid var(--border-default);
+  border-radius: var(--radius-medium);
+  box-shadow: 0 1.5rem 4rem rgba(18, 30, 41, 0.3);
+}
+
+.workflow-dialog label,
+.workflow-dialog fieldset {
+  display: grid;
+  gap: var(--space-2);
+  color: var(--text-primary);
+  font-weight: 680;
+}
+
+.workflow-dialog textarea {
+  width: 100%;
+  padding: var(--space-3);
+  color: var(--text-primary);
+  background: var(--surface-raised);
+  border: 1px solid #a9b7c4;
+  border-radius: var(--space-2);
+}
+
+.workflow-dialog__error {
+  padding: var(--space-3);
+  color: var(--status-negative);
+  background: #fff1ef;
+  border: 1px solid #d66a60;
+  border-radius: var(--space-2);
+}
+
+.workflow-dialog__error p {
+  margin: var(--space-1) 0 0;
+}
+
+.invitation-package-list {
+  display: grid;
+  gap: var(--space-4);
+}
+
+.invitation-package {
+  padding: var(--space-4);
+  background: var(--surface-subtle);
+  border: 1px solid var(--border-default);
+  border-radius: var(--radius-medium);
+}
+
+.invitation-package h4,
+.invitation-package p {
+  margin-top: 0;
+}
+
+.scope-summary {
+  display: grid;
+  gap: var(--space-2);
+  margin-bottom: 0;
+}
+
+.people-accept {
+  width: min(100%, 42rem);
+}
+
+.people-accept .people-form {
+  margin-top: var(--space-5);
+}
+
 @media (min-width: 48rem) {
   .foundation-shell {
     padding: var(--space-6);
@@ -755,6 +945,15 @@ textarea {
 
   .metric-grid--oversight {
     grid-template-columns: repeat(3, minmax(0, 1fr));
+  }
+
+  .people-facts {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
+  .workflow-dialog-backdrop {
+    align-items: center;
+    padding: var(--space-6);
   }
 }
 

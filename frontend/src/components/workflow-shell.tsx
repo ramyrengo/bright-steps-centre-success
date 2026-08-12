@@ -1,7 +1,7 @@
 "use client";
 
 import Link from "next/link";
-import type { ReactNode } from "react";
+import { useId, type ReactNode } from "react";
 
 import { AuthenticationGate } from "./authentication-gate";
 import { useCentreSuccessAuthentication } from "../lib/centre-success-authentication";
@@ -34,6 +34,7 @@ export function WorkflowShell({
           <Link href="/area-manager">Area Manager</Link>
           <Link href="/centre">Centre</Link>
           <Link href="/compliance">Compliance</Link>
+          <Link href="/admin/people">People &amp; Access</Link>
         </nav>
         <button className="auth-text-button" type="button" onClick={() => void signOut()}>
           Sign out
@@ -62,13 +63,14 @@ export function WorkflowState({
   message: string;
   onRetry?: () => void;
 }>) {
+  const titleId = useId();
   return (
     <section
       className={`workflow-state workflow-state--${kind}`}
-      aria-labelledby="workflow-state-title"
+      aria-labelledby={titleId}
       {...(kind === "loading" ? { role: "status", "aria-live": "polite" as const } : {})}
     >
-      <h2 id="workflow-state-title">{title}</h2>
+      <h2 id={titleId}>{title}</h2>
       <p>{message}</p>
       {onRetry ? (
         <button className="workflow-button workflow-button--secondary" type="button" onClick={onRetry}>

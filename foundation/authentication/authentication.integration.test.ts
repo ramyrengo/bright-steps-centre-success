@@ -107,7 +107,7 @@ async function addOrganisation(label: string): Promise<string> {
 
 async function addPrincipal(
   label: string,
-  status: "active" | "inactive" = "active",
+  status: "pending" | "active" | "suspended" | "revoked" = "active",
 ): Promise<string> {
   const id = randomUUID();
   await centreSuccessDB.exec`
@@ -258,11 +258,11 @@ async function addExpiredCentreDirectorAssignment(
   `;
 }
 
-function expectPermissionDenied(error: unknown, reason: string): void {
+function expectAccountNotProvisioned(error: unknown, reason: string): void {
   expect(error).toBeInstanceOf(APIError);
   expect(error).toMatchObject({
-    code: "permission_denied",
-    message: "Centre Success access is not available",
+    code: "unauthenticated",
+    message: "authentication required",
     details: { reason },
   });
 }
@@ -288,20 +288,20 @@ describe("Entra identity to internal principal mapping", () => {
       () => {
         throw new Error("unmapped token unexpectedly authenticated");
       },
-      (error: unknown) => expectPermissionDenied(error, "account_not_provisioned"),
+      (error: unknown) => expectAccountNotProvisioned(error, "account_not_provisioned"),
     );
   });
 
   test("denies a valid token mapped to an inactive principal", async () => {
     const oid = randomUUID();
-    const principalId = await addPrincipal("Inactive authentication principal", "inactive");
+    const principalId = await addPrincipal("Suspended authentication principal", "suspended");
     await addMapping(oid, principalId);
 
     await authenticateOid(oid).then(
       () => {
         throw new Error("inactive principal unexpectedly authenticated");
       },
-      (error: unknown) => expectPermissionDenied(error, "account_not_provisioned"),
+      (error: unknown) => expectAccountNotProvisioned(error, "account_not_provisioned"),
     );
   });
 
@@ -314,7 +314,7 @@ describe("Entra identity to internal principal mapping", () => {
       () => {
         throw new Error("inactive mapping unexpectedly authenticated");
       },
-      (error: unknown) => expectPermissionDenied(error, "account_not_provisioned"),
+      (error: unknown) => expectAccountNotProvisioned(error, "account_not_provisioned"),
     );
   });
 
@@ -327,7 +327,7 @@ describe("Entra identity to internal principal mapping", () => {
       () => {
         throw new Error("cross-tenant mapping unexpectedly authenticated");
       },
-      (error: unknown) => expectPermissionDenied(error, "account_not_provisioned"),
+      (error: unknown) => expectAccountNotProvisioned(error, "account_not_provisioned"),
     );
   });
 
@@ -392,7 +392,7 @@ describe("authenticated PostgreSQL authorisation context", () => {
     const authData = await authenticateOid(oid);
 
     await centreSuccessDB.exec`
-      UPDATE principals SET status = 'inactive' WHERE id = ${principalId}
+      UPDATE principals SET status = 'revoked' WHERE id = ${principalId}
     `;
 
     await expect(

@@ -172,7 +172,7 @@ Administrator, one active membership for each, and one organisation-scoped
 assignment for each to the existing canonical `system_administrator` role.
 Both assignments are unavoidable bootstrap grants because no narrower approved
 canonical role contains the linker's `identity.mapping.manage` capability.
-The utility validates the role's exact seven technical capabilities, rejects
+The utility validates the role's current exact canonical technical capability bundle, rejects
 ambiguous or conflicting facts, serialises concurrent runs with a transaction
 advisory lock, writes a separate append-only event for each privileged grant,
 and is idempotent. It refuses every non-local environment before mutation and

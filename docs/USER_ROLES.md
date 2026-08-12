@@ -66,7 +66,7 @@ Future domain modules may draw from these architectural capability families afte
 - `ai.use`, `ai.admin`, `ai.audit`
 - `report.export`, `audit_log.read`, `access_review.perform`
 
-Except for the small Milestone 1 set above, these are architectural names for review, not implemented constants.
+These family names are architectural planning vocabulary unless a separately approved milestone records a concrete key. The implemented constants are the foundation, Milestone 2B and Milestone 2C capability sets recorded in `PERMISSIONS.md`; this list does not itself grant or implement them.
 
 ## Assignment types
 

@@ -135,7 +135,7 @@ The workflow supports annual and directed review without assuming one national s
 5. Activation is effective-dated. The system identifies impacted future and open instances and applies an explicit migration policy.
 6. Historical tasks, audits, evidence, and scores retain the version originally applied.
 
-## 13. People & Access invitation and lifecycle — architecture only
+## 13. People & Access invitation and lifecycle — implemented, acceptance remediation in progress
 
 1. A current, appropriately scoped System Administrator creates a 72-hour invitation with intended delivery/correlation email, an approved role/scope package, explicit centres where required, and a reason. Pending proposals grant nothing.
 2. The invitation and transactional outbox intent commit together. An Encore Pub/Sub-backed worker later sends through an approved transactional provider; Microsoft Graph is not used.
@@ -143,11 +143,11 @@ The workflow supports annual and directed review without assuming one national s
 4. A standard Educator, Assistant Director, Centre Director, or explicit-portfolio Area Manager package may activate atomically when the authorised System Administrator's unchanged invitation and all current checks pass.
 5. System Administrator, Executive, Finance, Compliance Manager, organisation-wide Operations Leadership, and future policy-designated privileged packages wait for a distinct current System Administrator to approve the exact package. The inviter/requester cannot self-approve.
 6. Activation consumes the token generation and atomically creates the mapping, membership, independent assignments/scopes, audit events, and active principal state. Capabilities and scopes from separate assignments never recombine.
-7. Resend rotates and invalidates the prior generation; cancel and expiry prevent activation. Identity mismatch, ambiguous guest/member evidence, mapping conflict, or package drift enters administrator review without automatically changing email or identity.
-8. Movers receive effective-dated replacements without temporary widening. Leavers are suspended or revoked in Centre Success independently of Microsoft account actions. `revoked` is terminal; reactivation from `suspended` is an authorised audited command.
+7. Resend rotates and invalidates the prior generation; cancellation uses a deliberate reasoned confirmation and makes the code unusable. Expiry is terminal and requires a newly reviewed invitation rather than resend. Identity mismatch, ambiguous guest/member evidence, mapping conflict, or package drift enters administrator review without automatically changing email or identity.
+8. Movers receive effective-dated replacements without temporary widening. An explicit-centre portfolio editor displays and atomically replaces the complete intended set; it has no unrelated default and the backend revalidates every centre. Leavers are suspended or revoked in Centre Success independently of Microsoft account actions. Suspension and terminal revocation use separate reasoned confirmations; `revoked` is terminal and reactivation from `suspended` is an authorised audited command.
 9. No operation may remove the final reachable active System Administrator; operations target at least two.
 
-Approved conceptual routes and the full invitation state machine, threat model, APIs, tests, and remaining decisions are in `PEOPLE_AND_ACCESS.md`. This section does not authorise implementation before the Milestone 2C gate.
+The workflow APIs, frontend task routes, invitation state machine, candidate-only identity boundary, activation transactions, lifecycle controls, outbox worker and tests are implemented within the approved Milestone 2C boundary. An independent PASS WITH CHANGES review is being remediated; this status does not pre-empt targeted re-review or Product Owner acceptance.
 
 ## Failure and recovery rules
 

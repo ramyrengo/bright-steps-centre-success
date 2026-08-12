@@ -21,6 +21,11 @@ export const FOUNDATION_CAPABILITIES = {
   evidenceRead: "evidence.read",
   evidenceUpload: "evidence.upload",
   complianceOversightRead: "compliance.oversight.read",
+  invitationRead: "invitation.read",
+  invitationManage: "invitation.manage",
+  accessHistoryRead: "access_history.read",
+  privilegedAccessApprove: "privileged_access.approve",
+  accessChangeRequest: "access.change.request",
 } as const;
 
 export type FoundationCapability =

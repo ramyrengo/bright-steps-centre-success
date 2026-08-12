@@ -52,6 +52,8 @@ const TENANT_FOUNDATION_RESOURCE_TYPES = new Set([
   "organisation_membership",
   "role_definition",
   "role_assignment",
+  "access_invitation",
+  "privileged_invitation_approval",
 ]);
 
 export type AuditEventExecutor = Pick<Transaction, "exec">;

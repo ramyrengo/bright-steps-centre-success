@@ -2,7 +2,7 @@
 
 ## Status and implementation gate
 
-**Architecture approved and implementation authorised for Milestone 2C — People & Access + User Invitations.** The Product Owner accepted Milestone 2B and separately authorised Milestone 2C implementation on 11 August 2026. This document and ADR-0014 are the authoritative design baseline; implementation must not exceed the approved scope, and the production first-administrator bootstrap remains separately gated.
+**Architecture approved; IMPLEMENTED — ACCEPTANCE REMEDIATION IN PROGRESS for Milestone 2C — People & Access + User Invitations.** The Product Owner accepted Milestone 2B and separately authorised Milestone 2C implementation on 11 August 2026. An independent review returned PASS WITH CHANGES. Forward migrations 016–018, workflow APIs, the candidate-only identity boundary, task routes, outbox worker and regression tests implement this design without expanding it. Targeted independent re-review, Product Owner acceptance, a production email provider and production first-administrator bootstrap remain separate gates.
 
 This document is the approved product and engineering design. Microsoft Entra proves identity. Centre Success PostgreSQL owns application access. Centre Success is not an HR system and does not manage Microsoft accounts.
 
@@ -76,24 +76,26 @@ active ───────────────────────> re
 - A unique active mapping conflict, an `oid` already linked elsewhere, or an invitation principal already linked to another identity fails closed.
 - No Microsoft Graph dependency is approved for invitation correlation or member/guest classification. Questionable guest/B2B identities require administrator review.
 
-The invitation-acceptance boundary is narrower than a normal business endpoint because an invited user may not yet have an internal mapping. Milestone 2C implementation must validate the exact Encore gateway/raw-endpoint mechanism before coding: it must reuse the Milestone 2A cryptographic verifier, never treat an unmapped external subject as an internal `userID`, never expose the token to logs or URLs, and make all existing business APIs continue to require a provisioned internal principal.
+The invitation-acceptance boundary is narrower than a normal business endpoint because an invited user may not yet have an internal mapping. The implementation exposes only sensitive `POST /invitations/accept` for this state. It reads a strict Bearer header, reuses the exact Milestone 2A cryptographic verifier, passes verified `tid + oid` only to the invitation workflow, and never creates Encore AuthData for an unmapped subject. All existing M1/M2A/M2B and People & Access administration APIs remain `auth: true` and require a provisioned internal principal.
 
-## D. Database model proposal
+## D. Implemented database model
 
-These are proposed Milestone 2C concepts, not authorised tables:
+Migrations 016–018 implement these reviewed organisation-owned records:
 
 | Concept | Purpose and key invariants |
 | --- | --- |
 | `access_invitations` | Organisation, pending principal, intended email, state, expiry, inviter, reason, package version/digest, optimistic lock; no plaintext token |
-| `access_invitation_role_proposals` | One immutable proposed canonical role definition per package component, privilege classification and policy version |
-| `access_invitation_scope_proposals` | Invitation-owned organisation, organisational-unit, or explicit centre scopes; no active authority |
-| `access_invitation_token_generations` | Generation number, keyed digest, created/expiry/consumed/invalidated metadata; only one current generation |
-| `access_invitation_events` | Append-only invitation transition history with actor, reason, safe before/after summary and correlation ID |
-| `privileged_access_approvals` | Exact package digest/version, requester, distinct approver, decision, reason and time; invalid after package mutation |
-| `access_outbox_events` | Transactional email/publication intents with idempotency key and publish state |
-| `notification_delivery_attempts` | Provider reference, redacted result, retry state and timestamps; never message secrets |
+| `invitation_role_proposals` | One immutable proposed canonical role definition per package component, privilege classification and policy version |
+| `invitation_scope_proposals` | Invitation-owned organisation, organisational-unit, or explicit centre scopes; no active authority |
+| `invitation_token_generations` | Generation number, keyed digest, created/expiry/consumed/invalidated metadata; only one current generation |
+| `invitation_events` | Append-only invitation transition history with actor, reason, safe before/after summary and correlation ID |
+| `privileged_invitation_approvals` | Exact package digest/version, requester, distinct approver, decision, reason and time; invalid after package mutation |
+| `people_notification_outbox` | Transactional delivery intent, authenticated-encrypted delivery credential, idempotency key and publish state |
+| `people_notification_delivery_attempts` | Provider reference, redacted result, retry state and timestamps; never message secrets |
+| `organisation_access_invariants` | Per-organisation row used by transactional/database last-reachable-administrator guards |
+| `people_admin_guard_validation_queue` | Transaction-local affected-organisation set; drives one deferred reachability validation per organisation at commit |
 
-Milestone 2C also needs a reviewed forward migration for principal states `pending`, `active`, `suspended`, and `revoked`. Existing `inactive` records must be explicitly classified during migration preflight rather than silently guessed. Existing foundation tables remain the only active-authorisation source:
+Migration 016 installs principal states `pending`, `active`, `suspended`, and `revoked` and fails closed if an existing `inactive` record requires explicit human classification. Existing foundation tables remain the only active-authorisation source:
 
 - `external_identity_mappings` receives `tid + oid` only after verified correlation;
 - `organisation_memberships`, `role_assignments`, and `assignment_scopes` receive no pending proposal rows;
@@ -103,13 +105,13 @@ Milestone 2C also needs a reviewed forward migration for principal states `pendi
 
 ## E. Pending role/scope strategy
 
-Invitation-owned proposals remain outside active membership and permission tables until activation. This avoids every query having to distinguish pending grants, prevents accidental policy inclusion, and preserves the current authoriser unchanged. The proposal stores reviewed role-definition and scope references plus a stable package digest. Activation re-resolves those references and denies drift, retirement, inactive centres, invalid hierarchy, missing capabilities, or a privilege-classification change.
+Invitation-owned proposals remain outside active membership and permission tables until activation. This avoids every query having to distinguish pending grants, prevents accidental policy inclusion, and preserves the current authoriser unchanged. The proposal stores reviewed role-definition and scope references plus a stable package digest. Package-format version 2 hashes a canonical fixed-key representation containing organisation, package and assignment privilege classifications, exact role-definition ID/key/version, normalised effective dates, and deterministically sorted typed scopes. Package-format version 1 remains verifiable only for invitations created before the forward migration. Activation re-resolves those references and denies drift, retirement, inactive centres, invalid hierarchy, missing capabilities, or a privilege-classification change.
 
 A person may later hold several independent assignments. The policy engine must find a complete allow path within one assignment; it cannot borrow a capability from one assignment and scope from another.
 
 ## F. Authorisation and capabilities
 
-Initial administration remains System Administrator only and is enforced by capability and organisation scope, never a route-level role-name check. Existing `principal.read`, `principal.manage`, `identity.mapping.manage`, `assignment.read`, and `assignment.manage` remain relevant. Milestone 2C should add narrowly reviewed capabilities:
+Initial administration remains System Administrator only and is enforced by capability and organisation scope, never a route-level role-name check. Existing `principal.read`, `principal.manage`, `identity.mapping.manage`, `assignment.read`, and `assignment.manage` remain relevant. Migration 016 adds the narrowly reviewed capabilities:
 
 - `invitation.read`;
 - `invitation.manage` (create, send, resend, cancel);
@@ -117,7 +119,7 @@ Initial administration remains System Administrator only and is enforced by capa
 - `access_history.read`; and
 - `access.change.request`, reserved for a later Operations Leadership request workflow and not a direct grant/activation authority.
 
-The canonical System Administrator bundle may receive the first four only through a reviewed template-version migration. No other role gets them automatically. Operations Leadership may later receive `access.change.request`; Compliance Manager, Area Manager, Centre Director, Finance, Executive, Assistant Director, and Educator receive no automatic People & Access administration.
+Canonical System Administrator template version 2 receives the first four only. No other role gets them automatically. `access.change.request` is registered but ungranted; Operations Leadership may receive it only through a later approved workflow. Compliance Manager, Area Manager, Centre Director, Finance, Executive, Assistant Director, and Educator receive no automatic People & Access administration.
 
 ### Role/scope validation matrix
 
@@ -141,9 +143,9 @@ The interface is simple and task-oriented:
 
 - `/admin/people`: search/filter people and invitations; show Centre Success state, Microsoft identity connection, role/scope summary and next action without exposing raw claims.
 - `/admin/people/invite`: email, canonical role, role-specific scope selector, explicit centres, reason, privilege warning and review/send confirmation.
-- `/admin/people/invitations/[invitationId]`: current state, expiry, package, safe delivery status, resend/cancel, mismatch review, and independent approval where required.
+- `/admin/people/invitations/[invitationId]`: current state, expiry, requester/reason, separate role/version/classification/effective-date cards, every scope by human-readable name, safe delivery status, deliberate cancellation, mismatch review, and independent approval where required. Expired invitations are terminal and link to creation of a new invitation rather than offering resend.
 - `/admin/people/[principalId]`: minimal profile, identity connected/not connected, principal state and assignment summary.
-- `/admin/people/[principalId]/access`: add/end/effective-date independent assignments, change scope, suspend/reactivate/revoke with reason and impact preview.
+- `/admin/people/[principalId]/access`: add/end/effective-date independent assignments, edit the complete explicit-centre portfolio without a destructive default, and suspend/reactivate/revoke through action-specific confirmation and reason flows.
 - `/admin/people/[principalId]/history`: append-only invitation, identity, membership, assignment, scope and lifecycle events.
 - `/invitations/accept`: token validation, BSA Microsoft sign-in, safe correlation outcome and plain-language success/review/expired/cancelled states.
 
@@ -157,9 +159,9 @@ No screen displays raw access tokens, JWT claims, invitation digests, unnecessar
 4. Delivery attempts persist provider reference, safe status, retry count and redacted error class.
 5. Duplicate Pub/Sub delivery is harmless because the generation/idempotency key is stable.
 
-The provider is deferred to implementation planning. Microsoft Graph is not used merely for email. The message contains a generic Centre Success invitation and one opaque link; it contains no role, scope, permission, token claim, child/staff data, or sensitive access detail.
+The production provider remains deferred. Development and deterministic tests use a no-network no-op adapter; the provider-neutral interface and retryable delivery-attempt model are implemented. Microsoft Graph is not used for email. The delivery request contains a generic Centre Success acceptance URL and a separate opaque invitation code; it contains no role, scope, permission, token claim, child/staff data, or sensitive access detail.
 
-Invitation secrets are generated with at least 256 bits of cryptographic randomness. Plaintext exists only long enough to form the one delivery link. PostgreSQL stores a keyed digest using an Encore-managed secret, compares in constant time, and never stores or logs the plaintext. Expiry is exactly 72 hours. Consumption, cancellation, and resend invalidate the generation; resend rotates the secret before creating the new outbox intent.
+Invitation secrets are generated with 256 bits of cryptographic randomness. Plaintext exists only in command/subscriber memory long enough to hand the code to the provider adapter. The verifier table stores only an HMAC-SHA-256 digest. The outbox stores authenticated AES-256-GCM ciphertext under a separate Encore secret only while asynchronous delivery or retry may still need it; business and audit projections never expose it. A successful terminal delivery atomically preserves non-sensitive delivery metadata and clears the ciphertext, IV, and authentication tag. Verification compares digests in constant time. Expiry is exactly 72 hours. Consumption, cancellation, and resend invalidate the generation; resend rotates the secret before creating the new outbox intent.
 
 ## I. Joiner, mover and leaver
 
@@ -207,7 +209,7 @@ A **reachable active System Administrator** has all of the following at the deci
 - a current technical administration scope covering the organisation; and
 - the current capabilities required to administer invitations, principals, mappings, assignments and privileged approval.
 
-Every mutation that can affect reachability—principal suspension/revocation, mapping deactivation, membership end, role assignment removal, scope narrowing, role-template change, or capability removal—must lock the organisation's administrator invariant and prove at least one other reachable administrator remains. Direct database writes must receive equivalent database protection; application checks alone are insufficient. Concurrent operations cannot each count the other administrator and remove both.
+Every mutation that can affect reachability—principal suspension/revocation, mapping deactivation, membership end, role assignment removal, scope narrowing, role-template change, or capability removal—must lock the organisation's administrator invariant and prove at least one other reachable administrator remains. Direct database writes receive equivalent database protection; application checks alone are insufficient. A row-level collector records each affected organisation once per transaction and acquires the existing transaction advisory lock; one deferred constraint trigger then performs the expensive reachability validation once per affected organisation at commit. Concurrent operations cannot each count the other administrator and remove both.
 
 The hard invariant is at least one. Operational policy targets at least two active reachable System Administrators and alerts when the count falls below two. Break-glass/recovery remains separately deferred.
 
@@ -217,9 +219,9 @@ No permanent production bootstrap endpoint, magic header, default account, migra
 
 The future mechanism should be one-time, environment-bound, operator-authenticated, dual-approved, expiring, non-network-public, fail closed when any administrator already exists, use the canonical System Administrator role, create only reviewed tenant identity data, and write complete immutable audit evidence. It must be disabled or removed after use and must not reuse the local synthetic bootstrap as a production workflow. The exact Encore Cloud command/job procedure remains an implementation gate, not an assumption in this architecture.
 
-## M. Workflow API proposal
+## M. Implemented workflow APIs
 
-These are future APIs, not generic CRUD and not implemented:
+These workflow APIs are implemented as task commands/queries rather than generic CRUD:
 
 | Command/query | Required authority | Scope and important validation | Audit event |
 | --- | --- | --- | --- |
@@ -243,7 +245,7 @@ Every command takes an optimistic lock/version where applicable, resolves actor/
 
 ## N. Frontend routes
 
-Approved conceptual routes:
+Implemented task routes:
 
 ```text
 /admin/people
@@ -255,7 +257,7 @@ Approved conceptual routes:
 /invitations/accept
 ```
 
-They remain unimplemented until Milestone 2C begins. Route visibility never substitutes for Encore authorisation.
+Route visibility never substitutes for Encore authorisation. Administrative routes call `auth: true` APIs; the candidate route calls only the sensitive candidate-acceptance workflow.
 
 ## O. Required tests
 
@@ -278,7 +280,7 @@ Milestone 2C implementation must include:
 
 ## P. Remaining Product Owner decisions
 
-The architecture decisions in this document are approved, Milestone 2B was accepted, and Milestone 2C implementation was authorised on 11 August 2026. The email-provider architecture is approved through the outbox/Pub/Sub design with a provider-neutral adapter; the concrete provider selection remains deferred. Still-open bounded decisions:
+The architecture decisions in this document are approved, Milestone 2B was accepted, and Milestone 2C is **IMPLEMENTED — ACCEPTANCE REMEDIATION IN PROGRESS** pending targeted independent re-review and Product Owner acceptance. The email-provider architecture is implemented through the outbox/Pub/Sub design with a provider-neutral adapter; concrete production provider selection remains deferred. Still-open bounded decisions:
 
 - transactional email provider, sender domain, template owner, delivery/retention policy and support path;
 - exact safe email-correlation claim/procedure available in the BSA token configuration, with uncertain guest/member cases remaining review-only;
@@ -306,9 +308,9 @@ Scope after the implementation gate opens:
 
 Out of scope: HR sync, Microsoft Graph, Entra groups/app roles as business authority, password/local login, production bootstrap implementation, break-glass, support impersonation, other business modules, and real employee seed data.
 
-## R. Exact future implementation prompt outline
+## R. Authorised implementation checklist — delivered
 
-When Milestone 2B is accepted, a separate Product Owner prompt should authorise only Milestone 2C and direct Codex to:
+The authorised implementation followed this checklist:
 
 1. Re-read this document, ADR-0014, AGENTS, security, permissions, database and current authentication/authorisation implementation.
 2. Perform a read-only preflight and report conflicts before writes, especially the unmapped invitation-acceptance gateway boundary, existing principal-state migration, email correlation evidence, and production-bootstrap exclusion.
@@ -322,3 +324,7 @@ When Milestone 2B is accepted, a separate Product Owner prompt should authorise 
 10. Add the complete negative, concurrency, lifecycle, outbox, authorisation and regression test matrix above.
 11. Regenerate the client and run backend typecheck, unit/authentication/authorisation tests, PostgreSQL integration tests, frontend tests/lint/typecheck/build, dependency audits, auth-scope guard and diff check.
 12. Perform no Git operation, production bootstrap, real-user provisioning, or later milestone work; report evidence and stop for Product Owner acceptance.
+
+## S. Acceptance-remediation evidence
+
+The contained 12 August 2026 remediation preserves the accepted security core while adding migration 018's transaction-local last-administrator validation set, canonical package-format version 2, successful-delivery ciphertext erasure, complete atomic portfolio replacement, exact human-readable approval packages, action-specific destructive confirmations, safe reason-code guidance, and focused migration/replay/tamper/tenant/self-approval/real-verifier/audit-leakage tests. The local gate passed 101 unit, 72 Encore/PostgreSQL integration, and 70 frontend tests plus typecheck, lint, production build, generated-client reproduction, dependency/security guards, fresh migrations through version 18 with `dirty = false`, the unchanged-timeout M2B regression, concurrent mutual-administrator removal, and deployment-style Encore build. Milestone 2C remains **IMPLEMENTED — ACCEPTANCE REMEDIATION IN PROGRESS** until targeted independent re-review and Product Owner acceptance.
