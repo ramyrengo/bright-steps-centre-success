@@ -431,6 +431,13 @@ textarea {
   margin-bottom: 0;
 }
 
+.centre-review-score {
+  margin: 0;
+  font-size: clamp(2rem, 8vw, 4rem);
+  font-weight: 800;
+  line-height: 1;
+}
+
 .workflow-card h2,
 .workflow-card h3,
 .workflow-state h2,
@@ -991,5 +998,291 @@ textarea {
     background: CanvasText;
     border-color: Canvas;
     box-shadow: 0 0 0 1px CanvasText;
+  }
+}
+
+/* Milestone 3A Daily Success is deliberately mobile first. */
+.daily-shell {
+  width: min(100%, 76rem);
+  min-height: 100vh;
+  margin-inline: auto;
+  padding: var(--space-4) var(--space-4) var(--space-7);
+}
+
+.daily-shell--state {
+  display: grid;
+  place-items: center;
+}
+
+.daily-topbar {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-3);
+  align-items: center;
+  justify-content: space-between;
+  padding-block: var(--space-3);
+  border-bottom: 1px solid var(--border-default);
+}
+
+.daily-topbar nav {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-3);
+}
+
+.daily-topbar nav a {
+  min-block-size: 2.75rem;
+  padding: var(--space-2);
+  color: var(--focus-ring);
+}
+
+.daily-heading {
+  padding-block: clamp(var(--space-6), 8vw, var(--space-7));
+}
+
+.daily-heading h1 {
+  max-width: 48rem;
+  margin: 0;
+  font-size: clamp(1.9rem, 7vw, 3.6rem);
+  line-height: 1;
+  letter-spacing: -0.045em;
+}
+
+.daily-heading > p:last-of-type,
+.daily-state > p {
+  color: var(--text-secondary);
+}
+
+.daily-switcher {
+  margin-top: var(--space-4);
+}
+
+.daily-switcher summary {
+  min-block-size: 2.75rem;
+  width: fit-content;
+  padding: var(--space-2) var(--space-3);
+  color: var(--focus-ring);
+  cursor: pointer;
+}
+
+.daily-perspective-list {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-3);
+  margin-top: var(--space-3);
+}
+
+.daily-perspective-list button,
+.daily-state button {
+  min-block-size: 2.75rem;
+  padding: var(--space-3) var(--space-4);
+  color: #fff;
+  font-weight: 700;
+  background: var(--focus-ring);
+  border: 0;
+  cursor: pointer;
+}
+
+.daily-state {
+  width: min(100%, 40rem);
+  padding: clamp(var(--space-5), 6vw, var(--space-7));
+  background: var(--surface-raised);
+  border: 1px solid var(--border-default);
+  border-radius: var(--radius-large);
+  box-shadow: var(--shadow-raised);
+}
+
+.daily-state h1,
+.daily-state h2 {
+  margin-top: 0;
+}
+
+.daily-state nav {
+  display: grid;
+  gap: var(--space-3);
+  margin-block: var(--space-5);
+}
+
+.daily-state nav a {
+  min-block-size: 2.75rem;
+  padding: var(--space-3);
+  border: 1px solid var(--border-default);
+}
+
+.daily-warning {
+  padding: var(--space-4);
+  background: var(--surface-warning);
+  border-inline-start: 0.35rem solid var(--status-warning);
+  border-radius: var(--radius-medium);
+  font-weight: 700;
+}
+
+.daily-section {
+  margin-top: var(--space-7);
+}
+
+.daily-perspective-summary {
+  margin-top: var(--space-5);
+  padding: var(--space-4);
+  background: color-mix(in srgb, var(--surface-raised) 94%, var(--focus-ring));
+  border-inline-start: 0.3rem solid var(--focus-ring);
+}
+
+.daily-perspective-summary h2,
+.daily-perspective-summary p {
+  margin-block: 0;
+}
+
+.daily-perspective-summary p {
+  margin-top: var(--space-2);
+}
+
+.daily-section--primary {
+  padding-top: var(--space-4);
+  border-top: 0.25rem solid currentColor;
+}
+
+.daily-section--primary > h2 {
+  font-size: clamp(1.75rem, 7vw, 2.5rem);
+  letter-spacing: 0.04em;
+}
+
+.daily-section__kicker {
+  margin: 0 0 var(--space-1);
+  font-weight: 800;
+  text-transform: uppercase;
+}
+
+.daily-section--verification {
+  padding: var(--space-4);
+  background: var(--surface-warning);
+  border: 1px solid var(--status-warning);
+  border-radius: var(--radius-medium);
+}
+
+.daily-section > h2,
+.daily-positive > h2 {
+  margin-bottom: var(--space-4);
+  font-size: clamp(1.4rem, 5vw, 2rem);
+}
+
+.daily-list,
+.daily-centre-grid {
+  display: grid;
+  gap: var(--space-4);
+  margin: 0;
+  padding-inline-start: 1.35rem;
+  list-style: disc outside;
+}
+
+.daily-list > li::marker,
+.daily-centre-grid > li::marker {
+  color: var(--text-primary);
+  font-weight: 800;
+}
+
+.daily-card,
+.daily-centre-card,
+.daily-positive {
+  padding: var(--space-5);
+  background: var(--surface-raised);
+  border: 1px solid var(--border-default);
+  border-radius: var(--radius-medium);
+  box-shadow: 0 0.5rem 1.5rem rgba(23, 33, 43, 0.04);
+}
+
+.daily-card[data-band="URGENT"] {
+  border-inline-start: 0.4rem solid var(--status-negative);
+}
+
+.daily-card[data-band="TODAY"] {
+  border-inline-start: 0.4rem solid var(--status-warning);
+}
+
+.daily-card__meta {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-3);
+  align-items: center;
+  color: var(--text-secondary);
+  font-size: 0.9rem;
+}
+
+.daily-card h3,
+.daily-centre-card h3 {
+  margin: var(--space-4) 0 var(--space-2);
+  font-size: 1.25rem;
+}
+
+.daily-card__centre {
+  color: var(--text-secondary);
+  font-weight: 700;
+}
+
+.daily-card__why {
+  display: grid;
+  gap: var(--space-2);
+  margin-block: var(--space-4);
+}
+
+.daily-card__why div {
+  display: grid;
+  grid-template-columns: 4rem 1fr;
+  gap: var(--space-2);
+}
+
+.daily-card__why dt {
+  color: var(--text-secondary);
+  font-weight: 700;
+}
+
+.daily-card__why dd {
+  margin: 0;
+}
+
+.daily-card__cta {
+  display: inline-flex;
+  min-block-size: 2.75rem;
+  align-items: center;
+  justify-content: center;
+  text-decoration: none;
+}
+
+.daily-centre-card__cta {
+  display: inline-flex;
+  min-block-size: 2.75rem;
+  align-items: center;
+  padding-inline: var(--space-3);
+}
+
+.daily-centre-card__coverage {
+  font-weight: 700;
+}
+
+.daily-positive {
+  margin-top: var(--space-7);
+  border-color: color-mix(in srgb, var(--status-positive) 45%, var(--border-default));
+}
+
+@media (min-width: 48rem) {
+  .daily-shell {
+    padding-inline: var(--space-6);
+  }
+
+  .daily-list,
+  .daily-centre-grid {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
+  .daily-list .daily-card:first-child:last-child {
+    grid-column: 1 / -1;
+  }
+}
+
+@media (max-width: 30rem) {
+  .daily-topbar,
+  .daily-topbar nav {
+    align-items: stretch;
+    flex-direction: column;
   }
 }

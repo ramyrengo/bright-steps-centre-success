@@ -68,6 +68,10 @@ Future domain modules may draw from these architectural capability families afte
 
 These family names are architectural planning vocabulary unless a separately approved milestone records a concrete key. The implemented constants are the foundation, Milestone 2B and Milestone 2C capability sets recorded in `PERMISSIONS.md`; this list does not itself grant or implement them.
 
+## Milestone 3A Daily Success perspectives
+
+Daily Success does not infer a perspective from a role name. It derives each available perspective from current source capabilities and matching scopes. The initial supported presentations are Centre Director centre work, Area Manager assigned-centre portfolio work, Compliance Manager organisation exceptions, and System Administrator administration-only People & Access cases. A multi-role principal receives each independently authorised perspective; the session-selected view grants nothing. Assistant Director, Operations Leadership, Educator, Finance, and Executive perspectives remain deferred. System Administrator alone receives no audit, finding, corrective-action, evidence, Centre Director, Area Manager, or compliance content.
+
 ## Assignment types
 
 - **Organisation membership:** establishes the tenant; it does not by itself grant content access.

@@ -126,6 +126,7 @@ export namespace foundation {
             this.getAuditPreparation = this.getAuditPreparation.bind(this)
             this.getComplianceOversight = this.getComplianceOversight.bind(this)
             this.getCorrectiveAction = this.getCorrectiveAction.bind(this)
+            this.getDailySuccess = this.getDailySuccess.bind(this)
             this.getEvidenceAccess = this.getEvidenceAccess.bind(this)
             this.getInvitation = this.getInvitation.bind(this)
             this.getPeopleOptions = this.getPeopleOptions.bind(this)
@@ -220,6 +221,22 @@ export namespace foundation {
             // Now make the actual call to the API
             const resp = await this.baseClient.callTypedAPI("GET", `/corrective-actions/${encodeURIComponent(actionId)}`)
             return await resp.json() as quarterly_reviews.CorrectiveActionDetail
+        }
+
+        public async getDailySuccess(params: daily_success.DailySuccessRequest): Promise<daily_success.DailySuccessResponse> {
+            // Convert our params into the objects we need for the request
+            const query = makeRecord<string, string | string[]>({
+                centreId:    params.centreId,
+                perspective: params.perspective === undefined ? undefined : String(params.perspective),
+            })
+
+            // Now make the actual call to the API
+            const resp = await this.baseClient.callTypedAPI("GET", `/daily-success`, undefined, {query})
+
+            //Populate the return object from the JSON body and received headers
+            const rtn = await resp.json() as daily_success.DailySuccessResponse
+            rtn.cacheControl = mustBeSet("Header `cache-control`", resp.headers.get("cache-control"))
+            return rtn
         }
 
         public async getEvidenceAccess(evidenceId: string): Promise<quarterly_reviews.GetEvidenceAccessResponse> {
@@ -403,6 +420,138 @@ export namespace foundation {
 export namespace authentication {
     export interface AuthenticationParams {
         authorization: string
+    }
+}
+
+export namespace daily_success {
+    export type DailyAttentionBand = "URGENT" | "TODAY" | "UPCOMING" | "WAITING" | "AWARENESS"
+
+    export interface DailyAuthorisationHealth {
+        status: "available" | "partial"
+        warning?: string
+    }
+
+    export interface DailyBusinessDateContext {
+        scope: "organisation" | "centre"
+        id: string
+        timezone: string
+        date: string
+    }
+
+    export interface DailyCentreAttentionSummary {
+        centreId: string
+        centreName: string
+        attentionBand: DailyAttentionBand
+        headline: string
+        coverage: "complete" | "partial"
+        criticalCount?: number
+        overdueCount?: number
+        dueTodayCount?: number
+        totalActiveCount?: number
+        cta: DailySuccessCta
+    }
+
+    export type DailyDueBucket = "OVERDUE" | "TODAY" | "TOMORROW" | "DUE_SOON" | "LATER"
+
+    export interface DailyDueInformation {
+        at: string
+        timezone: string
+        localDate: string
+        bucket: DailyDueBucket
+        daysFromToday: number
+    }
+
+    export interface DailyPositiveContext {
+        completedTodayCount: number
+        recentTitles: string[]
+        onTrackCentreCount?: number
+    }
+
+    export type DailyResponsibility = "YOU_NEED_TO_ACT" | "YOUR_CENTRE_NEEDS_TO_ACT" | "WAITING_ON_SOMEONE_ELSE" | "FOR_YOUR_AWARENESS"
+
+    export interface DailySourceHealth {
+        source: "corrective_actions" | "quarterly_reviews" | "people_access"
+        status: "available" | "unavailable" | "not_applicable"
+    }
+
+    export interface DailySuccessCta {
+        label: string
+        route: string
+    }
+
+    export interface DailySuccessItem {
+        id: string
+        sourceType: "corrective_action" | "finding" | "quarterly_review" | "people_access"
+        sourceId: string
+        centreId?: string
+        centreName?: string
+        headline: string
+        summary: string
+        attentionBand: DailyAttentionBand
+        responsibility: DailyResponsibility
+        whyShown: DailyWhyShown
+        due?: DailyDueInformation
+        riskLevel: "CRITICAL" | "HIGH" | "STANDARD"
+        verification?: {
+            required: true
+            eligible: boolean
+        }
+        cta: DailySuccessCta
+    }
+
+    export interface DailySuccessPerspective {
+        kind: DailySuccessPerspectiveKind
+        label: string
+        centreId?: string
+        centreName?: string
+    }
+
+    export type DailySuccessPerspectiveKind = "centre" | "portfolio" | "compliance" | "administration"
+
+    export interface DailySuccessRequest {
+        perspective?: DailySuccessPerspectiveKind
+        centreId?: string
+    }
+
+    export interface DailySuccessResponse {
+        cacheControl: string
+        asOf: string
+        status: "ready" | "partial" | "selection_required" | "unsupported"
+        activePerspective?: DailySuccessPerspective
+        availablePerspectives: DailySuccessPerspective[]
+        businessDates: DailyBusinessDateContext[]
+        sections: DailySuccessSection[]
+        attentionCentres: DailyCentreAttentionSummary[]
+        verificationItems: DailySuccessItem[]
+        aggregateCounts: {
+            coverage: "complete" | "partial"
+            active?: number
+            urgent?: number
+            dueToday?: number
+            waiting?: number
+            distinctCentres?: number
+        }
+        positiveContext?: DailyPositiveContext
+        sourceHealth: DailySourceHealth[]
+        authorisationHealth: DailyAuthorisationHealth
+        warning?: string
+        workspaceLinks: DailyWorkspaceLink[]
+    }
+
+    export interface DailySuccessSection {
+        key: "DO_FIRST" | "TODAY" | "NEXT" | "WAITING" | "ON_TRACK"
+        label: "DO FIRST" | "TODAY" | "NEXT" | "WAITING" | "ON TRACK"
+        items: DailySuccessItem[]
+    }
+
+    export interface DailyWhyShown {
+        code: "CRITICAL_RISK" | "IMMEDIATE_RISK" | "ACTION_OVERDUE" | "ACTION_DUE_TODAY" | "ACTION_DUE_SOON" | "REMEDIATION_RETURNED" | "REMEDIATION_REQUIRED" | "VERIFICATION_REQUIRED" | "AUDIT_REQUIRES_ACTION" | "REVIEW_REQUIRES_ACKNOWLEDGEMENT" | "PRIVILEGED_APPROVAL_REQUIRED" | "IDENTITY_REVIEW_REQUIRED"
+        label: string
+    }
+
+    export interface DailyWorkspaceLink {
+        label: string
+        route: string
     }
 }
 
@@ -933,6 +1082,21 @@ function makeRecord<K extends string | number | symbol, V>(record: Record<K, V |
         }
     }
     return record as Record<K, V>
+}
+
+
+// mustBeSet will throw an APIError with the Data Loss code if value is null or undefined
+function mustBeSet<A>(field: string, value: A | null | undefined): A {
+    if (value === null || value === undefined) {
+        throw new APIError(
+            500,
+            {
+                code: ErrCode.DataLoss,
+                message: `${field} was unexpectedly ${value}`, // ${value} will create the string "null" or "undefined"
+            },
+        )
+    }
+    return value
 }
 
 function encodeWebSocketHeaders(headers: Record<string, string>) {

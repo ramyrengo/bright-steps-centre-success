@@ -6,7 +6,9 @@
 
 **Milestone 1 — Centre Success foundation: accepted / complete.** The Product Owner formally accepted Milestone 1 after pull request #1 was merged into `main` and the Foundation CI and local quality gates passed. The Encore application and Cloud connection were preserved.
 
-**Milestone 2 — started under controlled sub-milestone gates.** Milestones 2A, 2B, and **Milestone 2C — People & Access + User Invitations** are **ACCEPTED / COMPLETE**. Later milestones remain locked.
+**Milestone 2 — accepted / complete under controlled sub-milestone gates.** Milestones 2A, 2B, and **Milestone 2C — People & Access + User Invitations** are **ACCEPTED / COMPLETE**.
+
+**Milestone 3 — started under controlled sub-milestone gates. Milestone 3A — Daily Success remains IMPLEMENTED / ACCEPTANCE REMEDIATION IN PROGRESS. It is not accepted. Milestone 3B and later work remain locked.**
 
 ## MVP objective
 
@@ -123,21 +125,27 @@ Acceptance does not make the system production-ready. Production readiness remai
 
 Accepted non-blocking follow-ups are dialog focus trapping and Escape handling, the privileged-approval confirmation UX decision, human-readable history labels, remaining internal PostgreSQL wording, clearing invitation codes after failed acceptance, and multi-centre authorisation batching before broad 20+ centre rollout.
 
-### Milestone 3 — Area Manager internal audits
+### Milestone 3 — controlled daily operating experience
 
-**Goal:** Complete one quarterly audit and follow every failed item to action.
+#### Milestone 3A — Daily Success
 
-Deliver versioned templates, scheduling/assignment, item capture/evidence, provisional/final internal score, critical gates, draft finding/actions, moderation/finalisation, centre response, spot checks, and comparable-quarter mapping.
+**Status:** **IMPLEMENTED / ACCEPTANCE REMEDIATION IN PROGRESS.** Product Owner architecture and implementation authorisation were received on 12 August 2026. Independent review returned PASS WITH CHANGES. The identified acceptance findings have been remediated and locally verified; the formal status remains unchanged until targeted re-review and Product Owner acceptance.
 
-Exit evidence includes score reproducibility, retry without duplicate actions, post-finalisation amendment history, non-comparable template handling, assignment denial, and explicit internal-not-regulatory labels.
+**Goal:** Make `/` a clear, permission-safe operational home that tells each approved perspective what needs attention, why, when, and where to continue, without creating another workflow truth.
 
-### Milestone 4 — daily success and living QIP
+The implemented slice is one live, read-only, private/no-store projection over corrective actions/findings, quarterly reviews/acknowledgements, and eligible People & Access cases. It supports Centre Director, Area Manager, minimal Compliance Manager, and administration-only eligible System Administrator perspectives. It uses current PostgreSQL capabilities/scopes, one decision timestamp, set-wise centre hierarchy loading, source-ID-restricted queries, deterministic critical-first priority, validated centre/organisation IANA timezones, controlled source CTAs, partial-source health, derived completed-today context, and bounded portfolio query count. `/centre/reviews/:auditId` is the minimal source-owned review/acknowledgement route.
 
-**Goal:** Make the Centre Director’s daily experience the primary operating surface.
+Milestone 3A adds no database migration or index. It creates no Daily Success task/table/snapshot/cache, copied status/due/owner, generic task, completion/acknowledgement/dismissal/snooze/preference, manual priority, notification, QIP, analytics platform, or materialized projection. Source workflows remain authoritative and reauthorize every deep link. See `DAILY_SUCCESS.md` and ADR-0015 for the 30-item review baseline.
 
-Deliver explainable priority assembly, acknowledge/focus/wrap-up, blocker/help routing, strengths/self-assessment, QIP improvements/milestones/snapshots, and links to evidence/audits/actions.
+Acceptance-remediation evidence includes honest partial-source coverage with no fabricated aggregate or per-centre zero counts; independent critical-verification eligibility; the Area Manager **VERIFY TODAY** queue; per-centre hierarchy-failure isolation; controlled CTA validation; rendered accessibility, live-region, focus, native-list, review-navigation, and acknowledgement-refresh tests; and persisted-source negative cases. The complete local gate passed with 141 backend unit tests, 100 database-backed integration tests, and 90 frontend tests. Representative 1/5/20-centre portfolios with real source rows held database operations at `14 / 14 / 14`; a controlled 25-sample 20-centre run with 40 source rows recorded cold `14.5 ms`, p50 `12.5 ms`, and p95 `17.0 ms`. Migrations 001–018 applied in a fresh namespace with `dirty = false`; the generated client reproduced byte-for-byte at SHA-256 `46f9faf7ff00c82b0b6c79208a4275f103f85558ae1636ea660b30e5513db5cd`; frontend lint/typecheck/production build, zero-vulnerability dependency audits, authentication scope guard, `git diff --check`, and Linux/amd64 Encore build compatibility all passed. No migration was added for Milestone 3A. Passing these gates means ready for targeted independent re-review, not accepted or production-ready.
 
-Exit evidence includes user validation with Centre Directors, notification-load controls, no duplicate source statuses, QIP source/jurisdiction review, and accessible responsive journeys.
+#### Earlier sequencing proposal — superseded by accepted Milestone 2B
+
+The earlier plan placed Area Manager internal audits in Milestone 3. Product Owner approval moved and completed that vertical slice as Milestone 2B. Its accepted evidence remains above; this note is retained only to explain the sequencing change.
+
+#### Milestone 3B and later — locked
+
+Stateful daily planning/check-in, living QIP, notifications, manual priorities, additional user perspectives, and every other later module require separate Product Owner authorisation. Milestone 3A does not imply or pre-authorise them.
 
 ### Milestone 5 — command views and operational hardening
 

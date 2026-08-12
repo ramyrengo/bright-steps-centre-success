@@ -75,6 +75,17 @@ Only a current, appropriately scoped System Administrator may initially create/m
 
 Invitation proposals confer no authority and must not appear in active organisation memberships, role assignments, or assignment scopes. Activation creates independent grants atomically. A policy allow path must still obtain capability and matching scope from the same assignment. Every mutation that could remove the final reachable active System Administrator is denied under a cross-table transactional/database invariant; the operational target is at least two. Full rules are in `PEOPLE_AND_ACCESS.md` and ADR-0014.
 
+### Implemented Milestone 3A Daily Success projection boundary
+
+Daily Success adds no new grant and never authorises from a role name or selected perspective. It reuses current source capabilities under the existing capability-plus-same-assignment-scope policy:
+
+- Centre perspective qualification and rows derive from current `corrective_action.read`/`corrective_action.remediate`, `quarterly_audit.read`, and `quarterly_audit.acknowledge` decisions for the requested centre.
+- Portfolio qualification and rows derive separately from current `quarterly_audit.conduct` and `corrective_action.verify` decisions for each effective assigned centre.
+- Compliance qualification requires current organisation-scoped `compliance.oversight.read`; returned source facts remain limited to the approved corrective-action/finding exception subset.
+- Administration qualification requires current organisation-scoped `invitation.read` plus `invitation.manage` or `privileged_access.approve`; People & Access independence rules still apply.
+
+The backend loads one principal context and centre hierarchy set-wise, evaluates each capability independently, restricts source SQL by the resulting centre IDs, and aggregates only afterwards. A capability from one assignment cannot borrow scope from another. Requested perspective/centre values are presentation selectors and are denied when not present in the newly derived available set. System Administrator has no Daily Success business-content view through technical capabilities. Counts, completed-today context, centre attention bands, and on-track state contain only currently authorised records. See `DAILY_SUCCESS.md` and ADR-0015.
+
 ## Data classes
 
 1. **Public/approved publication:** explicitly approved for public or broad family access.

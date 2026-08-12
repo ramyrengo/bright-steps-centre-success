@@ -8,14 +8,16 @@ Automation may create drafts, reminders, calculations, and escalations. It does 
 
 ## 1. Centre Director daily success
 
-1. At the centre’s configured local start time, the system assembles a daily view from active tasks, due and overdue actions, evidence requests, expiries, audit follow-ups, QIP milestones, budget warnings, acknowledgements, and recognitions.
-2. A deterministic priority policy groups items as urgent, due soon, planned, or informational and explains each placement.
-3. The Centre Director acknowledges the day, selects focus items, and may assign permitted contributions.
-4. During the day, users record progress, link evidence, request help, or explain a blocker.
-5. High-priority blockers route to the defined Area or Compliance Manager; routine items remain local.
-6. The end-of-day check-in records completion, carry-over reason, new risk, and positive progress. It does not require artificial completion of work that remains legitimately open.
+Milestone 3A implements Daily Success as a live read-only workflow projection:
 
-Daily state: `not_started -> acknowledged -> active -> completed`; `skipped` requires an allowed reason. Underlying actions retain their own lifecycles.
+1. On each protected request the backend captures one decision timestamp, reloads current PostgreSQL membership/assignments/scopes, and derives the available supported perspectives.
+2. It loads centre/resource hierarchy set-wise, evaluates source capabilities through the pure policy, and queries each source only for authorised IDs.
+3. Corrective actions, assigned reviews, finalised reviews needing acknowledgement, and eligible People & Access cases remain owned by their source workflows.
+4. The projection groups them into DO FIRST, TODAY, NEXT, WAITING, and ON TRACK, explaining why each item appears and who is responsible. Critical/immediate risk cannot be displaced by ordinary lower-risk work.
+5. A user follows a controlled source-owned route. The destination resolves and authorizes the record again; any mutation occurs only in that existing source workflow.
+6. The next Daily Success request reflects the new source state. Completed today is derived from source events/timestamps and current access.
+
+Daily Success has no lifecycle state. It does not acknowledge, complete, dismiss, snooze, assign, or persist a day. Waiting collapse and perspective selection are browser-session presentation only. The earlier proposed `not_started -> acknowledged -> active -> completed` daily lifecycle and end-of-day check-in are deferred and are not part of Milestone 3A. See `DAILY_SUCCESS.md` and ADR-0015.
 
 ## 2. Recurring compliance task and evidence
 
