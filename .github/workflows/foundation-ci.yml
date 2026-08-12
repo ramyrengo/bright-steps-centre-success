@@ -64,6 +64,9 @@ jobs:
           encore version
           docker version
 
+      - name: Enforce Encore secret configuration
+        run: node .github/scripts/secret-configuration-guard.mjs
+
       - name: Backend type check
         run: npm run typecheck
 
