@@ -1,6 +1,11 @@
 import { FOUNDATION_CAPABILITIES as capability } from "../authorization/capabilities";
-import type { QualityReviewSummary, QualityStrength, QualityUncoveredFinding } from "./contracts";
-import { quarterLabel } from "./focus";
+import type {
+  QualityReviewSummary,
+  QualitySectionResult,
+  QualityStrength,
+  QualityUncoveredFinding,
+} from "./contracts";
+import { classifySection, quarterLabel, sortSectionResults } from "./focus";
 import type { CentreQualityAuthorisationView, CentreQualityQueryExecutor } from "./types";
 
 interface FinalisedReviewRow {
@@ -24,6 +29,15 @@ interface StrengthRow {
   id: string;
   description: string;
   review_period_start: string;
+}
+
+interface SectionResultRow {
+  section_id: string;
+  title: string;
+  sort_order: number;
+  score: number | null;
+  coverage_percent: number;
+  previous_score: number | null;
 }
 
 interface UncoveredFindingRow {
@@ -167,6 +181,81 @@ export const QualityReviewSource = {
       description: row.description,
       quarterLabel: quarterLabel(isoDate(row.review_period_start)),
     }));
+  },
+
+  /**
+   * Per-section results for the latest finalised review, with the same
+   * section's previous-quarter score when the two reviews used the same
+   * template version. One set-wise query covers both quarters; a section the
+   * scoring engine did not score returns null rather than zero.
+   */
+  async sectionResults(
+    executor: CentreQualityQueryExecutor,
+    authorisation: CentreQualityAuthorisationView,
+    centreId: string,
+    latest: QualityReviewSummary | undefined,
+    previous: QualityReviewSummary | undefined,
+  ): Promise<QualitySectionResult[]> {
+    if (
+      !latest ||
+      !(authorisation.centreIdsByCapability.get(capability.quarterlyAuditRead)?.has(centreId))
+    ) {
+      return [];
+    }
+    // Only a matching template version makes the two quarters comparable,
+    // which is the same rule the overall-score comparison applies.
+    const comparableRunId =
+      previous && previous.templateVersionId === latest.templateVersionId
+        ? previous.auditRunId
+        : null;
+    const rows = await executor.queryAll<SectionResultRow>`
+      SELECT
+        section.id AS section_id,
+        section.title,
+        section.sort_order,
+        current_result.score::float8 AS score,
+        COALESCE(current_result.coverage_percent, 0)::float8 AS coverage_percent,
+        previous_result.score::float8 AS previous_score
+      FROM audit_template_sections AS section
+      JOIN audit_runs AS run
+        ON run.organisation_id = section.organisation_id
+       AND run.template_version_id = section.template_version_id
+       AND run.id = ${latest.auditRunId}
+      LEFT JOIN audit_section_results AS current_result
+        ON current_result.organisation_id = section.organisation_id
+       AND current_result.audit_run_id = run.id
+       AND current_result.section_id = section.id
+      LEFT JOIN audit_section_results AS previous_result
+        ON ${comparableRunId}::uuid IS NOT NULL
+       AND previous_result.organisation_id = section.organisation_id
+       AND previous_result.audit_run_id = ${comparableRunId}
+       AND previous_result.section_id = section.id
+      WHERE section.organisation_id = ${authorisation.organisationId}
+      ORDER BY section.sort_order, section.id
+    `;
+    return sortSectionResults(
+      rows.map((row) => {
+        const score = row.score === null ? undefined : row.score;
+        const previousScore = row.previous_score === null ? undefined : row.previous_score;
+        const standing = classifySection({
+          score,
+          overallScore: latest.overallScore,
+          coveragePercent: row.coverage_percent,
+          previousScore,
+        });
+        return {
+          sectionId: row.section_id,
+          title: row.title,
+          sortOrder: row.sort_order,
+          standing: standing.standing,
+          ...(score === undefined ? {} : { score }),
+          coveragePercent: row.coverage_percent,
+          ...(previousScore === undefined ? {} : { previousScore }),
+          ...(standing.scoreDelta === undefined ? {} : { scoreDelta: standing.scoreDelta }),
+          trend: standing.trend,
+        };
+      }),
+    );
   },
 
   /**

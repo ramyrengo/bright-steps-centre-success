@@ -24,6 +24,7 @@ interface QualityFixture {
   templateVersionId: string;
   otherTemplateVersionId: string;
   itemIds: string[];
+  sectionIds: string[];
   criticalActionId: string;
   verificationActionId: string;
   closedActionId: string;
@@ -203,7 +204,8 @@ async function createQualityFixture(centreCount = 3): Promise<QualityFixture> {
   const policyId = randomUUID();
   const templateVersionId = randomUUID();
   const otherTemplateVersionId = randomUUID();
-  const sectionId = randomUUID();
+  const sectionIds = [randomUUID(), randomUUID(), randomUUID()];
+  const sectionId = sectionIds[0];
   const itemIds = Array.from({ length: 6 }, () => randomUUID());
   await centreSuccessDB.exec`
     INSERT INTO audit_templates (id, organisation_id, template_key, title, audit_type, status)
@@ -226,10 +228,16 @@ async function createQualityFixture(centreCount = 3): Promise<QualityFixture> {
       )
     `;
   }
-  await centreSuccessDB.exec`
-    INSERT INTO audit_template_sections (id, organisation_id, template_version_id, stable_key, title, sort_order)
-    VALUES (${sectionId}, ${organisationId}, ${templateVersionId}, 'synthetic_section', 'Synthetic section', 1)
-  `;
+  const sectionTitles = ["Centre documentation", "Learning environment", "Family engagement"];
+  for (const [index, id] of sectionIds.entries()) {
+    await centreSuccessDB.exec`
+      INSERT INTO audit_template_sections (id, organisation_id, template_version_id, stable_key, title, sort_order)
+      VALUES (
+        ${id}, ${organisationId}, ${templateVersionId},
+        ${`synthetic_section_${index}`}, ${sectionTitles[index]}, ${index + 1}
+      )
+    `;
+  }
   for (const [index, itemId] of itemIds.entries()) {
     await centreSuccessDB.exec`
       INSERT INTO audit_template_items (
@@ -255,6 +263,32 @@ async function createQualityFixture(centreCount = 3): Promise<QualityFixture> {
   const latestRun = await finalisedRun(organisationId, centreIds[0], areaManagerId, templateVersionId, "2035-04-01", {
     overallScore: 91, criticalFindingCount: 0, positivePracticeCount: 3,
   });
+  // Real per-section results for both comparable quarters on centre 0.
+  const sectionScores: readonly (readonly [number | null, number | null, number])[] = [
+    [72, 68, 100],   // below overall in both quarters, improving
+    [98, 91, 100],   // above overall
+    [null, null, 40], // scored nothing, partly observed
+  ];
+  for (const [index, id] of sectionIds.entries()) {
+    const [latestScore, previousScore, coverage] = sectionScores[index];
+    await centreSuccessDB.exec`
+      INSERT INTO audit_section_results (
+        organisation_id, audit_run_id, section_id,
+        eligible_weight, achieved_weight, score, coverage_percent
+      ) VALUES (
+        ${organisationId}, ${latestRun}, ${id}, 1, 1, ${latestScore}, ${coverage}
+      )
+    `;
+    await centreSuccessDB.exec`
+      INSERT INTO audit_section_results (
+        organisation_id, audit_run_id, section_id,
+        eligible_weight, achieved_weight, score, coverage_percent
+      ) VALUES (
+        ${organisationId}, ${previousRun}, ${id}, 1, 1, ${previousScore}, ${coverage}
+      )
+    `;
+  }
+
   const positiveResponseId = randomUUID();
   await centreSuccessDB.exec`
     INSERT INTO audit_responses (
@@ -314,6 +348,7 @@ async function createQualityFixture(centreCount = 3): Promise<QualityFixture> {
     templateVersionId,
     otherTemplateVersionId,
     itemIds,
+    sectionIds,
     criticalActionId,
     verificationActionId,
     closedActionId,
@@ -383,6 +418,106 @@ describe("Centre Quality & Performance authorised projection", () => {
     ]);
     expect(detail.response.uncoveredFindings).toHaveLength(1);
     expect(detail.response.strengths[0]?.description).toContain("calm transitions");
+  });
+
+  test("shows where a centre is strong and where to focus, from stored section results", async () => {
+    const detail = await buildCentreQualityDetail(
+      { principalId: fixture.centreDirectorId, centreId: fixture.centreIds[0] },
+      { now },
+    );
+    // Focus areas first, then template order: documentation (72 < 91 overall),
+    // family engagement (unscored), learning environment (98 >= 91).
+    expect(detail.response.sectionResults.map((section) => section.title)).toEqual([
+      "Centre documentation",
+      "Family engagement",
+      "Learning environment",
+    ]);
+    expect(detail.response.sectionResults[0]).toMatchObject({
+      standing: "FOCUS",
+      score: 72,
+      previousScore: 68,
+      scoreDelta: 4,
+      trend: "IMPROVED",
+      coveragePercent: 100,
+    });
+    expect(detail.response.sectionResults[2]).toMatchObject({
+      standing: "STRONG",
+      score: 98,
+      trend: "IMPROVED",
+    });
+  });
+
+  test("reports an unscored section as not scored and states its observed coverage", async () => {
+    const detail = await buildCentreQualityDetail(
+      { principalId: fixture.centreDirectorId, centreId: fixture.centreIds[0] },
+      { now },
+    );
+    const unscored = detail.response.sectionResults.find(
+      (section) => section.title === "Family engagement",
+    );
+    expect(unscored).toMatchObject({ standing: "NOT_SCORED", coveragePercent: 40 });
+    expect(unscored?.score).toBeUndefined();
+    expect(unscored?.scoreDelta).toBeUndefined();
+    expect(unscored?.trend).toBe("NOT_COMPARABLE");
+  });
+
+  test("omits section movement when the previous quarter used a different template", async () => {
+    const isolated = await createQualityFixture();
+    const latestRun = await finalisedRun(
+      isolated.organisationId, isolated.centreIds[2], isolated.areaManagerId,
+      isolated.templateVersionId, "2035-04-01", { overallScore: 90 },
+    );
+    await finalisedRun(
+      isolated.organisationId, isolated.centreIds[2], isolated.areaManagerId,
+      isolated.otherTemplateVersionId, "2035-01-01", { overallScore: 60 },
+    );
+    for (const [index, id] of isolated.sectionIds.entries()) {
+      await centreSuccessDB.exec`
+        INSERT INTO audit_section_results (
+          organisation_id, audit_run_id, section_id,
+          eligible_weight, achieved_weight, score, coverage_percent
+        ) VALUES (
+          ${isolated.organisationId}, ${latestRun}, ${id}, 1, 1, ${88 + index}, 100
+        )
+      `;
+    }
+    const detail = await buildCentreQualityDetail(
+      { principalId: isolated.areaManagerId, centreId: isolated.centreIds[2] },
+      { now },
+    );
+    // Both quarters are finalised, but the earlier one used a superseded
+    // template version, so no section movement may be claimed.
+    expect(detail.response.reviewHistory).toHaveLength(2);
+    expect(detail.response.centre.comparison).toMatchObject({
+      available: true,
+      comparable: false,
+      trend: "NOT_COMPARABLE",
+    });
+    expect(detail.response.sectionResults.length).toBeGreaterThan(0);
+    for (const section of detail.response.sectionResults) {
+      expect(section.score).toBeDefined();
+      expect(section.previousScore).toBeUndefined();
+      expect(section.scoreDelta).toBeUndefined();
+      expect(section.trend).toBe("NOT_COMPARABLE");
+    }
+  });
+
+  test("returns no section results for a centre with no finalised review", async () => {
+    const detail = await buildCentreQualityDetail(
+      { principalId: fixture.areaManagerId, centreId: fixture.centreIds[2] },
+      { now },
+    );
+    expect(detail.response.sectionResults).toEqual([]);
+    expect(detail.response.centre.focus).toBe("AWAITING_FIRST_REVIEW");
+  });
+
+  test("exposes no section result to a principal without quarterly audit read", async () => {
+    await expect(
+      buildCentreQualityDetail(
+        { principalId: fixture.systemAdministratorId, centreId: fixture.centreIds[0] },
+        { now },
+      ),
+    ).rejects.toMatchObject({ code: "access_denied" });
   });
 
   test("preserves verification independence for the principal who submitted remediation", async () => {
@@ -617,8 +752,8 @@ describe("Centre Quality & Performance authorised projection", () => {
       { now },
     );
     expect(small.diagnostics.queryCount).toBe(large.diagnostics.queryCount);
-    // 14 workspace queries plus the two centre-detail list queries.
-    expect(small.diagnostics.queryCount).toBe(16);
+    // 14 workspace queries plus the three centre-detail list queries.
+    expect(small.diagnostics.queryCount).toBe(17);
   });
 
   test("orders centres and focus groups deterministically across repeated requests", async () => {

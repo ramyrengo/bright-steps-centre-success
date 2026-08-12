@@ -220,6 +220,36 @@ function detail(overrides: Record<string, unknown> = {}) {
       },
     ],
     uncoveredFindings: [],
+    sectionResults: [
+      {
+        sectionId: "sec-1",
+        title: "Centre documentation",
+        sortOrder: 1,
+        standing: "FOCUS",
+        score: 72,
+        coveragePercent: 100,
+        previousScore: 68,
+        scoreDelta: 4,
+        trend: "IMPROVED",
+      },
+      {
+        sectionId: "sec-3",
+        title: "Family engagement",
+        sortOrder: 3,
+        standing: "NOT_SCORED",
+        coveragePercent: 40,
+        trend: "NOT_COMPARABLE",
+      },
+      {
+        sectionId: "sec-2",
+        title: "Learning environment",
+        sortOrder: 2,
+        standing: "STRONG",
+        score: 98,
+        coveragePercent: 100,
+        trend: "NOT_COMPARABLE",
+      },
+    ],
     reviewHistory: [review(), review({ auditRunId: "run-0", quarterLabel: "Q1 2026", overallScore: 84 })],
     canAcknowledgeReview: false,
     sourceHealth: [
@@ -428,7 +458,7 @@ describe("Quality & Performance centre detail", () => {
     expect(screen.getByText("Closed 2026-08-05")).toBeDefined();
     expect(screen.getByText("Educators consistently model calm transitions.")).toBeDefined();
     expect(screen.getByText("Q1 2026")).toBeDefined();
-    expect(screen.getByText(/not a regulatory rating/u)).toBeDefined();
+    expect(screen.getAllByText(/not a regulatory rating/u).length).toBeGreaterThan(0);
   });
 
   test("surfaces critical findings that have no active corrective action", async () => {
@@ -482,6 +512,62 @@ describe("Quality & Performance centre detail", () => {
 
     expect(await screen.findByText("This centre is not available to you")).toBeDefined();
     expect(document.body.textContent).not.toContain(CENTRE_B);
+  });
+
+  test("shows where to focus, ordered focus areas first", async () => {
+    clientMocks.getCentreQualityDetail.mockResolvedValue(detail());
+    render(<QualityCentreDetail centreId={CENTRE_A} />);
+
+    const list = await screen.findByRole("list", { name: "Internal review sections" });
+    expect(within(list).getAllByRole("heading", { level: 3 }).map((node) => node.textContent)).toEqual([
+      "Centre documentation",
+      "Family engagement",
+      "Learning environment",
+    ]);
+    const focusRow = within(list).getByRole("heading", { name: "Centre documentation" }).closest("li");
+    expect(within(focusRow as HTMLElement).getByText("Focus area")).toBeDefined();
+    expect(within(focusRow as HTMLElement).getByText("Result").nextSibling?.textContent).toBe("72%");
+    expect(within(focusRow as HTMLElement).getByText("Since last quarter").nextSibling?.textContent).toBe("+4");
+  });
+
+  test("says a section is not scored rather than showing a zero, and states coverage", async () => {
+    clientMocks.getCentreQualityDetail.mockResolvedValue(detail());
+    render(<QualityCentreDetail centreId={CENTRE_A} />);
+
+    const list = await screen.findByRole("list", { name: "Internal review sections" });
+    const row = within(list).getByRole("heading", { name: "Family engagement" }).closest("li");
+    expect(within(row as HTMLElement).getAllByText("Not scored")).toHaveLength(2);
+    expect(within(row as HTMLElement).getByText("Result").nextSibling?.textContent).toBe("Not scored");
+    expect(within(row as HTMLElement).getByText("Observed").nextSibling?.textContent).toBe("40% of this section");
+    expect(within(row as HTMLElement).queryByText("0%")).toBeNull();
+  });
+
+  test("states no comparable quarter instead of implying a flat section trend", async () => {
+    clientMocks.getCentreQualityDetail.mockResolvedValue(detail());
+    render(<QualityCentreDetail centreId={CENTRE_A} />);
+
+    const list = await screen.findByRole("list", { name: "Internal review sections" });
+    const row = within(list).getByRole("heading", { name: "Learning environment" }).closest("li");
+    expect(within(row as HTMLElement).getByText("Since last quarter").nextSibling?.textContent)
+      .toBe("No comparable quarter");
+  });
+
+  test("omits the focus section entirely when no finalised review exists", async () => {
+    clientMocks.getCentreQualityDetail.mockResolvedValue(detail({ sectionResults: [] }));
+    render(<QualityCentreDetail centreId={CENTRE_A} />);
+
+    await screen.findByRole("heading", { level: 1, name: "Zephyr Quality Centre" });
+    expect(screen.queryByRole("list", { name: "Internal review sections" })).toBeNull();
+    expect(screen.queryByText("Where to focus")).toBeNull();
+  });
+
+  test("frames section results as internal method, not a regulatory rating", async () => {
+    clientMocks.getCentreQualityDetail.mockResolvedValue(detail());
+    render(<QualityCentreDetail centreId={CENTRE_A} />);
+
+    await screen.findByRole("list", { name: "Internal review sections" });
+    expect(screen.getAllByText(/not a regulatory rating/u).length).toBeGreaterThan(0);
+    expect(document.body.textContent).not.toMatch(/\bNQS\b|ACECQA/u);
   });
 
   test("provides breadcrumb navigation back to the workspace", async () => {

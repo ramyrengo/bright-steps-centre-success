@@ -5,6 +5,7 @@ import type {
   QualityFocusGroup,
   QualityQuarterComparison,
   QualityReviewSummary,
+  QualitySectionStanding,
 } from "./contracts";
 
 /**
@@ -94,6 +95,68 @@ export function buildComparison(
     scoreDelta,
     criticalDelta,
   };
+}
+
+export interface SectionStandingInput {
+  /** `audit_section_results.score` for the latest finalised review. */
+  score: number | undefined;
+  /** The same review's `audit_runs.overall_score`. */
+  overallScore: number | undefined;
+  coveragePercent: number;
+  /** Same section, previous finalised review, only when comparable. */
+  previousScore: number | undefined;
+}
+
+export interface SectionStanding {
+  standing: QualitySectionStanding;
+  trend: CentreQualityTrend;
+  scoreDelta?: number;
+}
+
+/**
+ * Places a section against the centre's own overall result for the same
+ * review. Both numbers are already owned by the quarterly-review module, so
+ * this states a relationship rather than deriving a new measure. A section
+ * that scored nothing is reported as not scored, never as zero.
+ */
+export function classifySection(input: SectionStandingInput): SectionStanding {
+  const comparable =
+    input.score !== undefined && input.previousScore !== undefined;
+  const scoreDelta = comparable
+    ? Number((input.score! - input.previousScore!).toFixed(2))
+    : undefined;
+  const trend: CentreQualityTrend = !comparable
+    ? "NOT_COMPARABLE"
+    : scoreDelta! > 0.5
+      ? "IMPROVED"
+      : scoreDelta! < -0.5
+        ? "DECLINED"
+        : "STEADY";
+  if (input.score === undefined || input.overallScore === undefined) {
+    return { standing: "NOT_SCORED", trend, ...(comparable ? { scoreDelta } : {}) };
+  }
+  return {
+    standing: input.score < input.overallScore ? "FOCUS" : "STRONG",
+    trend,
+    ...(comparable ? { scoreDelta } : {}),
+  };
+}
+
+/** Focus areas first, then template order, so the list is deterministic. */
+export function sortSectionResults<
+  T extends { standing: QualitySectionStanding; sortOrder: number; sectionId: string },
+>(sections: readonly T[]): T[] {
+  const rank: Record<QualitySectionStanding, number> = {
+    FOCUS: 0,
+    NOT_SCORED: 1,
+    STRONG: 2,
+  };
+  return sections.slice().sort(
+    (left, right) =>
+      rank[left.standing] - rank[right.standing] ||
+      left.sortOrder - right.sortOrder ||
+      left.sectionId.localeCompare(right.sectionId),
+  );
 }
 
 export interface FocusInput {

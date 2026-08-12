@@ -2264,6 +2264,11 @@ textarea {
     grid-template-columns: minmax(0, 2fr) minmax(0, 3fr) auto;
     align-items: center;
   }
+
+  /* A row with no action must not reserve an empty third track. */
+  .data-list__row:not(:has(> :nth-child(3))) {
+    grid-template-columns: minmax(0, 2fr) minmax(0, 3fr);
+  }
 }
 
 @media (min-width: 64rem) {

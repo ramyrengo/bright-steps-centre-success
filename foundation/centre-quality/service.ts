@@ -543,26 +543,37 @@ export async function buildCentreQualityDetail(
       ? [centre.id]
       : [];
 
-    const reviewResult = await withSavepoint(executor, "quarterly_reviews", async () => ({
-      history: await QualityReviewSource.finalisedReviews(
+    const reviewResult = await withSavepoint(executor, "quarterly_reviews", async () => {
+      const history = await QualityReviewSource.finalisedReviews(
         executor,
         authorisation,
         reviewCentreIds,
         REVIEW_HISTORY_LIMIT,
-      ),
-      strengths: await QualityReviewSource.strengths(
-        executor,
-        authorisation,
-        centre.id,
-        DETAIL_LIST_LIMIT,
-      ),
-      uncovered: await QualityReviewSource.uncoveredCriticalFindings(
-        executor,
-        authorisation,
-        centre.id,
-        DETAIL_LIST_LIMIT,
-      ),
-    }));
+      );
+      const centreHistory = history.get(centre.id) ?? [];
+      return {
+        history,
+        sections: await QualityReviewSource.sectionResults(
+          executor,
+          authorisation,
+          centre.id,
+          centreHistory[0],
+          centreHistory[1],
+        ),
+        strengths: await QualityReviewSource.strengths(
+          executor,
+          authorisation,
+          centre.id,
+          DETAIL_LIST_LIMIT,
+        ),
+        uncovered: await QualityReviewSource.uncoveredCriticalFindings(
+          executor,
+          authorisation,
+          centre.id,
+          DETAIL_LIST_LIMIT,
+        ),
+      };
+    });
     sourceDurationsMs.quarterly_reviews = reviewResult.durationMs;
     const actionResult = await withSavepoint(executor, "corrective_actions", () =>
       QualityActionSource.load(executor, authorisation, actionCentreIds, findingCentreIds),
@@ -602,6 +613,7 @@ export async function buildCentreQualityDetail(
         completedActions: (aggregate?.completedItems ?? []).slice(0, DETAIL_LIST_LIMIT),
         strengths: reviewResult.value?.strengths ?? [],
         uncoveredFindings: reviewResult.value?.uncovered ?? [],
+        sectionResults: reviewResult.value?.sections ?? [],
         reviewHistory: history,
         canAcknowledgeReview:
           ids(authorisation, FOUNDATION_CAPABILITIES.quarterlyAuditAcknowledge).has(centre.id) &&

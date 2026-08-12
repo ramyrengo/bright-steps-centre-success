@@ -5,9 +5,11 @@ import {
   actionStatusLabel,
   buildComparison,
   buildFocusGroups,
+  classifySection,
   deriveFocus,
   quarterLabel,
   sortCentreCards,
+  sortSectionResults,
 } from "./focus";
 
 function review(overrides: Partial<QualityReviewSummary> = {}): QualityReviewSummary {
@@ -199,5 +201,65 @@ describe("status labelling", () => {
 
   test("falls back safely for an unrecognised status without leaking raw enum text", () => {
     expect(actionStatusLabel("SOME_FUTURE_STATE")).toBe("Active");
+  });
+});
+
+describe("section standing against the centre's own review result", () => {
+  function section(overrides: Partial<Parameters<typeof classifySection>[0]> = {}) {
+    return classifySection({
+      score: 80,
+      overallScore: 90,
+      coveragePercent: 100,
+      previousScore: undefined,
+      ...overrides,
+    });
+  }
+
+  test("marks a section below the review's own overall result as a focus area", () => {
+    expect(section({ score: 80, overallScore: 90 }).standing).toBe("FOCUS");
+  });
+
+  test("marks a section at or above the overall result as strong", () => {
+    expect(section({ score: 90, overallScore: 90 }).standing).toBe("STRONG");
+    expect(section({ score: 95, overallScore: 90 }).standing).toBe("STRONG");
+  });
+
+  test("reports an unscored section as not scored rather than zero", () => {
+    const result = section({ score: undefined });
+    expect(result.standing).toBe("NOT_SCORED");
+    expect(result.scoreDelta).toBeUndefined();
+  });
+
+  test("reports not scored when the review recorded no overall result to compare against", () => {
+    expect(section({ overallScore: undefined }).standing).toBe("NOT_SCORED");
+  });
+
+  test.each([
+    [88, 80, "IMPROVED", 8],
+    [80, 88, "DECLINED", -8],
+    [80, 80, "STEADY", 0],
+    [80.3, 80, "STEADY", 0.3],
+  ])("compares section %s against %s as %s", (score, previousScore, trend, delta) => {
+    expect(section({ score, previousScore })).toMatchObject({ trend, scoreDelta: delta });
+  });
+
+  test("states not comparable when the section has no previous quarter", () => {
+    const result = section({ previousScore: undefined });
+    expect(result.trend).toBe("NOT_COMPARABLE");
+    expect(result.scoreDelta).toBeUndefined();
+  });
+
+  test("orders focus areas first, then template order, deterministically", () => {
+    const sections = [
+      { sectionId: "s3", sortOrder: 3, standing: "STRONG" as const },
+      { sectionId: "s1", sortOrder: 1, standing: "STRONG" as const },
+      { sectionId: "s4", sortOrder: 4, standing: "FOCUS" as const },
+      { sectionId: "s2", sortOrder: 2, standing: "NOT_SCORED" as const },
+      { sectionId: "s5", sortOrder: 5, standing: "FOCUS" as const },
+    ];
+    expect(sortSectionResults(sections).map((item) => item.sectionId)).toEqual([
+      "s4", "s5", "s2", "s1", "s3",
+    ]);
+    expect(sortSectionResults(sections)).toEqual(sortSectionResults(sections.slice().reverse()));
   });
 });

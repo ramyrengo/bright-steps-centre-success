@@ -466,6 +466,12 @@ export namespace centre_quality {
         completedActions: QualityCompletedActionItem[]
         strengths: QualityStrength[]
         uncoveredFindings: QualityUncoveredFinding[]
+        /**
+         * Per-section standing for the latest finalised review. Empty when the
+         * centre has no finalised review, rather than a fabricated zero row.
+         */
+        sectionResults: QualitySectionResult[]
+
         reviewHistory: QualityReviewSummary[]
         canAcknowledgeReview: boolean
         sourceHealth: QualitySourceHealth[]
@@ -634,6 +640,42 @@ export namespace centre_quality {
         positivePracticeCount: number
         acknowledged: boolean
     }
+
+    export interface QualitySectionResult {
+        sectionId: string
+        title: string
+        /**
+         * Presentation order owned by the audit template.
+         */
+        sortOrder: number
+
+        standing: QualitySectionStanding
+        /**
+         * `audit_section_results.score`; absent when the section scored nothing.
+         */
+        score?: number
+
+        /**
+         * `audit_section_results.coverage_percent`, stated so a partly observed
+         * section is never presented as a settled result.
+         */
+        coveragePercent: number
+
+        /**
+         * Movement against the same section last quarter, only when comparable.
+         */
+        previousScore?: number
+
+        scoreDelta?: number
+        trend: CentreQualityTrend
+    }
+
+    /**
+     * How a section stands relative to the centre's own overall result for the
+     * same review. This is a stated comparison between two numbers the
+     * quarterly-review module already calculated, not a new score.
+     */
+    export type QualitySectionStanding = "FOCUS" | "STRONG" | "NOT_SCORED"
 
     export interface QualitySourceHealth {
         source: "quarterly_reviews" | "corrective_actions"

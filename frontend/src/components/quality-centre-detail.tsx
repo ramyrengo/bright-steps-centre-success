@@ -26,6 +26,48 @@ import { ReviewLine, focusLabel, focusTone } from "./quality-workspace";
 
 type Detail = centre_quality.CentreQualityDetailResponse;
 type OpenAction = centre_quality.QualityActionListItem;
+type SectionResult = centre_quality.QualitySectionResult;
+
+export function sectionTone(standing: centre_quality.QualitySectionStanding) {
+  return {
+    FOCUS: "warning" as const,
+    STRONG: "positive" as const,
+    NOT_SCORED: "neutral" as const,
+  }[standing];
+}
+
+export function sectionLabel(standing: centre_quality.QualitySectionStanding): string {
+  return {
+    FOCUS: "Focus area",
+    STRONG: "Strong",
+    NOT_SCORED: "Not scored",
+  }[standing];
+}
+
+/**
+ * States each section as facts. A section the scoring engine did not score
+ * says so rather than showing a zero, and a partly observed section states
+ * how much of it was actually seen.
+ */
+export function sectionFacts(section: SectionResult): { term: string; value: string }[] {
+  const facts = [
+    {
+      term: "Result",
+      value: section.score === undefined ? "Not scored" : `${section.score}%`,
+    },
+  ];
+  if (section.coveragePercent < 100) {
+    facts.push({ term: "Observed", value: `${section.coveragePercent}% of this section` });
+  }
+  facts.push({
+    term: "Since last quarter",
+    value:
+      section.scoreDelta === undefined
+        ? "No comparable quarter"
+        : `${section.scoreDelta > 0 ? "+" : ""}${section.scoreDelta}`,
+  });
+  return facts;
+}
 
 export function dueLabel(action: OpenAction): string {
   return {
@@ -170,6 +212,33 @@ export function QualityCentreDetailView({ response }: Readonly<{ response: Detai
           </Link>
         ) : null}
       </section>
+
+      {response.sectionResults.length ? (
+        <Section
+          title="Where to focus"
+          description="How each part of the most recent internal review compares with this centre's own overall result. Bright Steps internal method, not a regulatory rating."
+          count={`${response.sectionResults.filter((section) => section.standing === "FOCUS").length} focus area${
+            response.sectionResults.filter((section) => section.standing === "FOCUS").length === 1 ? "" : "s"
+          }`}
+        >
+          <DataList label="Internal review sections">
+            {response.sectionResults.map((section) => (
+              <DataListRow
+                key={section.sectionId}
+                title={section.title}
+                headingLevel={3}
+                severity={section.standing === "FOCUS" ? "warning" : "neutral"}
+                badge={
+                  <StatusBadge tone={sectionTone(section.standing)}>
+                    {sectionLabel(section.standing)}
+                  </StatusBadge>
+                }
+                facts={sectionFacts(section)}
+              />
+            ))}
+          </DataList>
+        </Section>
+      ) : null}
 
       {response.uncoveredFindings.length ? (
         <Section
