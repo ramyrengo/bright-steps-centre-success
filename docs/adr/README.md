@@ -23,7 +23,7 @@ no longer governs the current architecture; its replacement record is normative.
 - [ADR-0007: Forward-only migrations and recovery posture](0007-forward-only-migrations.md)
 - [ADR-0012: Microsoft Entra ID single-tenant authentication](0012-microsoft-entra-id-single-tenant-authentication.md)
 - [ADR-0013: Milestone 2B quarterly review vertical slice](0013-milestone-2b-quarterly-review-vertical-slice.md) — accepted and complete
-- [ADR-0014: People & Access invitation architecture](0014-people-and-access-invitation-architecture.md) — implemented; acceptance remediation in progress
+- [ADR-0014: People & Access invitation architecture](0014-people-and-access-invitation-architecture.md) — accepted / complete
 
 ## Superseded
 

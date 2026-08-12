@@ -2,7 +2,7 @@
 
 ## Current delivery gate
 
-**Milestone 1, Milestone 2A: Microsoft Entra Authentication Gate, and Milestone 2B: Area Manager Audit to Corrective Action are accepted and complete. Milestone 2C: People & Access + User Invitations is IMPLEMENTED — ACCEPTANCE REMEDIATION IN PROGRESS and is not yet accepted.** Preserve the Encore application, Cloud connection, PostgreSQL authorisation foundation, authentication architecture, and existing tests. Milestone 2C must remain within `docs/PEOPLE_AND_ACCESS.md` and ADR-0014; no later milestone is authorised.
+**Milestone 1, Milestone 2A: Microsoft Entra Authentication Gate, Milestone 2B: Area Manager Audit to Corrective Action, and Milestone 2C: People & Access + User Invitations are accepted and complete.** Preserve the Encore application, Cloud connection, PostgreSQL authorisation foundation, authentication architecture, and existing tests. No later milestone is authorised.
 
 Milestone 2C must not implement HR synchronisation, Microsoft Graph, SharePoint, QIP, coaching, wellbeing, budget, AI, Daily Success, an executive dashboard, unrelated compliance features, or a production first-administrator bootstrap. The production bootstrap remains separately gated until the Encore Cloud operational mechanism is validated.
 

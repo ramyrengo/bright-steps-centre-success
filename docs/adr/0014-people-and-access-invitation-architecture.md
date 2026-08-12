@@ -2,7 +2,7 @@
 
 ## Status
 
-Accepted architecture; **IMPLEMENTED — ACCEPTANCE REMEDIATION IN PROGRESS** following an independent PASS WITH CHANGES review. Milestone 2C is not yet accepted. Implementation was authorised 11 August 2026 following Milestone 2B Product Owner acceptance. Production first-administrator bootstrap remains separately gated.
+Accepted architecture and **ACCEPTED / COMPLETE** implementation. Acceptance remediation passed, targeted independent review returned PASS, both hosted checks passed, and the implementation was merged to `main` before Product Owner closure. Production first-administrator operations and the remaining production-readiness decisions remain separately gated.
 
 ## Context
 
