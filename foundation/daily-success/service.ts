@@ -183,6 +183,18 @@ function selectPerspective(
 
 function workspaceLinks(authorisation: DailyAuthorisationView): DailyWorkspaceLink[] {
   const links: DailyWorkspaceLink[] = [];
+  const qualityCentreCapabilities = [
+    FOUNDATION_CAPABILITIES.correctiveActionRead,
+    FOUNDATION_CAPABILITIES.quarterlyAuditRead,
+  ] as const;
+  if (
+    qualityCentreCapabilities.some(
+      (capability) => (authorisation.centreIdsByCapability.get(capability)?.size ?? 0) > 0,
+    ) ||
+    authorisation.organisationCapabilities.has(FOUNDATION_CAPABILITIES.complianceOversightRead)
+  ) {
+    links.push({ label: "Quality & Performance", route: "/quality" });
+  }
   if (
     (authorisation.centreIdsByCapability.get(FOUNDATION_CAPABILITIES.correctiveActionRemediate)?.size ?? 0) > 0
   ) links.push({ label: "Centre actions", route: "/centre" });

@@ -5,7 +5,15 @@ import { useCallback, useEffect, useState } from "react";
 
 import type { quarterly_reviews } from "../lib/client.generated";
 import { useAuthenticatedCentreSuccessClient } from "../lib/centre-success-client";
+import { DataList, DataListRow, Section, StatusBadge } from "./design-system";
 import { BusinessWorkspaceGate, formatDate, StatusPill, WorkflowShell, WorkflowState } from "./workflow-shell";
+
+/** Severity drives the row edge; it is always paired with a written label. */
+function severityTone(severity: string): "critical" | "warning" | "neutral" {
+  if (severity === "CRITICAL") return "critical";
+  if (severity === "HIGH") return "warning";
+  return "neutral";
+}
 
 export function CentreActionsWorkspace() {
   const client = useAuthenticatedCentreSuccessClient();
@@ -26,7 +34,36 @@ export function CentreActionsWorkspace() {
     {error ? <WorkflowState kind="error" title="Follow-ups unavailable" message="Your authorised centre actions could not be loaded." onRetry={() => { setError(false); setAttempt((value) => value + 1); }} /> : null}
     {!error && actions === null ? <WorkflowState kind="loading" title="Loading follow-ups" message="Checking actions assigned to your centre…" /> : null}
     {!error && actions?.length === 0 ? <WorkflowState kind="empty" title="No actions require attention" message="New quarterly review follow-ups will appear here." /> : null}
-    {actions && actions.length > 0 ? <section aria-labelledby="actions-title"><div className="section-heading"><h2 id="actions-title">{actions.length} action{actions.length === 1 ? "" : "s"} require attention</h2><span>Supportive follow-up</span></div><div className="card-grid">{actions.map((action) => <article className="workflow-card" key={action.id}><StatusPill tone={action.severity === "CRITICAL" ? "critical" : action.severity === "HIGH" ? "warning" : "neutral"}>{action.severity}</StatusPill><h3>{action.title}</h3><p><strong>Why this matters:</strong> Area Manager quarterly review</p><p>Due {formatDate(action.dueAt)}</p><p>Status: {action.status.replaceAll("_", " ")}</p><Link className="workflow-link-button" href={`/centre/actions/${action.id}`}>{action.status === "OPEN" ? "Start action" : "Continue action"}</Link></article>)}</div></section> : null}
+    {actions && actions.length > 0 ? (
+      <Section
+        title={`${actions.length} action${actions.length === 1 ? "" : "s"} require attention`}
+        description="From your Area Manager quarterly review. Each one has a reason, a next step and a due date."
+        count="Supportive follow-up"
+      >
+        <DataList label="Quarterly review follow-ups">
+          {actions.map((action) => (
+            <DataListRow
+              key={action.id}
+              title={action.title}
+              headingLevel={3}
+              severity={severityTone(action.severity)}
+              badge={<StatusBadge tone={severityTone(action.severity)}>{action.severity}</StatusBadge>}
+              facts={[
+                { term: "Why", value: "Area Manager quarterly review" },
+                { term: "Due", value: formatDate(action.dueAt) },
+                { term: "Status", value: action.status.replaceAll("_", " ") },
+              ]}
+              action={
+                <Link className="button button--secondary" href={`/centre/actions/${action.id}`}>
+                  {action.status === "OPEN" ? "Start action" : "Continue action"}
+                  <span className="visually-hidden"> — {action.title}</span>
+                </Link>
+              }
+            />
+          ))}
+        </DataList>
+      </Section>
+    ) : null}
   </WorkflowShell></BusinessWorkspaceGate>;
 }
 

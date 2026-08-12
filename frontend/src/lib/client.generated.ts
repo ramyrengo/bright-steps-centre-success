@@ -124,6 +124,8 @@ export namespace foundation {
             this.createInvitation = this.createInvitation.bind(this)
             this.finaliseQuarterlyAudit = this.finaliseQuarterlyAudit.bind(this)
             this.getAuditPreparation = this.getAuditPreparation.bind(this)
+            this.getCentreQualityDetail = this.getCentreQualityDetail.bind(this)
+            this.getCentreQualityWorkspace = this.getCentreQualityWorkspace.bind(this)
             this.getComplianceOversight = this.getComplianceOversight.bind(this)
             this.getCorrectiveAction = this.getCorrectiveAction.bind(this)
             this.getDailySuccess = this.getDailySuccess.bind(this)
@@ -209,6 +211,32 @@ export namespace foundation {
             // Now make the actual call to the API
             const resp = await this.baseClient.callTypedAPI("GET", `/quarterly-reviews/centres/${encodeURIComponent(centreId)}/preparation`)
             return await resp.json() as quarterly_reviews.AuditPreparationResponse
+        }
+
+        public async getCentreQualityDetail(centreId: string): Promise<centre_quality.CentreQualityDetailResponse> {
+            // Now make the actual call to the API
+            const resp = await this.baseClient.callTypedAPI("GET", `/centre-quality/centres/${encodeURIComponent(centreId)}`)
+
+            //Populate the return object from the JSON body and received headers
+            const rtn = await resp.json() as centre_quality.CentreQualityDetailResponse
+            rtn.cacheControl = mustBeSet("Header `cache-control`", resp.headers.get("cache-control"))
+            return rtn
+        }
+
+        public async getCentreQualityWorkspace(params: centre_quality.CentreQualityWorkspaceRequest): Promise<centre_quality.CentreQualityWorkspaceResponse> {
+            // Convert our params into the objects we need for the request
+            const query = makeRecord<string, string | string[]>({
+                centreId: params.centreId,
+                view:     params.view === undefined ? undefined : String(params.view),
+            })
+
+            // Now make the actual call to the API
+            const resp = await this.baseClient.callTypedAPI("GET", `/centre-quality`, undefined, {query})
+
+            //Populate the return object from the JSON body and received headers
+            const rtn = await resp.json() as centre_quality.CentreQualityWorkspaceResponse
+            rtn.cacheControl = mustBeSet("Header `cache-control`", resp.headers.get("cache-control"))
+            return rtn
         }
 
         public async getComplianceOversight(): Promise<quarterly_reviews.ComplianceOversightResponse> {
@@ -420,6 +448,209 @@ export namespace foundation {
 export namespace authentication {
     export interface AuthenticationParams {
         authorization: string
+    }
+}
+
+export namespace centre_quality {
+    export interface CentreQualityCta {
+        label: string
+        route: string
+    }
+
+    export interface CentreQualityDetailResponse {
+        cacheControl: string
+        asOf: string
+        status: "ready" | "partial"
+        centre: QualityCentreCard
+        openActions: QualityActionListItem[]
+        completedActions: QualityCompletedActionItem[]
+        strengths: QualityStrength[]
+        uncoveredFindings: QualityUncoveredFinding[]
+        reviewHistory: QualityReviewSummary[]
+        canAcknowledgeReview: boolean
+        sourceHealth: QualitySourceHealth[]
+        warning?: string
+    }
+
+    /**
+     * Support grouping, deliberately not a rank or a score. It is derived only
+     * from currently authorised source facts and is used to gather centres that
+     * need the same kind of leadership response.
+     */
+    export type CentreQualityFocus = "NEEDS_SUPPORT" | "MONITOR" | "STEADY" | "AWAITING_FIRST_REVIEW"
+
+    export type CentreQualityTrend = "IMPROVED" | "STEADY" | "DECLINED" | "NOT_COMPARABLE"
+
+    export interface CentreQualityView {
+        kind: CentreQualityViewKind
+        label: string
+        centreId?: string
+        centreName?: string
+    }
+
+    export type CentreQualityViewKind = "centre" | "portfolio" | "organisation"
+
+    export interface CentreQualityWorkspaceRequest {
+        view?: CentreQualityViewKind
+        centreId?: string
+    }
+
+    export interface CentreQualityWorkspaceResponse {
+        cacheControl: string
+        asOf: string
+        status: "ready" | "partial" | "selection_required" | "unsupported"
+        activeView?: CentreQualityView
+        availableViews: CentreQualityView[]
+        organisationTimezone: string
+        centres: QualityCentreCard[]
+        focusGroups: QualityFocusGroup[]
+        summary: QualityPortfolioSummary
+        sourceHealth: QualitySourceHealth[]
+        authorisationHealth: QualityAuthorisationHealth
+        warning?: string
+    }
+
+    export interface QualityActionListItem {
+        correctiveActionId: string
+        title: string
+        severity: "LOW" | "MEDIUM" | "HIGH" | "CRITICAL"
+        status: string
+        statusLabel: string
+        responsibility: "YOU_NEED_TO_ACT" | "CENTRE_NEEDS_TO_ACT" | "WAITING_ON_SOMEONE_ELSE" | "FOR_YOUR_AWARENESS"
+        dueAt: string
+        dueLocalDate: string
+        dueBucket: "OVERDUE" | "TODAY" | "TOMORROW" | "DUE_SOON" | "LATER"
+        daysFromToday: number
+        independentVerificationRequired: boolean
+        cta: CentreQualityCta
+    }
+
+    /**
+     * Counts of currently authorised, currently open corrective actions.
+     */
+    export interface QualityActionRollup {
+        total: number
+        critical: number
+        overdue: number
+        dueSoon: number
+        awaitingVerification: number
+        returned: number
+        yourAction: number
+        centreAction: number
+        waiting: number
+    }
+
+    export interface QualityAuthorisationHealth {
+        status: "available" | "partial"
+        warning?: string
+    }
+
+    export interface QualityCentreCard {
+        centreId: string
+        centreName: string
+        timezone: string
+        localDate: string
+        focus: CentreQualityFocus
+        focusReason: string
+        latestReview?: QualityReviewSummary
+        comparison: QualityQuarterComparison
+        actions: QualityActionRollup
+        uncoveredCriticalFindings: number
+        strengthsCount: number
+        completedLast30Days: number
+        cta: CentreQualityCta
+    }
+
+    export interface QualityCompletedActionItem {
+        correctiveActionId: string
+        title: string
+        severity: "LOW" | "MEDIUM" | "HIGH" | "CRITICAL"
+        closedAt: string
+        closedLocalDate: string
+        cta: CentreQualityCta
+    }
+
+    export interface QualityFocusGroup {
+        focus: CentreQualityFocus
+        label: string
+        description: string
+        centreIds: string[]
+    }
+
+    export interface QualityPortfolioSummary {
+        coverage: "complete" | "partial"
+        centreCount?: number
+        needsSupportCount?: number
+        monitorCount?: number
+        steadyCount?: number
+        awaitingFirstReviewCount?: number
+        openCriticalCount?: number
+        overdueCount?: number
+        awaitingVerificationCount?: number
+    }
+
+    /**
+     * Previous-quarter context. `available` is false when no earlier finalised
+     * review exists; the frontend must then show an empty state rather than a
+     * zero or a neutral trend.
+     */
+    export interface QualityQuarterComparison {
+        available: boolean
+        comparable: boolean
+        trend: CentreQualityTrend
+        previous?: QualityReviewSummary
+        scoreDelta?: number
+        criticalDelta?: number
+        /**
+         * Explains a `NOT_COMPARABLE` outcome instead of hiding it.
+         */
+        note?: string
+    }
+
+    /**
+     * A finalised internal review exactly as the quarterly-review module stored it.
+     */
+    export interface QualityReviewSummary {
+        auditRunId: string
+        /**
+         * Quarter-truncated review period start owned by `audit_runs`.
+         */
+        reviewPeriodStart: string
+
+        /**
+         * Formatted from `reviewPeriodStart`; never an invented schedule or due date.
+         */
+        quarterLabel: string
+
+        finalisedAt: string
+        templateVersionId: string
+        overallScore?: number
+        performanceBandLabel?: string
+        riskStatus?: string
+        coveragePercent?: number
+        criticalFindingCount: number
+        highFindingCount: number
+        actionCount: number
+        positivePracticeCount: number
+        acknowledged: boolean
+    }
+
+    export interface QualitySourceHealth {
+        source: "quarterly_reviews" | "corrective_actions"
+        status: "available" | "unavailable"
+    }
+
+    export interface QualityStrength {
+        positiveObservationId: string
+        description: string
+        quarterLabel: string
+    }
+
+    export interface QualityUncoveredFinding {
+        findingId: string
+        headline: string
+        severity: "CRITICAL"
+        quarterLabel: string
     }
 }
 

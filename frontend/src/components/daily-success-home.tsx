@@ -7,6 +7,7 @@ import type { daily_success } from "../lib/client.generated";
 import { ErrCode, isAPIError } from "../lib/client.generated";
 import { useCentreSuccessAuthentication } from "../lib/centre-success-authentication";
 import { useAuthenticatedCentreSuccessClient } from "../lib/centre-success-client";
+import { storeAuthorisedNavigation } from "./app-shell";
 import { StatusPill } from "./workflow-shell";
 
 type Response = daily_success.DailySuccessResponse;
@@ -196,7 +197,7 @@ function DailyReady({
       {response.activePerspective?.kind === "portfolio" && response.attentionCentres.length ? (
         <section className="daily-section" aria-labelledby="attention-centres-title">
           <h2 id="attention-centres-title">Centres needing attention</h2>
-          <ul className="daily-centre-grid">
+          <ul className="daily-centre-grid" role="list">
             {response.attentionCentres.map((centre) => (
               <li className="daily-centre-card" key={centre.centreId}>
                 <StatusPill tone={centre.criticalCount ? "critical" : "warning"}>{centre.attentionBand}</StatusPill>
@@ -218,7 +219,7 @@ function DailyReady({
         <section className="daily-section daily-section--verification" aria-labelledby="daily-verification-title">
           <h2 id="daily-verification-title">VERIFY TODAY</h2>
           <p>Independent verification work you are currently authorised to complete.</p>
-          <ul className="daily-list">
+          <ul className="daily-list" role="list">
             {response.verificationItems.map((item) => <DailyItemCard key={`verification:${item.id}`} item={item} />)}
           </ul>
         </section>
@@ -228,7 +229,7 @@ function DailyReady({
         <section className={`daily-section${section.key === "DO_FIRST" ? " daily-section--primary" : ""}`} aria-labelledby={`daily-${section.key}`} key={section.key}>
           {section.key === "DO_FIRST" ? <p className="daily-section__kicker">Highest priority</p> : null}
           <h2 id={`daily-${section.key}`}>{section.label}</h2>
-          <ul className="daily-list">{section.items.map((item) => <DailyItemCard key={item.id} item={item} />)}</ul>
+          <ul className="daily-list" role="list">{section.items.map((item) => <DailyItemCard key={item.id} item={item} />)}</ul>
         </section>
       )) : response.status === "ready" ? (
         <section className="daily-state" aria-labelledby="daily-clear-title">
@@ -275,6 +276,7 @@ export function DailySuccessHome({ displayName }: Readonly<{ displayName: string
           setRequest({ perspective: stored.kind, ...(stored.centreId ? { centreId: stored.centreId } : {}) });
           return;
         }
+        storeAuthorisedNavigation(value.workspaceLinks);
         setResponse(value);
         setState("ready");
         setAnnouncement(value.status === "partial"

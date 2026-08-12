@@ -1,0 +1,221 @@
+import { FOUNDATION_CAPABILITIES as capability } from "../authorization/capabilities";
+import type { QualityReviewSummary, QualityStrength, QualityUncoveredFinding } from "./contracts";
+import { quarterLabel } from "./focus";
+import type { CentreQualityAuthorisationView, CentreQualityQueryExecutor } from "./types";
+
+interface FinalisedReviewRow {
+  id: string;
+  centre_id: string;
+  review_period_start: string;
+  finalised_at: Date;
+  template_version_id: string;
+  overall_score: number | null;
+  performance_band_label: string | null;
+  risk_status: string | null;
+  coverage_percent: number | null;
+  critical_finding_count: number;
+  high_finding_count: number;
+  action_count: number;
+  positive_practice_count: number;
+  acknowledged: boolean;
+}
+
+interface StrengthRow {
+  id: string;
+  description: string;
+  review_period_start: string;
+}
+
+interface UncoveredFindingRow {
+  id: string;
+  wording: string;
+  review_period_start: string;
+}
+
+/** Normalises a PostgreSQL `DATE` to the `YYYY-MM-DD` form the contract uses. */
+function isoDate(value: string | Date): string {
+  if (value instanceof Date) {
+    return `${String(value.getUTCFullYear()).padStart(4, "0")}-${String(value.getUTCMonth() + 1).padStart(2, "0")}-${String(value.getUTCDate()).padStart(2, "0")}`;
+  }
+  return value.slice(0, 10);
+}
+
+function toSummary(row: FinalisedReviewRow): QualityReviewSummary {
+  const reviewPeriodStart = isoDate(row.review_period_start);
+  return {
+    auditRunId: row.id,
+    reviewPeriodStart,
+    quarterLabel: quarterLabel(reviewPeriodStart),
+    finalisedAt: row.finalised_at.toISOString(),
+    templateVersionId: row.template_version_id,
+    ...(row.overall_score === null ? {} : { overallScore: row.overall_score }),
+    ...(row.performance_band_label === null
+      ? {}
+      : { performanceBandLabel: row.performance_band_label }),
+    ...(row.risk_status === null ? {} : { riskStatus: row.risk_status }),
+    ...(row.coverage_percent === null ? {} : { coveragePercent: row.coverage_percent }),
+    criticalFindingCount: row.critical_finding_count,
+    highFindingCount: row.high_finding_count,
+    actionCount: row.action_count,
+    positivePracticeCount: row.positive_practice_count,
+    acknowledged: row.acknowledged,
+  };
+}
+
+export const QualityReviewSource = {
+  /**
+   * Loads the most recent finalised internal reviews for every authorised
+   * centre with one set-wise query. `limit` bounds the per-centre history so
+   * the query cost stays constant as the portfolio grows.
+   */
+  async finalisedReviews(
+    executor: CentreQualityQueryExecutor,
+    authorisation: CentreQualityAuthorisationView,
+    centreIds: readonly string[],
+    limit: number,
+  ): Promise<Map<string, QualityReviewSummary[]>> {
+    const byCentre = new Map<string, QualityReviewSummary[]>();
+    if (centreIds.length === 0) return byCentre;
+    const rows = await executor.queryAll<FinalisedReviewRow>`
+      WITH ranked AS (
+        SELECT
+          run.id,
+          run.centre_id,
+          run.organisation_id,
+          run.review_period_start,
+          run.finalised_at,
+          run.template_version_id,
+          run.overall_score::float8 AS overall_score,
+          run.performance_band_label,
+          run.risk_status,
+          run.coverage_percent::float8 AS coverage_percent,
+          run.critical_finding_count,
+          run.high_finding_count,
+          run.action_count,
+          run.positive_practice_count,
+          row_number() OVER (
+            PARTITION BY run.centre_id
+            ORDER BY run.review_period_start DESC, run.finalised_at DESC, run.id DESC
+          ) AS review_rank
+        FROM audit_runs AS run
+        WHERE run.organisation_id = ${authorisation.organisationId}
+          AND run.centre_id = ANY(${centreIds as string[]}::uuid[])
+          AND run.status = 'FINALISED'
+      )
+      SELECT
+        ranked.id,
+        ranked.centre_id,
+        ranked.review_period_start,
+        ranked.finalised_at,
+        ranked.template_version_id,
+        ranked.overall_score,
+        ranked.performance_band_label,
+        ranked.risk_status,
+        ranked.coverage_percent,
+        ranked.critical_finding_count,
+        ranked.high_finding_count,
+        ranked.action_count,
+        ranked.positive_practice_count,
+        EXISTS (
+          SELECT 1
+          FROM audit_acknowledgements AS acknowledgement
+          WHERE acknowledgement.organisation_id = ranked.organisation_id
+            AND acknowledgement.audit_run_id = ranked.id
+        ) AS acknowledged
+      FROM ranked
+      WHERE ranked.review_rank <= ${limit}
+      ORDER BY ranked.centre_id, ranked.review_rank
+    `;
+    for (const row of rows) {
+      const existing = byCentre.get(row.centre_id) ?? [];
+      existing.push(toSummary(row));
+      byCentre.set(row.centre_id, existing);
+    }
+    return byCentre;
+  },
+
+  /**
+   * Positive practice already captured by the Milestone 2B audit model for one
+   * authorised centre. Nothing is generated when the centre has none.
+   */
+  async strengths(
+    executor: CentreQualityQueryExecutor,
+    authorisation: CentreQualityAuthorisationView,
+    centreId: string,
+    limit: number,
+  ): Promise<QualityStrength[]> {
+    if (!(authorisation.centreIdsByCapability.get(capability.quarterlyAuditRead)?.has(centreId))) {
+      return [];
+    }
+    const rows = await executor.queryAll<StrengthRow>`
+      SELECT
+        observation.id,
+        observation.description,
+        run.review_period_start
+      FROM positive_observations AS observation
+      JOIN audit_runs AS run
+        ON run.organisation_id = observation.organisation_id
+       AND run.id = observation.audit_run_id
+      WHERE observation.organisation_id = ${authorisation.organisationId}
+        AND observation.centre_id = ${centreId}
+        AND run.status = 'FINALISED'
+      ORDER BY run.review_period_start DESC, observation.created_at DESC, observation.id
+      LIMIT ${limit}
+    `;
+    return rows.map((row) => ({
+      positiveObservationId: row.id,
+      description: row.description,
+      quarterLabel: quarterLabel(isoDate(row.review_period_start)),
+    }));
+  },
+
+  /**
+   * Active critical findings with no active corrective action. These are the
+   * clearest signal that a centre needs help and must never be hidden.
+   */
+  async uncoveredCriticalFindings(
+    executor: CentreQualityQueryExecutor,
+    authorisation: CentreQualityAuthorisationView,
+    centreId: string,
+    limit: number,
+  ): Promise<QualityUncoveredFinding[]> {
+    if (!(authorisation.centreIdsByCapability.get(capability.findingRead)?.has(centreId))) {
+      return [];
+    }
+    const rows = await executor.queryAll<UncoveredFindingRow>`
+      SELECT
+        finding.id,
+        item.wording,
+        run.review_period_start
+      FROM findings AS finding
+      JOIN audit_responses AS response
+        ON response.organisation_id = finding.organisation_id
+       AND response.id = finding.audit_response_id
+      JOIN audit_template_items AS item
+        ON item.organisation_id = response.organisation_id
+       AND item.id = response.audit_item_id
+      JOIN audit_runs AS run
+        ON run.organisation_id = finding.organisation_id
+       AND run.id = finding.audit_run_id
+      WHERE finding.organisation_id = ${authorisation.organisationId}
+        AND finding.centre_id = ${centreId}
+        AND finding.status = 'OPEN'
+        AND finding.severity = 'CRITICAL'
+        AND NOT EXISTS (
+          SELECT 1
+          FROM corrective_actions AS action
+          WHERE action.organisation_id = finding.organisation_id
+            AND action.finding_id = finding.id
+            AND action.status NOT IN ('CLOSED', 'WITHDRAWN')
+        )
+      ORDER BY finding.created_at DESC, finding.id
+      LIMIT ${limit}
+    `;
+    return rows.map((row) => ({
+      findingId: row.id,
+      headline: row.wording,
+      severity: "CRITICAL" as const,
+      quarterLabel: quarterLabel(isoDate(row.review_period_start)),
+    }));
+  },
+};

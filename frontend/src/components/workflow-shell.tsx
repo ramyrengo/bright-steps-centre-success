@@ -1,18 +1,30 @@
 "use client";
 
-import Link from "next/link";
-import { useId, type ReactNode } from "react";
+import type { ReactNode } from "react";
 
-import { AuthenticationGate } from "./authentication-gate";
-import { useCentreSuccessAuthentication } from "../lib/centre-success-authentication";
+import { AppShell, BusinessWorkspaceGate } from "./app-shell";
+import {
+  EmptyState,
+  ErrorState,
+  LoadingSkeleton,
+  PageHeader,
+  StatusBadge,
+  formatDate,
+  type Tone,
+} from "./design-system";
 
-export function BusinessWorkspaceGate({ children }: Readonly<{ children: ReactNode }>) {
-  const { state } = useCentreSuccessAuthentication();
-  if (state.kind !== "signed-in") {
-    return <AuthenticationGate authenticatedState={{ kind: "loading" }} />;
-  }
-  return children;
-}
+/**
+ * Milestone 2B and People & Access workspace frame.
+ *
+ * This is now a thin adapter over the shared design system. Keeping the
+ * original prop shape means the existing workspaces adopt the Bright Steps
+ * Greenhouse language, the shared application shell and the shared state
+ * primitives without any call site changing, and without touching a single
+ * line of their business logic.
+ *
+ * Re-exported here so existing imports keep working from one place.
+ */
+export { BusinessWorkspaceGate, formatDate };
 
 export function WorkflowShell({
   eyebrow,
@@ -24,39 +36,31 @@ export function WorkflowShell({
   eyebrow: string;
   title: string;
   summary: string;
+  /**
+   * Omit to use the capability-derived navigation the backend authorised.
+   * Pass an empty array on a focused single-task screen to hide navigation
+   * entirely and keep the reader in the task.
+   */
   workspaceLinks?: readonly { href: string; label: string }[];
   children: ReactNode;
 }>) {
-  const { signOut } = useCentreSuccessAuthentication();
-  const links = workspaceLinks ?? [
-    { href: "/area-manager", label: "Area Manager" },
-    { href: "/centre", label: "Centre" },
-    { href: "/compliance", label: "Compliance" },
-    { href: "/admin/people", label: "People & Access" },
-  ];
+  const links = workspaceLinks?.map((link) => ({
+    label: link.label,
+    route: link.href,
+  }));
   return (
-    <main className="workflow-shell">
-      <header className="workflow-topbar">
-        <Link className="workflow-brand" href="/">Bright Steps · Centre Success</Link>
-        {links.length ? <nav aria-label="Centre Success workspaces" className="workflow-nav">
-          {links.map((link) => <Link href={link.href} key={link.href}>{link.label}</Link>)}
-        </nav> : null}
-        <button className="auth-text-button" type="button" onClick={() => void signOut()}>
-          Sign out
-        </button>
-      </header>
-      <section className="workflow-page">
-        <header className="workflow-heading">
-          <p className="foundation-eyebrow">{eyebrow}</p>
-          <h1>{title}</h1>
-          <p>{summary}</p>
-        </header>
-        {children}
-      </section>
-    </main>
+    <AppShell links={links}>
+      <PageHeader eyebrow={eyebrow} title={title} summary={summary} />
+      {children}
+    </AppShell>
   );
 }
 
+/**
+ * Maps the three legacy workflow states onto the shared primitives. The
+ * loading state keeps its `role="status"` announcement so assistive
+ * technology hears the same message it always has.
+ */
 export function WorkflowState({
   kind,
   title,
@@ -68,31 +72,18 @@ export function WorkflowState({
   message: string;
   onRetry?: () => void;
 }>) {
-  const titleId = useId();
-  return (
-    <section
-      className={`workflow-state workflow-state--${kind}`}
-      aria-labelledby={titleId}
-      {...(kind === "loading" ? { role: "status", "aria-live": "polite" as const } : {})}
-    >
-      <h2 id={titleId}>{title}</h2>
-      <p>{message}</p>
-      {onRetry ? (
-        <button className="workflow-button workflow-button--secondary" type="button" onClick={onRetry}>
-          Try again
-        </button>
-      ) : null}
-    </section>
-  );
+  if (kind === "loading") {
+    return <LoadingSkeleton label={`${title}. ${message}`} />;
+  }
+  if (kind === "empty") {
+    return <EmptyState title={title} message={message} />;
+  }
+  return <ErrorState title={title} message={message} onRetry={onRetry} />;
 }
 
-export function StatusPill({ children, tone = "neutral" }: Readonly<{
-  children: ReactNode;
-  tone?: "neutral" | "positive" | "warning" | "critical";
-}>) {
-  return <span className="status-pill" data-tone={tone}>{children}</span>;
-}
-
-export function formatDate(value: string): string {
-  return new Intl.DateTimeFormat("en-AU", { dateStyle: "medium" }).format(new Date(value));
+export function StatusPill({
+  children,
+  tone = "neutral",
+}: Readonly<{ children: ReactNode; tone?: Tone }>) {
+  return <StatusBadge tone={tone}>{children}</StatusBadge>;
 }
