@@ -78,7 +78,7 @@ describe("rendered Daily Success accessibility", () => {
 
     resolve(response());
     const pageHeading = await screen.findByRole("heading", { level: 1, name: "Good morning, Synthetic Director" });
-    expect(document.activeElement).toBe(pageHeading);
+    await waitFor(() => expect(document.activeElement).toBe(pageHeading));
     await waitFor(() => expect(screen.getByRole("status").textContent).toContain("Daily Success priorities are ready"));
     const section = screen.getByRole("heading", { name: "DO FIRST" }).closest("section")!;
     const list = within(section).getByRole("list");
