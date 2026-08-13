@@ -264,7 +264,20 @@ function selectView(
   return match;
 }
 
-/** The centres a view covers, before per-source capability narrowing. */
+/**
+ * The centres a view covers, before per-source capability narrowing.
+ *
+ * The organisation view's universe is the organisation's effective centres,
+ * not the union of the viewer's source-read sets. Deriving it from source
+ * reads meant an oversight-only Compliance Manager produced an empty card set,
+ * which then summarised as a complete, zero, all-clear organisation. The
+ * organisation has centres; what the viewer lacks is the right to read a
+ * source, and that is a coverage fact, not an empty organisation.
+ *
+ * This widens only the universe. Each source query is still restricted to its
+ * own capability's authorised centres afterwards, so no business content is
+ * disclosed by holding `compliance.oversight.read` alone.
+ */
 function scopeCentreIds(
   authorisation: CentreQualityAuthorisationView,
   view: CentreQualityView,
@@ -276,10 +289,7 @@ function scopeCentreIds(
       ...ids(authorisation, FOUNDATION_CAPABILITIES.correctiveActionVerify),
     ]);
   }
-  return new Set([
-    ...ids(authorisation, FOUNDATION_CAPABILITIES.correctiveActionRead),
-    ...ids(authorisation, FOUNDATION_CAPABILITIES.quarterlyAuditRead),
-  ]);
+  return new Set(authorisation.centres.map((centre) => centre.id));
 }
 
 function intersect(scope: ReadonlySet<string>, allowed: ReadonlySet<string>): string[] {
@@ -410,31 +420,48 @@ function buildCards(input: CardInput): QualityCentreCard[] {
 }
 
 /**
- * Focus counts always partition the centres in scope, because
- * `INFORMATION_INCOMPLETE` holds every centre whose sources did not report.
- * The summed totals are omitted whenever any contributing centre is missing
- * that source, since a partial sum would understate the portfolio.
+ * Coverage has two independent inputs, and both must hold before anything
+ * reassuring may be published.
+ *
+ * `authorisationComplete` is false when a centre could not be authorised
+ * safely and was dropped from the card set. Such a centre is invisible here,
+ * so every count below is computed over an unknowingly smaller portfolio.
+ * Summing to zero across the survivors and calling it an all-clear is exactly
+ * the failure this guard exists to prevent.
+ *
+ * Known negative evidence survives partial coverage: a centre genuinely
+ * showing critical or overdue work is still counted, because withholding a
+ * known risk would be the more dangerous error. Reassuring counts and summed
+ * totals are withheld instead.
  */
-function summarise(cards: readonly QualityCentreCard[]): QualityPortfolioSummary {
+function summarise(
+  cards: readonly QualityCentreCard[],
+  authorisationComplete: boolean,
+): QualityPortfolioSummary {
   const count = (focus: QualityCentreCard["focus"]) =>
     cards.filter((card) => card.focus === focus).length;
-  const actionsComplete = cards.every(
-    (card) => card.coverage.correctiveActions === "AVAILABLE",
-  );
-  const findingsComplete = cards.every(
-    (card) => card.coverage.uncoveredFindings === "AVAILABLE",
-  );
-  const complete = cards.every(
-    (card) => card.coverage.quarterlyReviews === "AVAILABLE",
-  ) && actionsComplete && findingsComplete;
+  const actionsComplete =
+    authorisationComplete &&
+    cards.every((card) => card.coverage.correctiveActions === "AVAILABLE");
+  const findingsComplete =
+    authorisationComplete &&
+    cards.every((card) => card.coverage.uncoveredFindings === "AVAILABLE");
+  const reviewsComplete =
+    authorisationComplete &&
+    cards.every((card) => card.coverage.quarterlyReviews === "AVAILABLE");
+  const complete = reviewsComplete && actionsComplete && findingsComplete;
   return {
     coverage: complete ? "complete" : "partial",
-    centreCount: cards.length,
+    visibleCentreCount: cards.length,
     needsSupportCount: count("NEEDS_SUPPORT"),
     monitorCount: count("MONITOR"),
-    steadyCount: count("STEADY"),
-    awaitingFirstReviewCount: count("AWAITING_FIRST_REVIEW"),
     informationIncompleteCount: count("INFORMATION_INCOMPLETE"),
+    ...(complete
+      ? {
+          steadyCount: count("STEADY"),
+          awaitingFirstReviewCount: count("AWAITING_FIRST_REVIEW"),
+        }
+      : {}),
     ...(actionsComplete && findingsComplete
       ? {
           openCriticalCount: cards.reduce(
@@ -484,16 +511,12 @@ export async function buildCentreQualityWorkspace(
       asOf: decisionAt.toISOString(),
       availableViews,
       organisationTimezone: authorisation.organisationTimezone,
-      centres: [] as QualityCentreCard[],
-      focusGroups: [],
-      summary: summarise([]),
-      sourceHealth: [
-        { source: "quarterly_reviews", status: "AVAILABLE" },
-        { source: "corrective_actions", status: "AVAILABLE" },
-      ] as QualitySourceHealth[],
-      authorisationHealth: { status: "available" as const },
     };
     if (!activeView) {
+      // No business source is queried in these states, so the response carries
+      // no source health, no summary and no cards. Asserting `AVAILABLE`
+      // sources and zero totals here would claim the sources were checked and
+      // found empty when nothing was checked at all.
       await transaction.commit();
       return {
         response: {
@@ -569,12 +592,15 @@ export async function buildCentreQualityWorkspace(
       rollUpSourceHealth("quarterly_reviews", queried.reviews, reviewCentreIds.length),
       rollUpSourceHealth("corrective_actions", queried.actions, actionCentreIds.length),
     ];
+    // A centre that could not be authorised safely is absent from the card set
+    // entirely, so every aggregate below is computed over an unknowingly
+    // smaller portfolio. Coverage must record that before anything is summed.
     const authorisationPartial = [...QUALITY_CENTRE_CAPABILITIES].some(
       (capability) =>
         (authorisation.invalidCentreIdsByCapability.get(capability)?.size ?? 0) > 0,
     );
-    const summary = summarise(cards);
-    const partial = summary.coverage === "partial" || authorisationPartial;
+    const summary = summarise(cards, !authorisationPartial);
+    const partial = summary.coverage === "partial";
 
     await transaction.commit();
     return {
@@ -584,12 +610,12 @@ export async function buildCentreQualityWorkspace(
         activeView,
         centres: cards,
         focusGroups: buildFocusGroups(cards),
-        summary: authorisationPartial ? { ...summary, coverage: "partial" } : summary,
+        summary,
         sourceHealth,
         authorisationHealth: authorisationPartial
           ? {
               status: "partial",
-              warning: "Some centres could not be authorised safely and are not shown.",
+              warning: "Some centre information couldn't be checked, so it is not shown here.",
             }
           : { status: "available" },
         ...(partial

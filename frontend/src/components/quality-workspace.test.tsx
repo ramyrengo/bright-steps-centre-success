@@ -118,7 +118,7 @@ function workspace(overrides: Record<string, unknown> = {}) {
     focusGroups: [],
     summary: {
       coverage: "complete",
-      centreCount: 1,
+      visibleCentreCount: 1,
       needsSupportCount: 1,
       monitorCount: 0,
       steadyCount: 0,
@@ -175,7 +175,7 @@ function portfolio() {
     ],
     summary: {
       coverage: "complete",
-      centreCount: 3,
+      visibleCentreCount: 3,
       needsSupportCount: 1,
       monitorCount: 0,
       steadyCount: 1,
@@ -742,7 +742,7 @@ describe("Quality & Performance view identity and language", () => {
         ],
         summary: {
           coverage: "complete",
-          centreCount: 2,
+          visibleCentreCount: 2,
           needsSupportCount: 2,
           monitorCount: 0,
           steadyCount: 0,
@@ -961,5 +961,199 @@ describe("Quality & Performance never renders absence as zero", () => {
     expect(screen.getByText("No open corrective actions")).toBeDefined();
     expect(screen.getByText("Nothing closed in the last 30 days")).toBeDefined();
     expect(document.body.textContent).not.toMatch(/couldn't be checked|outside your access/iu);
+  });
+});
+
+/**
+ * A centre that could not be authorised safely is absent from the card set, so
+ * the surface must never draw a reassuring conclusion from the survivors.
+ */
+describe("Quality & Performance partial centre authorisation", () => {
+  const partialSummary = {
+    coverage: "partial",
+    visibleCentreCount: 1,
+    needsSupportCount: 0,
+    monitorCount: 0,
+    informationIncompleteCount: 0,
+    // steadyCount, awaitingFirstReviewCount and every total withheld.
+  };
+
+  test("never renders an all-clear headline when a centre could not be checked", async () => {
+    clientMocks.getCentreQualityWorkspace.mockResolvedValue(
+      workspace({
+        status: "partial",
+        activeView: { kind: "portfolio", label: "Area Manager portfolio" },
+        availableViews: [{ kind: "portfolio", label: "Area Manager portfolio" }],
+        centres: [
+          centre({
+            centreId: CENTRE_B,
+            centreName: "Ashgrove Quality Centre",
+            focus: "STEADY",
+            focusReason: "No open corrective actions after the Q2 2026 internal review",
+            actions: actions(),
+          }),
+        ],
+        focusGroups: [],
+        summary: partialSummary,
+        authorisationHealth: {
+          status: "partial",
+          warning: "Some centre information couldn't be checked, so it is not shown here.",
+        },
+      }),
+    );
+    render(<QualityWorkspace />);
+
+    await screen.findByRole("heading", { level: 1, name: "Centre quality across your portfolio" });
+    expect(
+      screen.getByRole("heading", { level: 2, name: "Some centre information couldn't be checked" }),
+    ).toBeDefined();
+    // The reassuring headline must be gone entirely.
+    expect(
+      screen.queryByText("No centre is currently showing critical or overdue work"),
+    ).toBeNull();
+    expect(document.body.textContent).not.toMatch(/all clear|nothing outstanding/iu);
+    // Withheld totals read as not checked, never as zero.
+    const figures = document.querySelector(".quality-hero__figures");
+    const values = Array.from(figures?.querySelectorAll("dd") ?? []).map((n) => n.textContent);
+    expect(values).toContain("Not checked");
+    expect(document.body.textContent).toContain("Some centres could not be checked and are not listed");
+  });
+
+  test("does not claim an empty portfolio when every centre was unauthorisable", async () => {
+    clientMocks.getCentreQualityWorkspace.mockResolvedValue(
+      workspace({
+        status: "partial",
+        activeView: { kind: "portfolio", label: "Area Manager portfolio" },
+        availableViews: [{ kind: "portfolio", label: "Area Manager portfolio" }],
+        centres: [],
+        focusGroups: [],
+        summary: { ...partialSummary, visibleCentreCount: 0 },
+        authorisationHealth: {
+          status: "partial",
+          warning: "Some centre information couldn't be checked, so it is not shown here.",
+        },
+      }),
+    );
+    render(<QualityWorkspace />);
+
+    await screen.findByRole("heading", { level: 1, name: "Centre quality across your portfolio" });
+    expect(screen.getByText("Centre information couldn't be checked")).toBeDefined();
+    expect(screen.queryByText("No centres are currently in your portfolio")).toBeNull();
+    expect(document.body.textContent).toMatch(/means those centres have no issues/iu);
+  });
+
+  test("still renders an all-clear headline when coverage is genuinely complete", async () => {
+    clientMocks.getCentreQualityWorkspace.mockResolvedValue(
+      workspace({
+        activeView: { kind: "portfolio", label: "Area Manager portfolio" },
+        availableViews: [{ kind: "portfolio", label: "Area Manager portfolio" }],
+        centres: [
+          centre({
+            centreId: CENTRE_B,
+            centreName: "Ashgrove Quality Centre",
+            focus: "STEADY",
+            focusReason: "No open corrective actions after the Q2 2026 internal review",
+            actions: actions(),
+          }),
+        ],
+        focusGroups: [],
+        summary: {
+          coverage: "complete",
+          visibleCentreCount: 1,
+          needsSupportCount: 0,
+          monitorCount: 0,
+          informationIncompleteCount: 0,
+          steadyCount: 1,
+          awaitingFirstReviewCount: 0,
+          openCriticalCount: 0,
+          overdueCount: 0,
+          awaitingVerificationCount: 0,
+        },
+      }),
+    );
+    render(<QualityWorkspace />);
+
+    expect(
+      await screen.findByRole("heading", {
+        level: 2,
+        name: "No centre is currently showing critical or overdue work",
+      }),
+    ).toBeDefined();
+  });
+});
+
+/**
+ * Non-active workspace states query no business source, so the surface must
+ * render correctly without any of that block present.
+ */
+describe("Quality & Performance non-active states", () => {
+  test("renders the view chooser with no business block at all", async () => {
+    clientMocks.getCentreQualityWorkspace.mockResolvedValue({
+      cacheControl: "private, no-store",
+      asOf: "2026-08-12T02:00:00.000Z",
+      status: "selection_required",
+      organisationTimezone: "Australia/Sydney",
+      availableViews: [
+        { kind: "portfolio", label: "Area Manager portfolio" },
+        { kind: "organisation", label: "Organisation quality oversight" },
+      ],
+    });
+    render(<QualityWorkspace />);
+
+    await screen.findByRole("heading", { level: 1, name: "Choose your quality view" });
+    expect(screen.getByRole("button", { name: /Area Manager portfolio/u })).toBeDefined();
+    // Nothing may imply a source was checked and found empty.
+    expect(document.body.textContent).not.toMatch(/no centre|no open|all clear|steady/iu);
+    expect(document.body.textContent).not.toMatch(/\b0\b/u);
+  });
+
+  test("renders the System Administrator unsupported state with no business assertion", async () => {
+    clientMocks.getCentreQualityWorkspace.mockResolvedValue({
+      cacheControl: "private, no-store",
+      asOf: "2026-08-12T02:00:00.000Z",
+      status: "unsupported",
+      organisationTimezone: "Australia/Sydney",
+      availableViews: [],
+    });
+    render(<QualityWorkspace />);
+
+    await screen.findByText("No quality view is assigned to you");
+    expect(document.body.textContent).toMatch(/Technical administration alone does not grant/u);
+    expect(document.body.textContent).not.toMatch(/no open corrective actions|all clear|steady/iu);
+    expect(document.body.textContent).not.toMatch(/\b0\b/u);
+  });
+});
+
+describe("Quality & Performance navigation cannot be injected from browser storage", () => {
+  test.each([
+    ["sessionStorage" as const],
+    ["localStorage" as const],
+  ])("ignores a well-formed /quality route injected into %s", async (store) => {
+    window[store].setItem(
+      "centre-success.workspace-links",
+      JSON.stringify([{ label: "Quality & Performance", route: "/quality" }]),
+    );
+    // A System Administrator holds no business capability, so the backend
+    // returns nothing regardless of what the browser is holding.
+    clientMocks.getAuthorisedNavigationEndpoint.mockResolvedValue({
+      cacheControl: "private, no-store",
+      links: [],
+    });
+    clientMocks.getCentreQualityWorkspace.mockResolvedValue({
+      cacheControl: "private, no-store",
+      asOf: "2026-08-12T02:00:00.000Z",
+      status: "unsupported",
+      organisationTimezone: "Australia/Sydney",
+      availableViews: [],
+    });
+    render(<QualityWorkspace />);
+
+    await screen.findByText("No quality view is assigned to you");
+    const nav = screen.getByRole("navigation", { name: "Centre Success workspaces" });
+    expect(within(nav).queryByRole("link", { name: "Quality & Performance" })).toBeNull();
+    expect(within(nav).getAllByRole("link").map((link) => link.textContent)).toEqual([
+      "Daily Success",
+    ]);
+    window[store].clear();
   });
 });

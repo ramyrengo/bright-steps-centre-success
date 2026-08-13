@@ -521,6 +521,18 @@ export namespace centre_quality {
         centreId?: string
     }
 
+    /**
+     * `status` discriminates the response, in the same way Daily Success does.
+     * `ready` and `partial` are active projections and carry the business block:
+     * `centres`, `focusGroups`, `summary`, `sourceHealth` and
+     * `authorisationHealth`.
+     * `selection_required` and `unsupported` query no business source at all, so
+     * they carry none of that block. Returning `sourceHealth: AVAILABLE` or a
+     * zero-filled summary in those states would assert that sources were checked
+     * and found empty, when in fact nothing was checked. Only the authorisation
+     * facts the request did establish — the authorised view choices and the
+     * organisation timezone — are returned.
+     */
     export interface CentreQualityWorkspaceResponse {
         cacheControl: string
         asOf: string
@@ -528,11 +540,15 @@ export namespace centre_quality {
         activeView?: CentreQualityView
         availableViews: CentreQualityView[]
         organisationTimezone: string
-        centres: QualityCentreCard[]
-        focusGroups: QualityFocusGroup[]
-        summary: QualityPortfolioSummary
-        sourceHealth: QualitySourceHealth[]
-        authorisationHealth: QualityAuthorisationHealth
+        /**
+         * Present only for an active projection (`ready` or `partial`).
+         */
+        centres?: QualityCentreCard[]
+
+        focusGroups?: QualityFocusGroup[]
+        summary?: QualityPortfolioSummary
+        sourceHealth?: QualitySourceHealth[]
+        authorisationHealth?: QualityAuthorisationHealth
         warning?: string
     }
 
@@ -646,22 +662,42 @@ export namespace centre_quality {
     }
 
     /**
-     * Focus counts are always present because `INFORMATION_INCOMPLETE` absorbs
-     * every centre whose sources did not fully report, which makes the five
-     * counts a complete partition of the centres in scope.
-     * The summed totals below are different: a sum over centres with missing
-     * sources would silently understate the portfolio, so each is present only
-     * when every contributing centre had `AVAILABLE` coverage for that source.
+     * Coverage is `partial` when any centre's sources did not fully report, or
+     * when a centre could not be authorised safely and was therefore left out of
+     * the card set entirely. An omitted centre is invisible here by design, so
+     * nothing below may be read as an organisation-complete statement unless
+     * coverage is `complete`.
+     * Known negative evidence stays visible under partial coverage: a centre that
+     * is genuinely showing critical or overdue work is still counted. Every
+     * reassuring count and every summed total is withheld instead, because those
+     * are the values that would falsely imply an all-clear.
      */
     export interface QualityPortfolioSummary {
         coverage: "complete" | "partial"
-        centreCount: number
+        /**
+         * Centres actually included below. Under `partial` coverage this is what
+         * the viewer can see, never an organisation total.
+         */
+        visibleCentreCount: number
+
+        /**
+         * Known negative evidence: safe to state under either coverage.
+         */
         needsSupportCount: number
+
         monitorCount: number
-        steadyCount: number
-        awaitingFirstReviewCount: number
         informationIncompleteCount: number
+        /**
+         * Reassuring counts. Present only under `complete` coverage.
+         */
+        steadyCount?: number
+
+        awaitingFirstReviewCount?: number
+        /**
+         * Summed totals. Present only when every contributing centre reported.
+         */
         openCriticalCount?: number
+
         overdueCount?: number
         awaitingVerificationCount?: number
     }

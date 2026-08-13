@@ -212,27 +212,39 @@ type CollectionScope = "portfolio" | "organisation";
  * totals are rendered only when the backend supplied them, which it does only
  * when every contributing centre reported.
  */
+/**
+ * The headline follows coverage, not the numbers.
+ *
+ * A centre that could not be authorised safely is absent from the card set, so
+ * a zero needs-support count over the survivors says nothing about the
+ * portfolio. Under partial coverage the heading therefore states what is
+ * missing; only complete coverage may make an all-clear statement.
+ */
 function CollectionHero({
   response,
   scope,
 }: Readonly<{ response: Workspace; scope: CollectionScope }>) {
-  const { summary } = response;
+  const summary = response.summary;
+  if (!summary) return null;
   const needsSupport = summary.needsSupportCount;
   const incomplete = summary.informationIncompleteCount;
   const organisation = scope === "organisation";
+  const partial = summary.coverage === "partial";
 
-  const headline =
-    needsSupport === 0
-      ? incomplete > 0
-        ? "No centre is showing critical or overdue work in the information available"
-        : "No centre is currently showing critical or overdue work"
-      : needsSupport === 1
-        ? organisation
-          ? "One centre is showing critical or overdue work"
-          : "One centre could use your support this week"
-        : organisation
-          ? `${needsSupport} centres are showing critical or overdue work`
-          : `${needsSupport} centres could use your support this week`;
+  let headline: string;
+  if (needsSupport === 0) {
+    headline = partial
+      ? "Some centre information couldn't be checked"
+      : "No centre is currently showing critical or overdue work";
+  } else if (needsSupport === 1) {
+    headline = organisation
+      ? "One centre is showing critical or overdue work"
+      : "One centre could use your support this week";
+  } else {
+    headline = organisation
+      ? `${needsSupport} centres are showing critical or overdue work`
+      : `${needsSupport} centres could use your support this week`;
+  }
 
   return (
     <section className="quality-hero" aria-labelledby="quality-hero-title">
@@ -261,17 +273,18 @@ function CollectionHero({
           <dt>Overdue</dt>
           <dd>{summary.overdueCount ?? "Not checked"}</dd>
         </div>
-        {incomplete > 0 ? null : (
+        {partial ? null : (
           <div>
             <dt>Awaiting verification</dt>
             <dd>{summary.awaitingVerificationCount ?? "Not checked"}</dd>
           </div>
         )}
       </dl>
-      {summary.coverage === "partial" ? (
+      {partial ? (
         <p className="quality-hero__note">
-          Totals are shown only where every centre reported. Where a source could not be
-          checked, no total is stated rather than one that would understate the picture.
+          {response.authorisationHealth?.status === "partial"
+            ? "Some centres could not be checked and are not listed. Nothing here counts them as having no issues."
+            : "Totals are shown only where every centre reported. Where a source could not be checked, no total is stated rather than one that would understate the picture."}
         </p>
       ) : null}
     </section>
@@ -311,10 +324,12 @@ function CentreSummary({ centre }: Readonly<{ centre: CentreCard }>) {
 }
 
 function FocusGroups({ response }: Readonly<{ response: Workspace }>) {
-  const byId = new Map(response.centres.map((centre) => [centre.centreId, centre] as const));
+  const byId = new Map(
+    (response.centres ?? []).map((centre) => [centre.centreId, centre] as const),
+  );
   return (
     <>
-      {response.focusGroups.map((group) => {
+      {(response.focusGroups ?? []).map((group) => {
         const centres = group.centreIds.flatMap((id) => {
           const centre = byId.get(id);
           return centre ? [centre] : [];
@@ -356,8 +371,9 @@ export function QualityWorkspaceView({
   const active = response.activeView;
   const isCentre = active?.kind === "centre";
   const isOrganisation = active?.kind === "organisation";
-  const centre = isCentre ? response.centres[0] : undefined;
-  const businessDate = response.centres[0]?.localDate;
+  const centres = response.centres ?? [];
+  const centre = isCentre ? centres[0] : undefined;
+  const businessDate = centres[0]?.localDate;
 
   // An organisation-wide compliance view is not a personal portfolio. Saying
   // "your centres" there would imply the reader owns every centre they can see.
@@ -406,7 +422,7 @@ export function QualityWorkspaceView({
 
       {response.status === "partial" ? (
         <Notice title="Some quality information couldn't be checked.">
-          {response.authorisationHealth.warning ??
+          {response.authorisationHealth?.warning ??
             "Where a source could not be checked, nothing is reported as zero. Treat the figures below as a partial picture."}
         </Notice>
       ) : null}
@@ -459,7 +475,16 @@ export function QualityWorkspaceView({
             response={response}
             scope={isOrganisation ? "organisation" : "portfolio"}
           />
-          {response.centres.length === 0 ? (
+          {centres.length > 0 ? (
+            <FocusGroups response={response} />
+          ) : response.authorisationHealth?.status === "partial" ? (
+            // Centres exist but could not be authorised safely. Saying the
+            // portfolio is empty here would assert they have no issues.
+            <EmptyState
+              title="Centre information couldn't be checked"
+              message="No centre could be checked for this view right now. Nothing here means those centres have no issues; please try again shortly."
+            />
+          ) : (
             <EmptyState
               title={
                 isOrganisation
@@ -468,8 +493,6 @@ export function QualityWorkspaceView({
               }
               message="Centres appear here as soon as an active assignment gives you access to their internal reviews or corrective actions."
             />
-          ) : (
-            <FocusGroups response={response} />
           )}
         </>
       )}
