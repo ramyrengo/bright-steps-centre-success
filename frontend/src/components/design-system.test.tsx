@@ -9,7 +9,18 @@ vi.mock("../lib/centre-success-authentication", () => ({
   }),
 }));
 
-import { AppShell, readAuthorisedNavigation, storeAuthorisedNavigation } from "./app-shell";
+const navigationMocks = vi.hoisted(() => ({
+  getAuthorisedNavigationEndpoint: vi.fn(),
+}));
+vi.mock("../lib/centre-success-client", () => ({
+  useAuthenticatedCentreSuccessClient: () => ({
+    foundation: {
+      getAuthorisedNavigationEndpoint: navigationMocks.getAuthorisedNavigationEndpoint,
+    },
+  }),
+}));
+
+import { AppShell } from "./app-shell";
 import {
   DataList,
   DataListRow,
@@ -24,61 +35,125 @@ import {
 } from "./design-system";
 import { StatusPill, WorkflowShell, WorkflowState } from "./workflow-shell";
 
-beforeEach(() => window.sessionStorage.clear());
+function respondWithNavigation(links: readonly { label: string; route: string }[]) {
+  navigationMocks.getAuthorisedNavigationEndpoint.mockResolvedValue({
+    cacheControl: "private, no-store",
+    links,
+  });
+}
+
+/** Every route the product can render, as an attacker would supply them. */
+const INJECTED_ROUTES = [
+  { label: "People & Access", route: "/admin/people" },
+  { label: "Quality & Performance", route: "/quality" },
+  { label: "Compliance oversight", route: "/compliance" },
+];
+
+beforeEach(() => {
+  window.sessionStorage.clear();
+  navigationMocks.getAuthorisedNavigationEndpoint.mockReset();
+  respondWithNavigation([]);
+});
 afterEach(cleanup);
 
 describe("application shell navigation", () => {
-  test("renders only backend-authorised destinations, plus Daily Success", () => {
-    storeAuthorisedNavigation([
+  test("renders only backend-authorised destinations, plus Daily Success", async () => {
+    respondWithNavigation([
       { label: "Quality & Performance", route: "/quality" },
       { label: "Compliance oversight", route: "/compliance" },
     ]);
     render(<AppShell active="/compliance"><p>content</p></AppShell>);
 
     const nav = screen.getByRole("navigation", { name: "Centre Success workspaces" });
+    await screen.findByRole("link", { name: "Compliance oversight" });
     expect(within(nav).getAllByRole("link").map((link) => link.textContent)).toEqual([
       "Daily Success",
       "Quality & Performance",
       "Compliance oversight",
     ]);
-    expect(within(nav).getByRole("link", { name: "Compliance oversight" }).getAttribute("aria-current")).toBe("page");
+    expect(
+      within(nav).getByRole("link", { name: "Compliance oversight" }).getAttribute("aria-current"),
+    ).toBe("page");
   });
 
-  test("gives a technical administrator no business navigation", () => {
-    storeAuthorisedNavigation([]);
+  test("gives a technical administrator no business navigation", async () => {
+    respondWithNavigation([]);
     render(<AppShell><p>content</p></AppShell>);
 
-    const nav = screen.getByRole("navigation", { name: "Centre Success workspaces" });
+    const nav = await screen.findByRole("navigation", { name: "Centre Success workspaces" });
     expect(within(nav).getAllByRole("link")).toHaveLength(1);
     expect(within(nav).getByRole("link", { name: "Daily Success" })).toBeDefined();
     expect(within(nav).queryByRole("link", { name: /Compliance|Quality|People/u })).toBeNull();
   });
 
   test("hides navigation entirely on a focused single-task screen", () => {
-    storeAuthorisedNavigation([{ label: "Quality & Performance", route: "/quality" }]);
     render(<AppShell links={[]}><p>content</p></AppShell>);
 
     expect(screen.queryByRole("navigation", { name: "Centre Success workspaces" })).toBeNull();
+    // A focused screen states its own navigation, so it must not even ask.
+    expect(navigationMocks.getAuthorisedNavigationEndpoint).not.toHaveBeenCalled();
   });
 
-  test("rejects tampered or non-relative navigation entries from browser storage", () => {
+  test("browser storage cannot introduce a destination the backend did not return", async () => {
+    // A syntactically valid, same-origin, real product route — exactly what a
+    // tampered storage entry would contain. Storage is not an authority.
     window.sessionStorage.setItem(
       "centre-success.workspace-links",
-      JSON.stringify([
-        { label: "Offsite", route: "https://example.test" },
-        { label: "Missing route" },
-        { label: "Good", route: "/quality" },
-      ]),
+      JSON.stringify(INJECTED_ROUTES),
     );
-    expect(readAuthorisedNavigation(window.sessionStorage)).toEqual([
-      { label: "Good", route: "/quality" },
+    respondWithNavigation([]);
+    render(<AppShell><p>content</p></AppShell>);
+
+    const nav = await screen.findByRole("navigation", { name: "Centre Success workspaces" });
+    expect(within(nav).getAllByRole("link").map((link) => link.textContent)).toEqual([
+      "Daily Success",
+    ]);
+    expect(within(nav).queryByRole("link", { name: "People & Access" })).toBeNull();
+    expect(within(nav).queryByRole("link", { name: "Quality & Performance" })).toBeNull();
+  });
+
+  test("an injected quality route cannot appear for a principal the backend denies", async () => {
+    window.sessionStorage.setItem(
+      "centre-success.workspace-links",
+      JSON.stringify([{ label: "Quality & Performance", route: "/quality" }]),
+    );
+    // A System Administrator holds no business capability, so the backend
+    // returns nothing and denial must survive whatever the browser holds.
+    respondWithNavigation([]);
+    render(<AppShell active="/quality"><p>content</p></AppShell>);
+
+    const nav = await screen.findByRole("navigation", { name: "Centre Success workspaces" });
+    expect(within(nav).queryByRole("link", { name: "Quality & Performance" })).toBeNull();
+    expect(within(nav).getAllByRole("link")).toHaveLength(1);
+  });
+
+  test("falls back to Daily Success when navigation is denied or unavailable", async () => {
+    window.sessionStorage.setItem(
+      "centre-success.workspace-links",
+      JSON.stringify(INJECTED_ROUTES),
+    );
+    navigationMocks.getAuthorisedNavigationEndpoint.mockRejectedValue(new Error("denied"));
+    render(<AppShell><p>content</p></AppShell>);
+
+    const nav = screen.getByRole("navigation", { name: "Centre Success workspaces" });
+    expect(within(nav).getAllByRole("link").map((link) => link.textContent)).toEqual([
+      "Daily Success",
     ]);
   });
 
-  test("survives corrupt storage without throwing", () => {
-    window.sessionStorage.setItem("centre-success.workspace-links", "{not json");
-    expect(readAuthorisedNavigation(window.sessionStorage)).toEqual([]);
-    expect(readAuthorisedNavigation(undefined)).toEqual([]);
+  test("does not duplicate Daily Success when the backend also returns it", async () => {
+    respondWithNavigation([
+      { label: "Daily Success", route: "/" },
+      { label: "Quality & Performance", route: "/quality" },
+    ]);
+    render(<AppShell><p>content</p></AppShell>);
+
+    const nav = screen.getByRole("navigation", { name: "Centre Success workspaces" });
+    await screen.findByRole("link", { name: "Quality & Performance" });
+    expect(within(nav).getAllByRole("link").map((link) => link.textContent)).toEqual([
+      "Daily Success",
+      "Quality & Performance",
+    ]);
   });
 
   test("exposes a skip link that targets the main region", () => {
@@ -104,7 +179,6 @@ describe("workflow shell adapter", () => {
   });
 
   test("passes an explicit empty link list through as no navigation", () => {
-    storeAuthorisedNavigation([{ label: "Quality & Performance", route: "/quality" }]);
     render(
       <WorkflowShell eyebrow="Centre Director" title="Quarterly review" summary="Focused." workspaceLinks={[]}>
         <p>body</p>

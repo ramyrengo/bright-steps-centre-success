@@ -22,6 +22,7 @@ const clientMocks = vi.hoisted(() => {
     suspendPerson: vi.fn(),
     removePersonAssignment: vi.fn(),
     replacePersonAssignmentScope: vi.fn(),
+    getAuthorisedNavigationEndpoint: vi.fn(),
   };
   return { foundation, client: { foundation } };
 });
@@ -37,7 +38,6 @@ vi.mock("../lib/centre-success-client", () => ({
   useAuthenticatedCentreSuccessClient: () => clientMocks.client,
 }));
 
-import { storeAuthorisedNavigation } from "./app-shell";
 import {
   InvitationReviewWorkspace,
   PeopleAccessWorkspace,
@@ -117,6 +117,12 @@ beforeEach(() => {
   window.sessionStorage.clear();
   for (const mock of Object.values(clientMocks.foundation)) mock.mockReset();
   clientMocks.foundation.getPeopleOptions.mockResolvedValue(OPTIONS);
+  // The shell asks the backend for navigation on every page; default to the
+  // safe empty answer so only tests that care about links opt into them.
+  clientMocks.foundation.getAuthorisedNavigationEndpoint.mockResolvedValue({
+    cacheControl: "private, no-store",
+    links: [],
+  });
 });
 afterEach(cleanup);
 
@@ -182,7 +188,10 @@ describe("People & Access list presentation", () => {
   });
 
   test("keeps administration navigation capability-derived", async () => {
-    storeAuthorisedNavigation([{ label: "People & Access", route: "/admin/people" }]);
+    clientMocks.foundation.getAuthorisedNavigationEndpoint.mockResolvedValue({
+      cacheControl: "private, no-store",
+      links: [{ label: "People & Access", route: "/admin/people" }],
+    });
     render(<PeopleAccessWorkspace />);
 
     await screen.findByRole("list", { name: "People" });

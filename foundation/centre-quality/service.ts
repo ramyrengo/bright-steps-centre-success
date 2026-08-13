@@ -19,8 +19,10 @@ import type {
   CentreQualityWorkspaceRequest,
   CentreQualityWorkspaceResponse,
   QualityCentreCard,
+  QualityCentreCoverage,
   QualityPortfolioSummary,
   QualityReviewSummary,
+  QualitySourceCoverage,
   QualitySourceHealth,
 } from "./contracts";
 import { buildComparison, buildFocusGroups, deriveFocus, sortCentreCards } from "./focus";
@@ -311,36 +313,93 @@ async function withSavepoint<T>(
   }
 }
 
+/**
+ * Resolves one source domain for one centre. Authorisation is checked first,
+ * because a viewer who may not read a source must never be told it is empty;
+ * only an authorised source that actually answered can report a real zero.
+ */
+function resolveCoverage(authorised: boolean, queried: boolean): QualitySourceCoverage {
+  if (!authorised) return "NOT_AUTHORIZED";
+  return queried ? "AVAILABLE" : "UNAVAILABLE";
+}
+
+interface CoverageInput {
+  authorised: {
+    reviews: ReadonlySet<string> | readonly string[];
+    actions: ReadonlySet<string> | readonly string[];
+    findings: ReadonlySet<string> | readonly string[];
+  };
+  queried: { reviews: boolean; actions: boolean; findings: boolean };
+}
+
+function coverageResolver(input: CoverageInput): (centreId: string) => QualityCentreCoverage {
+  const reviews = new Set(input.authorised.reviews);
+  const actions = new Set(input.authorised.actions);
+  const findings = new Set(input.authorised.findings);
+  return (centreId) => ({
+    quarterlyReviews: resolveCoverage(reviews.has(centreId), input.queried.reviews),
+    correctiveActions: resolveCoverage(actions.has(centreId), input.queried.actions),
+    uncoveredFindings: resolveCoverage(findings.has(centreId), input.queried.findings),
+  });
+}
+
+/** Response-level roll-up. Per-centre coverage on each card stays authoritative. */
+function rollUpSourceHealth(
+  source: QualitySourceHealth["source"],
+  queried: boolean,
+  authorisedCentreCount: number,
+): QualitySourceHealth {
+  if (!queried) return { source, status: "UNAVAILABLE" };
+  return { source, status: authorisedCentreCount > 0 ? "AVAILABLE" : "NOT_AUTHORIZED" };
+}
+
 interface CardInput {
   authorisation: CentreQualityAuthorisationView;
   reviewsByCentre: Map<string, QualityReviewSummary[]>;
   aggregates: Map<string, CentreActionAggregate>;
   centreIds: readonly string[];
+  coverageFor: (centreId: string) => QualityCentreCoverage;
 }
 
 function buildCards(input: CardInput): QualityCentreCard[] {
   const cards: QualityCentreCard[] = [];
   for (const centre of input.authorisation.centres) {
     if (!input.centreIds.includes(centre.id)) continue;
-    const reviews = input.reviewsByCentre.get(centre.id) ?? [];
+    const coverage = input.coverageFor(centre.id);
+    const reviewsKnown = coverage.quarterlyReviews === "AVAILABLE";
+    const actionsKnown = coverage.correctiveActions === "AVAILABLE";
+    const findingsKnown = coverage.uncoveredFindings === "AVAILABLE";
+
+    const reviews = reviewsKnown ? (input.reviewsByCentre.get(centre.id) ?? []) : [];
     const latestReview = reviews[0];
     const aggregate = input.aggregates.get(centre.id);
-    const actions = aggregate?.rollup ?? emptyRollup();
-    const uncoveredCriticalFindings = aggregate?.uncoveredCriticalFindings ?? 0;
-    const { focus, reason } = deriveFocus({ actions, uncoveredCriticalFindings, latestReview });
+    // A successfully queried, authorised source with no rows is a real zero.
+    // An unauthorised or failed source contributes nothing at all.
+    const actions = actionsKnown ? (aggregate?.rollup ?? emptyRollup()) : undefined;
+    const uncoveredCriticalFindings = findingsKnown
+      ? (aggregate?.uncoveredCriticalFindings ?? 0)
+      : undefined;
+
+    const { focus, reason } = deriveFocus({
+      coverage,
+      actions,
+      uncoveredCriticalFindings,
+      latestReview,
+    });
     cards.push({
       centreId: centre.id,
       centreName: centre.name,
       timezone: centre.timezone,
       localDate: localDateKey(input.authorisation.decisionAt, centre.timezone),
+      coverage,
       focus,
       focusReason: reason,
       ...(latestReview ? { latestReview } : {}),
-      comparison: buildComparison(latestReview, reviews[1]),
-      actions,
-      uncoveredCriticalFindings,
-      strengthsCount: latestReview?.positivePracticeCount ?? 0,
-      completedLast30Days: aggregate?.completedLast30Days ?? 0,
+      ...(reviewsKnown ? { comparison: buildComparison(latestReview, reviews[1]) } : {}),
+      ...(actions ? { actions } : {}),
+      ...(uncoveredCriticalFindings === undefined ? {} : { uncoveredCriticalFindings }),
+      ...(reviewsKnown ? { strengthsCount: latestReview?.positivePracticeCount ?? 0 } : {}),
+      ...(actionsKnown ? { completedLast30Days: aggregate?.completedLast30Days ?? 0 } : {}),
       cta: {
         label: "Open centre quality",
         route: `/quality/centres/${centre.id}`,
@@ -350,29 +409,50 @@ function buildCards(input: CardInput): QualityCentreCard[] {
   return sortCentreCards(cards);
 }
 
-function summarise(
-  cards: readonly QualityCentreCard[],
-  partial: boolean,
-): QualityPortfolioSummary {
-  if (partial) return { coverage: "partial" };
+/**
+ * Focus counts always partition the centres in scope, because
+ * `INFORMATION_INCOMPLETE` holds every centre whose sources did not report.
+ * The summed totals are omitted whenever any contributing centre is missing
+ * that source, since a partial sum would understate the portfolio.
+ */
+function summarise(cards: readonly QualityCentreCard[]): QualityPortfolioSummary {
+  const count = (focus: QualityCentreCard["focus"]) =>
+    cards.filter((card) => card.focus === focus).length;
+  const actionsComplete = cards.every(
+    (card) => card.coverage.correctiveActions === "AVAILABLE",
+  );
+  const findingsComplete = cards.every(
+    (card) => card.coverage.uncoveredFindings === "AVAILABLE",
+  );
+  const complete = cards.every(
+    (card) => card.coverage.quarterlyReviews === "AVAILABLE",
+  ) && actionsComplete && findingsComplete;
   return {
-    coverage: "complete",
+    coverage: complete ? "complete" : "partial",
     centreCount: cards.length,
-    needsSupportCount: cards.filter((card) => card.focus === "NEEDS_SUPPORT").length,
-    monitorCount: cards.filter((card) => card.focus === "MONITOR").length,
-    steadyCount: cards.filter((card) => card.focus === "STEADY").length,
-    awaitingFirstReviewCount: cards.filter(
-      (card) => card.focus === "AWAITING_FIRST_REVIEW",
-    ).length,
-    openCriticalCount: cards.reduce(
-      (total, card) => total + card.actions.critical + card.uncoveredCriticalFindings,
-      0,
-    ),
-    overdueCount: cards.reduce((total, card) => total + card.actions.overdue, 0),
-    awaitingVerificationCount: cards.reduce(
-      (total, card) => total + card.actions.awaitingVerification,
-      0,
-    ),
+    needsSupportCount: count("NEEDS_SUPPORT"),
+    monitorCount: count("MONITOR"),
+    steadyCount: count("STEADY"),
+    awaitingFirstReviewCount: count("AWAITING_FIRST_REVIEW"),
+    informationIncompleteCount: count("INFORMATION_INCOMPLETE"),
+    ...(actionsComplete && findingsComplete
+      ? {
+          openCriticalCount: cards.reduce(
+            (total, card) =>
+              total + (card.actions?.critical ?? 0) + (card.uncoveredCriticalFindings ?? 0),
+            0,
+          ),
+        }
+      : {}),
+    ...(actionsComplete
+      ? {
+          overdueCount: cards.reduce((total, card) => total + (card.actions?.overdue ?? 0), 0),
+          awaitingVerificationCount: cards.reduce(
+            (total, card) => total + (card.actions?.awaitingVerification ?? 0),
+            0,
+          ),
+        }
+      : {}),
   };
 }
 
@@ -406,10 +486,10 @@ export async function buildCentreQualityWorkspace(
       organisationTimezone: authorisation.organisationTimezone,
       centres: [] as QualityCentreCard[],
       focusGroups: [],
-      summary: { coverage: "complete" as const, centreCount: 0 },
+      summary: summarise([]),
       sourceHealth: [
-        { source: "quarterly_reviews", status: "available" },
-        { source: "corrective_actions", status: "available" },
+        { source: "quarterly_reviews", status: "AVAILABLE" },
+        { source: "corrective_actions", status: "AVAILABLE" },
       ] as QualitySourceHealth[],
       authorisationHealth: { status: "available" as const },
     };
@@ -461,23 +541,40 @@ export async function buildCentreQualityWorkspace(
         })
       : new Map<string, CentreActionAggregate>();
 
+    // Uncovered critical findings are loaded inside the corrective-action
+    // savepoint on this endpoint, so they share its success or failure.
+    const queried = {
+      reviews: reviewResult.value !== undefined,
+      actions: actionResult.value !== undefined,
+      findings: actionResult.value !== undefined,
+    };
+    const coverageFor = coverageResolver({
+      authorised: {
+        reviews: reviewCentreIds,
+        actions: actionCentreIds,
+        findings: findingCentreIds,
+      },
+      queried,
+    });
+
     const cards = buildCards({
       authorisation,
       reviewsByCentre: reviewResult.value ?? new Map(),
       aggregates,
       centreIds: [...scope],
+      coverageFor,
     });
 
     const sourceHealth: QualitySourceHealth[] = [
-      { source: "quarterly_reviews", status: reviewResult.value ? "available" : "unavailable" },
-      { source: "corrective_actions", status: actionResult.value ? "available" : "unavailable" },
+      rollUpSourceHealth("quarterly_reviews", queried.reviews, reviewCentreIds.length),
+      rollUpSourceHealth("corrective_actions", queried.actions, actionCentreIds.length),
     ];
     const authorisationPartial = [...QUALITY_CENTRE_CAPABILITIES].some(
       (capability) =>
         (authorisation.invalidCentreIdsByCapability.get(capability)?.size ?? 0) > 0,
     );
-    const partial =
-      sourceHealth.some((source) => source.status === "unavailable") || authorisationPartial;
+    const summary = summarise(cards);
+    const partial = summary.coverage === "partial" || authorisationPartial;
 
     await transaction.commit();
     return {
@@ -487,7 +584,7 @@ export async function buildCentreQualityWorkspace(
         activeView,
         centres: cards,
         focusGroups: buildFocusGroups(cards),
-        summary: summarise(cards, partial),
+        summary: authorisationPartial ? { ...summary, coverage: "partial" } : summary,
         sourceHealth,
         authorisationHealth: authorisationPartial
           ? {
@@ -495,7 +592,9 @@ export async function buildCentreQualityWorkspace(
               warning: "Some centres could not be authorised safely and are not shown.",
             }
           : { status: "available" },
-        ...(partial ? { warning: "Some quality facts could not be checked." } : {}),
+        ...(partial
+          ? { warning: "Some quality information could not be checked." }
+          : {}),
       },
       diagnostics: { queryCount, sourceDurationsMs },
     };
@@ -589,18 +688,38 @@ export async function buildCentreQualityDetail(
       : new Map<string, CentreActionAggregate>();
     const aggregate = aggregates.get(centre.id);
     const history = reviewResult.value?.history.get(centre.id) ?? [];
+    // Uncovered critical findings are loaded inside the quarterly-review
+    // savepoint on this endpoint, so they share its success or failure.
+    const queried = {
+      reviews: reviewResult.value !== undefined,
+      actions: actionResult.value !== undefined,
+      findings: reviewResult.value !== undefined,
+    };
+    const coverageFor = coverageResolver({
+      authorised: {
+        reviews: reviewCentreIds,
+        actions: actionCentreIds,
+        findings: findingCentreIds,
+      },
+      queried,
+    });
     const cards = buildCards({
       authorisation,
       reviewsByCentre: new Map(history.length ? [[centre.id, history]] : []),
       aggregates,
       centreIds: [centre.id],
+      coverageFor,
     });
+    const coverage = coverageFor(centre.id);
+    const reviewsKnown = coverage.quarterlyReviews === "AVAILABLE";
+    const actionsKnown = coverage.correctiveActions === "AVAILABLE";
+    const findingsKnown = coverage.uncoveredFindings === "AVAILABLE";
 
     const sourceHealth: QualitySourceHealth[] = [
-      { source: "quarterly_reviews", status: reviewResult.value ? "available" : "unavailable" },
-      { source: "corrective_actions", status: actionResult.value ? "available" : "unavailable" },
+      rollUpSourceHealth("quarterly_reviews", queried.reviews, reviewCentreIds.length),
+      rollUpSourceHealth("corrective_actions", queried.actions, actionCentreIds.length),
     ];
-    const partial = sourceHealth.some((source) => source.status === "unavailable");
+    const partial = !reviewsKnown || !actionsKnown || !findingsKnown;
 
     await transaction.commit();
     return {
@@ -609,18 +728,29 @@ export async function buildCentreQualityDetail(
         asOf: decisionAt.toISOString(),
         status: partial ? "partial" : "ready",
         centre: cards[0],
-        openActions: (aggregate?.openItems ?? []).slice(0, DETAIL_LIST_LIMIT),
-        completedActions: (aggregate?.completedItems ?? []).slice(0, DETAIL_LIST_LIMIT),
-        strengths: reviewResult.value?.strengths ?? [],
-        uncoveredFindings: reviewResult.value?.uncovered ?? [],
-        sectionResults: reviewResult.value?.sections ?? [],
-        reviewHistory: history,
+        ...(actionsKnown
+          ? {
+              openActions: (aggregate?.openItems ?? []).slice(0, DETAIL_LIST_LIMIT),
+              completedActions: (aggregate?.completedItems ?? []).slice(0, DETAIL_LIST_LIMIT),
+            }
+          : {}),
+        ...(reviewsKnown
+          ? {
+              strengths: reviewResult.value?.strengths ?? [],
+              sectionResults: reviewResult.value?.sections ?? [],
+              reviewHistory: history,
+            }
+          : {}),
+        ...(findingsKnown ? { uncoveredFindings: reviewResult.value?.uncovered ?? [] } : {}),
         canAcknowledgeReview:
+          reviewsKnown &&
           ids(authorisation, FOUNDATION_CAPABILITIES.quarterlyAuditAcknowledge).has(centre.id) &&
           history.length > 0 &&
           !history[0].acknowledged,
         sourceHealth,
-        ...(partial ? { warning: "Some quality facts could not be checked." } : {}),
+        ...(partial
+          ? { warning: "Some quality information could not be checked." }
+          : {}),
       },
       diagnostics: { queryCount, sourceDurationsMs },
     };

@@ -22,26 +22,56 @@ import {
   StatusBadge,
   formatScore,
 } from "./design-system";
-import { ReviewLine, focusLabel, focusTone } from "./quality-workspace";
+import { CoverageNote, ReviewLine, focusLabel, focusTone } from "./quality-workspace";
 
 type Detail = centre_quality.CentreQualityDetailResponse;
 type OpenAction = centre_quality.QualityActionListItem;
 type SectionResult = centre_quality.QualitySectionResult;
+type SourceCoverage = centre_quality.QualitySourceCoverage;
 
+/**
+ * Section labels state a relationship between two numbers this centre's own
+ * review already produced. They deliberately avoid an endorsement such as
+ * "Strong", which would read as an objective quality judgement and would have
+ * been applied to a barely observed section purely for sitting at or above the
+ * centre's overall result.
+ */
 export function sectionTone(standing: centre_quality.QualitySectionStanding) {
   return {
-    FOCUS: "warning" as const,
-    STRONG: "positive" as const,
+    BELOW_CENTRE_RESULT: "warning" as const,
+    AT_OR_ABOVE_CENTRE_RESULT: "informational" as const,
     NOT_SCORED: "neutral" as const,
   }[standing];
 }
 
 export function sectionLabel(standing: centre_quality.QualitySectionStanding): string {
   return {
-    FOCUS: "Focus area",
-    STRONG: "Strong",
+    BELOW_CENTRE_RESULT: "Below centre result",
+    AT_OR_ABOVE_CENTRE_RESULT: "At or above centre result",
     NOT_SCORED: "Not scored",
   }[standing];
+}
+
+/**
+ * Stands in for a list whenever its source did not report. It must never use
+ * the affirmative empty state, because "nothing outstanding" and "we could not
+ * check" are different facts.
+ */
+function SourceUnavailableState({
+  coverage,
+  subject,
+}: Readonly<{ coverage: SourceCoverage; subject: string }>) {
+  const denied = coverage === "NOT_AUTHORIZED";
+  return (
+    <EmptyState
+      title={denied ? `${subject} are outside your access` : `${subject} could not be checked`}
+      message={
+        denied
+          ? "Your current Centre Success access does not include this source, so nothing is claimed about it either way."
+          : "No result has been assumed. Nothing here should be read as an all-clear."
+      }
+    />
+  );
 }
 
 /**
@@ -161,7 +191,18 @@ function ActionGroup({
 
 export function QualityCentreDetailView({ response }: Readonly<{ response: Detail }>) {
   const { centre } = response;
-  const groups = groupActions(response.openActions);
+  const coverage = centre.coverage;
+  const actionsKnown = coverage.correctiveActions === "AVAILABLE";
+  const reviewsKnown = coverage.quarterlyReviews === "AVAILABLE";
+  const findingsKnown = coverage.uncoveredFindings === "AVAILABLE";
+  const openActions = response.openActions ?? [];
+  const reviewHistory = response.reviewHistory ?? [];
+  const sectionResults = response.sectionResults ?? [];
+  const uncoveredFindings = response.uncoveredFindings ?? [];
+  const belowCentreResult = sectionResults.filter(
+    (section) => section.standing === "BELOW_CENTRE_RESULT",
+  ).length;
+  const groups = groupActions(openActions);
   return (
     <>
       <Breadcrumb
@@ -185,49 +226,64 @@ export function QualityCentreDetailView({ response }: Readonly<{ response: Detai
       />
 
       {response.status === "partial" ? (
-        <Notice title="Some quality facts could not be checked. ">
-          {response.warning ?? ""}
+        <Notice title="Some quality information couldn't be checked.">
+          {response.warning ??
+            "Where a source could not be checked, nothing is reported as zero."}
         </Notice>
       ) : null}
 
       <section className="card card--feature" aria-labelledby="quality-standing">
         <h2 id="quality-standing" className="card__title">Current standing</h2>
         <ReviewLine centre={centre} />
+        <CoverageNote coverage={coverage} />
         <MetricRow>
           <Metric
             label="Needs you"
-            value={centre.actions.yourAction}
-            emphasis={centre.actions.yourAction > 0}
+            value={centre.actions?.yourAction ?? "—"}
+            unavailable={!actionsKnown}
+            emphasis={(centre.actions?.yourAction ?? 0) > 0}
           />
-          <Metric label="Critical open" value={centre.actions.critical} />
-          <Metric label="Overdue" value={centre.actions.overdue} />
-          <Metric label="Completed in 30 days" value={centre.completedLast30Days} />
+          <Metric
+            label="Critical open"
+            value={centre.actions?.critical ?? "—"}
+            unavailable={!actionsKnown}
+          />
+          <Metric
+            label="Overdue"
+            value={centre.actions?.overdue ?? "—"}
+            unavailable={!actionsKnown}
+          />
+          <Metric
+            label="Completed in 30 days"
+            value={centre.completedLast30Days ?? "—"}
+            unavailable={centre.completedLast30Days === undefined}
+          />
         </MetricRow>
-        {response.canAcknowledgeReview && response.reviewHistory[0] ? (
+        {response.canAcknowledgeReview && reviewHistory[0] ? (
           <Link
             className="button button--accent"
-            href={`/centre/reviews/${response.reviewHistory[0].auditRunId}`}
+            href={`/centre/reviews/${reviewHistory[0].auditRunId}`}
           >
-            Review and acknowledge {response.reviewHistory[0].quarterLabel}
+            Review and acknowledge {reviewHistory[0].quarterLabel}
           </Link>
         ) : null}
       </section>
 
-      {response.sectionResults.length ? (
+      {sectionResults.length ? (
         <Section
           title="Where to focus"
           description="How each part of the most recent internal review compares with this centre's own overall result. Bright Steps internal method, not a regulatory rating."
-          count={`${response.sectionResults.filter((section) => section.standing === "FOCUS").length} focus area${
-            response.sectionResults.filter((section) => section.standing === "FOCUS").length === 1 ? "" : "s"
-          }`}
+          count={`${belowCentreResult} below centre result`}
         >
           <DataList label="Internal review sections">
-            {response.sectionResults.map((section) => (
+            {sectionResults.map((section) => (
               <DataListRow
                 key={section.sectionId}
                 title={section.title}
                 headingLevel={3}
-                severity={section.standing === "FOCUS" ? "warning" : "neutral"}
+                severity={
+                  section.standing === "BELOW_CENTRE_RESULT" ? "warning" : "neutral"
+                }
                 badge={
                   <StatusBadge tone={sectionTone(section.standing)}>
                     {sectionLabel(section.standing)}
@@ -240,14 +296,14 @@ export function QualityCentreDetailView({ response }: Readonly<{ response: Detai
         </Section>
       ) : null}
 
-      {response.uncoveredFindings.length ? (
+      {findingsKnown && uncoveredFindings.length ? (
         <Section
           title="Critical findings without an active action"
           description="These internal review findings have no corrective action covering them right now."
-          count={`${response.uncoveredFindings.length}`}
+          count={`${uncoveredFindings.length}`}
         >
           <DataList label="Critical findings without an active action">
-            {response.uncoveredFindings.map((finding) => (
+            {uncoveredFindings.map((finding) => (
               <DataListRow
                 key={finding.findingId}
                 title={finding.headline}
@@ -262,7 +318,14 @@ export function QualityCentreDetailView({ response }: Readonly<{ response: Detai
 
       <div className="quality-detail-grid">
         <div>
-          {response.openActions.length === 0 ? (
+          {!actionsKnown ? (
+            <Section title="Corrective actions" description="Open work for this centre.">
+              <SourceUnavailableState
+                coverage={coverage.correctiveActions}
+                subject="Corrective actions"
+              />
+            </Section>
+          ) : openActions.length === 0 ? (
             <Section title="Corrective actions" description="Open work for this centre.">
               <EmptyState
                 title="No open corrective actions"
@@ -297,14 +360,19 @@ export function QualityCentreDetailView({ response }: Readonly<{ response: Detai
             description="Positive practice recorded during internal review."
             headingLevel={3}
           >
-            {response.strengths.length === 0 ? (
+            {!reviewsKnown ? (
+              <SourceUnavailableState
+                coverage={coverage.quarterlyReviews}
+                subject="Internal reviews"
+              />
+            ) : (response.strengths ?? []).length === 0 ? (
               <EmptyState
                 title="No positive practice recorded yet"
                 message="Positive practice appears here once an internal review captures it."
               />
             ) : (
               <ul className="quality-strengths card" role="list">
-                {response.strengths.map((strength) => (
+                {(response.strengths ?? []).map((strength) => (
                   <li key={strength.positiveObservationId}>
                     {strength.description}
                     <span className="quality-strengths__quarter">{strength.quarterLabel}</span>
@@ -319,14 +387,19 @@ export function QualityCentreDetailView({ response }: Readonly<{ response: Detai
             description="Closed in the last 30 days."
             headingLevel={3}
           >
-            {response.completedActions.length === 0 ? (
+            {!actionsKnown ? (
+              <SourceUnavailableState
+                coverage={coverage.correctiveActions}
+                subject="Completed actions"
+              />
+            ) : (response.completedActions ?? []).length === 0 ? (
               <EmptyState
                 title="Nothing closed in the last 30 days"
                 message="Completed corrective actions appear here as the centre closes them."
               />
             ) : (
               <ul className="timeline card" role="list">
-                {response.completedActions.map((action) => (
+                {(response.completedActions ?? []).map((action) => (
                   <li key={action.correctiveActionId}>
                     <span>{action.title}</span>
                     <span className="timeline__when">Closed {action.closedLocalDate}</span>
@@ -341,14 +414,19 @@ export function QualityCentreDetailView({ response }: Readonly<{ response: Detai
             description="Finalised reviews only. Bright Steps internal method, not a regulatory rating."
             headingLevel={3}
           >
-            {response.reviewHistory.length === 0 ? (
+            {!reviewsKnown ? (
+              <SourceUnavailableState
+                coverage={coverage.quarterlyReviews}
+                subject="Internal reviews"
+              />
+            ) : reviewHistory.length === 0 ? (
               <EmptyState
                 title="No finalised internal review yet"
                 message="This centre's quality history begins once its first internal review is finalised."
               />
             ) : (
               <ul className="quality-history card" role="list">
-                {response.reviewHistory.map((review) => (
+                {reviewHistory.map((review) => (
                   <li key={review.auditRunId}>
                     <span className="quality-history__quarter">{review.quarterLabel}</span>
                     <span className="quality-history__score">

@@ -3,10 +3,12 @@
 ## Status
 
 Accepted as a **narrow product-slice authorisation**, granted by the Product
-Owner on 12 August 2026 after preflight review. Implementation is complete and
-ready for independent review on `feature/centre-success-next-product-slice`.
-It is not merged, and merging remains gated on the governance amendments
-recorded in `CENTRE_QUALITY_GOVERNANCE_AMENDMENTS.md`.
+Owner on 12 August 2026 after preflight review and reaffirmed on 13 August 2026
+when the Product Owner authorised the governance amendments and the acceptance
+remediation that followed the first independent review. Those amendments are
+now applied to `AGENTS.md`, `docs/MVP_BUILD_PLAN.md` and `docs/adr/README.md`.
+Implementation is complete on `feature/centre-success-next-product-slice` and
+is not merged.
 
 This authorisation is deliberately narrow. It does **not** unlock Milestone 5,
 it does **not** unlock Milestone 6, and it does **not** authorise the reserved
@@ -119,15 +121,63 @@ unauthorised row cannot affect a count. Client-supplied centre identifiers are
 validated and re-checked against the authorised set; unknown, malformed and
 cross-organisation identifiers fail closed and identically.
 
-Source adapters are savepoint-isolated. A classified source-availability
-failure degrades to an honest partial response; aggregate counts are omitted
-rather than reported as zero when coverage is incomplete.
+### Source coverage: unknown is never zero
+
+Source adapters are savepoint-isolated, and every source domain carries an
+explicit per-centre coverage state of `AVAILABLE`, `NOT_AUTHORIZED` or
+`UNAVAILABLE`. Coverage is per centre because authorisation is evaluated per
+centre per capability, so one centre in a portfolio can be fully known while
+another is not.
+
+Only an authorised source that actually answered may report a zero. Where
+coverage is not `AVAILABLE`, the contributing field is **absent from the
+payload** rather than present as `0` or `[]`, which makes the rule enforceable
+by the type system rather than by convention in each consumer.
+
+A reassuring classification requires complete coverage. `STEADY` and
+`AWAITING_FIRST_REVIEW` are suppressed and replaced by
+`INFORMATION_INCOMPLETE`, which is a statement about source coverage and not a
+performance category. Positive evidence of a support need is still reported
+when another source is missing, because concealing a known critical action
+behind an information notice would be the more dangerous failure. Portfolio
+focus counts remain a complete partition because `INFORMATION_INCOMPLETE`
+absorbs the unknown centres; summed totals are omitted whenever any
+contributing centre lacks that source, since a partial sum would understate the
+portfolio.
+
+### Previous quarter
+
+A centre can finalise more than one run inside a single quarter, for example on
+two different template versions. The projection therefore collapses to the
+latest finalised run per quarter before ranking quarters, so the previous
+review is always a strictly earlier `review_period_start` and never another run
+from the same quarter. The existing template-version comparability rule is
+unchanged.
+
+### Navigation authority
+
+Navigation was originally cached in `sessionStorage` by Daily Success and read
+back by every other page. That made client storage the effective authority for
+which destinations rendered, because any syntactically valid path written there
+would appear. Browser storage is no longer consulted for navigation at all.
+
+A minimal authenticated read-only projection at `GET /navigation` returns the
+capability-derived destinations for the current principal, using the same
+set-wise loading and pure in-memory capability evaluation as the rest of this
+slice, and the same derivation function Daily Success uses so the two cannot
+drift. It owns no state, adds no capability, and returns only labels and
+routes. Until the backend answers, the shell shows Daily Success alone, and a
+denial or outage falls back to that same baseline. Every destination still
+reauthorises independently on arrival.
 
 ## Consequences
 
-The slice adds no migration and no index; migrations remain 001–018. Database
-operations are constant at 14 for the workspace across 1, 3 and 20-centre
-portfolios, and 16 for centre detail regardless of portfolio size.
+The slice adds no migration and no index. Database operations are constant at
+14 for the workspace across 1, 3 and 20-centre portfolios, and **17** for
+centre detail regardless of portfolio size: the 14 workspace queries plus the
+three centre-detail list queries. The source-coverage correction introduced no
+additional query and no per-centre loop. The navigation projection is a
+separate bounded request of 8 operations, independent of portfolio size.
 
 Frontend routes `/quality` and `/quality/centres/:centreId` are reachable from
 the capability-derived Centre Success navigation. The accompanying design

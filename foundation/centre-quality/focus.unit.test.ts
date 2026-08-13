@@ -1,16 +1,32 @@
 import { describe, expect, test } from "vitest";
 import { emptyRollup } from "./action-source";
-import type { QualityActionRollup, QualityReviewSummary } from "./contracts";
+import type {
+  QualityActionRollup,
+  QualityCentreCoverage,
+  QualityReviewSummary,
+} from "./contracts";
 import {
   actionStatusLabel,
   buildComparison,
   buildFocusGroups,
   classifySection,
   deriveFocus,
+  describeIncompleteCoverage,
   quarterLabel,
   sortCentreCards,
   sortSectionResults,
 } from "./focus";
+
+/** Every source queried successfully under the viewer's own authorisation. */
+const COMPLETE: QualityCentreCoverage = {
+  quarterlyReviews: "AVAILABLE",
+  correctiveActions: "AVAILABLE",
+  uncoveredFindings: "AVAILABLE",
+};
+
+function coverage(overrides: Partial<QualityCentreCoverage> = {}): QualityCentreCoverage {
+  return { ...COMPLETE, ...overrides };
+}
 
 function review(overrides: Partial<QualityReviewSummary> = {}): QualityReviewSummary {
   return {
@@ -113,7 +129,12 @@ describe("previous-quarter comparison", () => {
 describe("support focus derivation", () => {
   test("treats an uncovered critical finding as the highest support signal", () => {
     expect(
-      deriveFocus({ actions: rollup(), uncoveredCriticalFindings: 2, latestReview: review() }),
+      deriveFocus({
+        coverage: COMPLETE,
+        actions: rollup(),
+        uncoveredCriticalFindings: 2,
+        latestReview: review(),
+      }),
     ).toEqual({
       focus: "NEEDS_SUPPORT",
       reason: "2 critical review findings have no active corrective action",
@@ -130,12 +151,18 @@ describe("support focus derivation", () => {
     [rollup(), "STEADY"],
   ])("classifies an action rollup as %#", (actions, expected) => {
     expect(
-      deriveFocus({ actions, uncoveredCriticalFindings: 0, latestReview: review() }).focus,
+      deriveFocus({
+        coverage: COMPLETE,
+        actions,
+        uncoveredCriticalFindings: 0,
+        latestReview: review(),
+      }).focus,
     ).toBe(expected);
   });
 
   test("distinguishes a centre with no finalised review from a steady centre", () => {
     const result = deriveFocus({
+      coverage: COMPLETE,
       actions: rollup(),
       uncoveredCriticalFindings: 0,
       latestReview: undefined,
@@ -146,11 +173,125 @@ describe("support focus derivation", () => {
 
   test("never claims a centre is steady while open work exists", () => {
     const result = deriveFocus({
+      coverage: COMPLETE,
       actions: rollup({ total: 3, waiting: 3 }),
       uncoveredCriticalFindings: 0,
       latestReview: review(),
     });
     expect(result.focus).not.toBe("STEADY");
+  });
+});
+
+describe("source coverage never becomes a reassuring classification", () => {
+  test("an authorised source that returned nothing is a real zero", () => {
+    const result = deriveFocus({
+      coverage: COMPLETE,
+      actions: rollup(),
+      uncoveredCriticalFindings: 0,
+      latestReview: review(),
+    });
+    expect(result.focus).toBe("STEADY");
+    expect(result.reason).toContain("No open corrective actions");
+  });
+
+  test.each([
+    ["NOT_AUTHORIZED" as const],
+    ["UNAVAILABLE" as const],
+  ])("refuses to report steady when corrective actions are %s", (state) => {
+    const result = deriveFocus({
+      coverage: coverage({ correctiveActions: state }),
+      actions: undefined,
+      uncoveredCriticalFindings: 0,
+      latestReview: review(),
+    });
+    expect(result.focus).toBe("INFORMATION_INCOMPLETE");
+    expect(result.reason).not.toMatch(/no open corrective actions/iu);
+  });
+
+  test.each([
+    ["NOT_AUTHORIZED" as const],
+    ["UNAVAILABLE" as const],
+  ])("refuses to claim a first review is awaited when reviews are %s", (state) => {
+    const result = deriveFocus({
+      coverage: coverage({ quarterlyReviews: state }),
+      actions: rollup(),
+      uncoveredCriticalFindings: 0,
+      latestReview: undefined,
+    });
+    expect(result.focus).toBe("INFORMATION_INCOMPLETE");
+    expect(result.reason).not.toMatch(/no finalised internal review/iu);
+  });
+
+  test("refuses to report steady when review findings are outside the viewer's access", () => {
+    expect(
+      deriveFocus({
+        coverage: coverage({ uncoveredFindings: "NOT_AUTHORIZED" }),
+        actions: rollup(),
+        uncoveredCriticalFindings: undefined,
+        latestReview: review(),
+      }).focus,
+    ).toBe("INFORMATION_INCOMPLETE");
+  });
+
+  test("still reports a known critical action when another source is missing", () => {
+    const result = deriveFocus({
+      coverage: coverage({ quarterlyReviews: "UNAVAILABLE" }),
+      actions: rollup({ total: 1, critical: 1 }),
+      uncoveredCriticalFindings: 0,
+      latestReview: undefined,
+    });
+    expect(result.focus).toBe("NEEDS_SUPPORT");
+  });
+
+  test("still reports known active work when another source is missing", () => {
+    expect(
+      deriveFocus({
+        coverage: coverage({ quarterlyReviews: "NOT_AUTHORIZED" }),
+        actions: rollup({ total: 1, dueSoon: 1 }),
+        uncoveredCriticalFindings: 0,
+        latestReview: undefined,
+      }).focus,
+    ).toBe("MONITOR");
+  });
+
+  test("names what was missing instead of implying a judgement about the centre", () => {
+    expect(
+      describeIncompleteCoverage(coverage({ correctiveActions: "UNAVAILABLE" })),
+    ).toBe(
+      "Corrective action information could not be checked, so no overall position is stated for this centre",
+    );
+    expect(
+      describeIncompleteCoverage(
+        coverage({ quarterlyReviews: "NOT_AUTHORIZED", uncoveredFindings: "NOT_AUTHORIZED" }),
+      ),
+    ).toContain("Internal review and review finding information is outside your access");
+  });
+
+  test("groups incomplete centres separately rather than mixing them into steady", () => {
+    const groups = buildFocusGroups([
+      { centreId: "c1", centreName: "Ashgrove", focus: "STEADY" },
+      { centreId: "c2", centreName: "Belmore", focus: "INFORMATION_INCOMPLETE" },
+      { centreId: "c3", centreName: "Alderley", focus: "NEEDS_SUPPORT" },
+    ]);
+    expect(groups.map((group) => group.focus)).toEqual([
+      "NEEDS_SUPPORT",
+      "INFORMATION_INCOMPLETE",
+      "STEADY",
+    ]);
+    const incomplete = groups.find((group) => group.focus === "INFORMATION_INCOMPLETE")!;
+    expect(incomplete.centreIds).toEqual(["c2"]);
+    expect(incomplete.label).toBe("Information incomplete");
+    const steady = groups.find((group) => group.focus === "STEADY")!;
+    expect(steady.centreIds).not.toContain("c2");
+  });
+
+  test("orders incomplete centres after known active work but before steady", () => {
+    const order = sortCentreCards([
+      { centreId: "c1", centreName: "Ashgrove", focus: "STEADY" },
+      { centreId: "c2", centreName: "Belmore", focus: "INFORMATION_INCOMPLETE" },
+      { centreId: "c3", centreName: "Camden", focus: "MONITOR" },
+    ]).map((card) => card.centreId);
+    expect(order).toEqual(["c3", "c2", "c1"]);
   });
 });
 
@@ -215,13 +356,26 @@ describe("section standing against the centre's own review result", () => {
     });
   }
 
-  test("marks a section below the review's own overall result as a focus area", () => {
-    expect(section({ score: 80, overallScore: 90 }).standing).toBe("FOCUS");
+  test("states a section below the review's own overall result as below it", () => {
+    expect(section({ score: 80, overallScore: 90 }).standing).toBe("BELOW_CENTRE_RESULT");
   });
 
-  test("marks a section at or above the overall result as strong", () => {
-    expect(section({ score: 90, overallScore: 90 }).standing).toBe("STRONG");
-    expect(section({ score: 95, overallScore: 90 }).standing).toBe("STRONG");
+  test("states a relationship rather than an endorsement at or above the result", () => {
+    expect(section({ score: 90, overallScore: 90 }).standing).toBe(
+      "AT_OR_ABOVE_CENTRE_RESULT",
+    );
+    expect(section({ score: 95, overallScore: 90 }).standing).toBe(
+      "AT_OR_ABOVE_CENTRE_RESULT",
+    );
+  });
+
+  test("a barely observed section still only claims the factual relationship", () => {
+    // Coverage is reported separately as a fact; it must not be turned into a
+    // quality judgement in either direction, and must not silently upgrade a
+    // thin observation into an endorsement.
+    const result = section({ score: 95, overallScore: 90, coveragePercent: 10 });
+    expect(result.standing).toBe("AT_OR_ABOVE_CENTRE_RESULT");
+    expect(Object.values(result)).not.toContain("STRONG");
   });
 
   test("reports an unscored section as not scored rather than zero", () => {
@@ -249,13 +403,13 @@ describe("section standing against the centre's own review result", () => {
     expect(result.scoreDelta).toBeUndefined();
   });
 
-  test("orders focus areas first, then template order, deterministically", () => {
+  test("orders sections below the centre result first, then template order", () => {
     const sections = [
-      { sectionId: "s3", sortOrder: 3, standing: "STRONG" as const },
-      { sectionId: "s1", sortOrder: 1, standing: "STRONG" as const },
-      { sectionId: "s4", sortOrder: 4, standing: "FOCUS" as const },
+      { sectionId: "s3", sortOrder: 3, standing: "AT_OR_ABOVE_CENTRE_RESULT" as const },
+      { sectionId: "s1", sortOrder: 1, standing: "AT_OR_ABOVE_CENTRE_RESULT" as const },
+      { sectionId: "s4", sortOrder: 4, standing: "BELOW_CENTRE_RESULT" as const },
       { sectionId: "s2", sortOrder: 2, standing: "NOT_SCORED" as const },
-      { sectionId: "s5", sortOrder: 5, standing: "FOCUS" as const },
+      { sectionId: "s5", sortOrder: 5, standing: "BELOW_CENTRE_RESULT" as const },
     ];
     expect(sortSectionResults(sections).map((item) => item.sectionId)).toEqual([
       "s4", "s5", "s2", "s1", "s3",

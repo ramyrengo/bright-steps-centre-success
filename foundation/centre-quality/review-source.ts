@@ -90,8 +90,14 @@ export const QualityReviewSource = {
   ): Promise<Map<string, QualityReviewSummary[]>> {
     const byCentre = new Map<string, QualityReviewSummary[]>();
     if (centreIds.length === 0) return byCentre;
+    // A centre can finalise more than one run inside a single quarter, for
+    // example on two different template versions. Ranking runs directly would
+    // then make position 2 another run from the *same* quarter and present it
+    // as the previous quarter. Collapse to the latest finalised run per
+    // quarter first, then rank quarters, so position 2 is always a strictly
+    // earlier `review_period_start`.
     const rows = await executor.queryAll<FinalisedReviewRow>`
-      WITH ranked AS (
+      WITH per_quarter AS (
         SELECT
           run.id,
           run.centre_id,
@@ -108,37 +114,42 @@ export const QualityReviewSource = {
           run.action_count,
           run.positive_practice_count,
           row_number() OVER (
+            PARTITION BY run.centre_id, run.review_period_start
+            ORDER BY run.finalised_at DESC, run.id DESC
+          ) AS run_in_quarter,
+          dense_rank() OVER (
             PARTITION BY run.centre_id
-            ORDER BY run.review_period_start DESC, run.finalised_at DESC, run.id DESC
-          ) AS review_rank
+            ORDER BY run.review_period_start DESC
+          ) AS quarter_rank
         FROM audit_runs AS run
         WHERE run.organisation_id = ${authorisation.organisationId}
           AND run.centre_id = ANY(${centreIds as string[]}::uuid[])
           AND run.status = 'FINALISED'
       )
       SELECT
-        ranked.id,
-        ranked.centre_id,
-        ranked.review_period_start,
-        ranked.finalised_at,
-        ranked.template_version_id,
-        ranked.overall_score,
-        ranked.performance_band_label,
-        ranked.risk_status,
-        ranked.coverage_percent,
-        ranked.critical_finding_count,
-        ranked.high_finding_count,
-        ranked.action_count,
-        ranked.positive_practice_count,
+        per_quarter.id,
+        per_quarter.centre_id,
+        per_quarter.review_period_start,
+        per_quarter.finalised_at,
+        per_quarter.template_version_id,
+        per_quarter.overall_score,
+        per_quarter.performance_band_label,
+        per_quarter.risk_status,
+        per_quarter.coverage_percent,
+        per_quarter.critical_finding_count,
+        per_quarter.high_finding_count,
+        per_quarter.action_count,
+        per_quarter.positive_practice_count,
         EXISTS (
           SELECT 1
           FROM audit_acknowledgements AS acknowledgement
-          WHERE acknowledgement.organisation_id = ranked.organisation_id
-            AND acknowledgement.audit_run_id = ranked.id
+          WHERE acknowledgement.organisation_id = per_quarter.organisation_id
+            AND acknowledgement.audit_run_id = per_quarter.id
         ) AS acknowledged
-      FROM ranked
-      WHERE ranked.review_rank <= ${limit}
-      ORDER BY ranked.centre_id, ranked.review_rank
+      FROM per_quarter
+      WHERE per_quarter.run_in_quarter = 1
+        AND per_quarter.quarter_rank <= ${limit}
+      ORDER BY per_quarter.centre_id, per_quarter.quarter_rank
     `;
     for (const row of rows) {
       const existing = byCentre.get(row.centre_id) ?? [];

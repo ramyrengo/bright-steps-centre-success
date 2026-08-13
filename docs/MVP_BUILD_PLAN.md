@@ -8,7 +8,7 @@
 
 **Milestone 2 — accepted / complete under controlled sub-milestone gates.** Milestones 2A, 2B, and **Milestone 2C — People & Access + User Invitations** are **ACCEPTED / COMPLETE**.
 
-**Milestone 3 — started under controlled sub-milestone gates. Milestone 3A — Daily Success is ACCEPTED / COMPLETE. Milestone 3B and later work remain locked.**
+**Milestone 3 — started under controlled sub-milestone gates. Milestone 3A — Daily Success is ACCEPTED / COMPLETE. Milestone 3B and later work remain locked, except for the narrow Centre Quality & Performance product slice authorised on 12 August 2026 under ADR-0017.**
 
 Milestone 3A acceptance evidence, recorded 12 August 2026, in sequence: implementation completed; first independent review **PASS WITH CHANGES**; acceptance remediation completed; targeted independent re-review **PASS**; the full local regression gate green (backend typecheck, 141 unit tests, 100 database-backed integration tests, 90 frontend tests, frontend lint/typecheck/production build, generated-client reproducibility, authentication scope guard, `git diff --check`); hosted Foundation CI green; Encore Build green; merged to `main` through pull request #6. Migrations remain 001–018 and Milestone 3A added none. Acceptance is an implementation acceptance only and does not make Centre Success production-ready.
 
@@ -153,15 +153,21 @@ The earlier plan placed Area Manager internal audits in Milestone 3. Product Own
 
 Stateful daily planning/check-in, living QIP, notifications, manual priorities, additional user perspectives, and every other later module require separate Product Owner authorisation. Milestone 3A does not imply or pre-authorise them.
 
+One exception has been granted. **Milestone 3C — Centre Quality & Performance** is authorised as a narrow read-side projection under ADR-0017: a live, read-only view over existing Milestone 2B quarterly-review, finding and corrective-action data, with no migration, no new source of truth, no composite score and no regulatory rating inference. It adds Centre Director, Area Manager and Compliance Manager quality views and the shared Centre Success design system. It does not unlock the remainder of Milestone 5 or any part of Milestone 6.
+
 ### Milestone 5 — command views and operational hardening
 
 **Goal:** Give Area/Compliance leaders reliable scoped oversight and prepare production operations.
 
 Deliver material exception/trend projections, recognition, exports with manifests/expiry, access reviews, reconciliation jobs, incident/runbooks, load/resilience testing, backup/restore evidence, and production readiness review.
 
+The narrow Centre Quality & Performance slice authorised under ADR-0017 delivers part of the scoped-oversight goal ahead of this milestone. The rest of Milestone 5 — recognition, exports with manifests and expiry, access reviews, reconciliation jobs, incident runbooks, load and resilience testing, backup and restore evidence, and production readiness review — remains locked.
+
 ### Milestone 6 — approved conditional modules
 
 Budget, coaching, Centre Health, AI, wellbeing, and additional integrations each require their own mini-gate, data/privacy/security assessment, domain acceptance criteria, and permission tests. They are not bundled merely because documents exist.
+
+Centre Health remains locked in particular. ADR-0017 deliberately computes no composite score, and the reserved methodology, weights, thresholds, coverage rules and band labels remain open decisions requiring their own mini-gate.
 
 ## Engineering architecture for MVP
 

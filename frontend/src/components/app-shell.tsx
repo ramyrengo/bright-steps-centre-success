@@ -1,62 +1,35 @@
 "use client";
 
 import Link from "next/link";
-import { useMemo, useSyncExternalStore, type ReactNode } from "react";
+import { useEffect, useMemo, useState, type ReactNode } from "react";
 
 import { useCentreSuccessAuthentication } from "../lib/centre-success-authentication";
+import { useAuthenticatedCentreSuccessClient } from "../lib/centre-success-client";
 import { AuthenticationGate } from "./authentication-gate";
 
 /**
  * The Centre Success application frame.
  *
- * Navigation is role-aware, and the roles come from the backend: Daily Success
- * already returns the capability-derived workspace links for the signed-in
- * principal, and it caches them here for the session. A destination the
- * principal is not authorised for is never rendered, and nothing is inferred
- * from a role name in the browser. Until those links are known, the shell shows
- * only Daily Success, which every authenticated principal can reach.
+ * Navigation is capability-derived and comes from the backend on every page
+ * load, through the authenticated read-only `/navigation` projection. Browser
+ * storage is deliberately not consulted: an earlier version cached the links
+ * in `sessionStorage`, which made client storage the effective authority for
+ * which destinations rendered, because any syntactically valid path written
+ * there would appear in the bar.
  *
- * Frontend visibility is presentation only. Every destination reauthorises.
+ * Until the backend answers, the shell shows only Daily Success, which every
+ * authenticated principal can reach. Frontend visibility is presentation only
+ * and every destination reauthorises server-side regardless.
  */
-
-export const NAVIGATION_SESSION_KEY = "centre-success.workspace-links";
 
 export interface WorkspaceLink {
   label: string;
   route: string;
 }
 
-/** Persisted by Daily Success so the rest of the product can show the same nav. */
-export function storeAuthorisedNavigation(
-  links: readonly WorkspaceLink[],
-  storage: Pick<Storage, "setItem"> | undefined = typeof window === "undefined"
-    ? undefined
-    : window.sessionStorage,
-): void {
-  storage?.setItem(NAVIGATION_SESSION_KEY, JSON.stringify(links));
-}
-
-export function readAuthorisedNavigation(
-  storage: Pick<Storage, "getItem"> | undefined,
-): WorkspaceLink[] {
-  const raw = storage?.getItem(NAVIGATION_SESSION_KEY);
-  if (!raw) return [];
-  try {
-    const parsed: unknown = JSON.parse(raw);
-    if (!Array.isArray(parsed)) return [];
-    return parsed.flatMap((entry) =>
-      entry &&
-      typeof entry === "object" &&
-      typeof (entry as WorkspaceLink).label === "string" &&
-      typeof (entry as WorkspaceLink).route === "string" &&
-      (entry as WorkspaceLink).route.startsWith("/")
-        ? [{ label: (entry as WorkspaceLink).label, route: (entry as WorkspaceLink).route }]
-        : [],
-    );
-  } catch {
-    return [];
-  }
-}
+const DAILY_SUCCESS_LINK: WorkspaceLink = { label: "Daily Success", route: "/" };
+/** Safe baseline while navigation is unknown, denied, or unavailable. */
+const BASELINE_LINKS: readonly WorkspaceLink[] = [DAILY_SUCCESS_LINK];
 
 export function BusinessWorkspaceGate({ children }: Readonly<{ children: ReactNode }>) {
   const { state } = useCentreSuccessAuthentication();
@@ -102,39 +75,47 @@ export function AppBar({
 }
 
 /**
- * Wraps a page in the shared frame. `active` marks the current destination so
- * the location is obvious without a heavy treatment.
+ * Loads the capability-derived destinations for the signed-in principal.
+ *
+ * Navigation is presentation, so a denial or an outage is never surfaced as an
+ * error: the bar simply falls back to the Daily Success baseline. Showing
+ * fewer links than a principal holds is a cosmetic loss; showing one they do
+ * not hold would be a defect.
  */
-const NO_LINKS: WorkspaceLink[] = [];
-let cachedRaw: string | null = null;
-let cachedLinks: WorkspaceLink[] = NO_LINKS;
+function useAuthorisedNavigation(enabled: boolean): readonly WorkspaceLink[] {
+  const client = useAuthenticatedCentreSuccessClient();
+  const [links, setLinks] = useState<readonly WorkspaceLink[]>(BASELINE_LINKS);
 
-function subscribeToNavigation(onChange: () => void): () => void {
-  window.addEventListener("storage", onChange);
-  return () => window.removeEventListener("storage", onChange);
-}
+  useEffect(() => {
+    if (!enabled) return;
+    let current = true;
+    void client.foundation.getAuthorisedNavigationEndpoint().then(
+      (value) => {
+        if (!current) return;
+        const backend = value.links.filter((link) => link.route !== DAILY_SUCCESS_LINK.route);
+        setLinks([DAILY_SUCCESS_LINK, ...backend]);
+      },
+      () => {
+        if (!current) return;
+        setLinks(BASELINE_LINKS);
+      },
+    );
+    return () => {
+      current = false;
+    };
+  }, [client, enabled]);
 
-/** Returns a stable reference so React can compare snapshots safely. */
-function navigationSnapshot(): WorkspaceLink[] {
-  const raw = window.sessionStorage.getItem(NAVIGATION_SESSION_KEY);
-  if (raw !== cachedRaw) {
-    cachedRaw = raw;
-    cachedLinks = readAuthorisedNavigation(window.sessionStorage);
-  }
-  return cachedLinks;
-}
-
-function serverNavigationSnapshot(): WorkspaceLink[] {
-  return NO_LINKS;
+  return links;
 }
 
 /**
  * Wraps a page in the shared frame. `active` marks the current destination so
  * the location is obvious without a heavy treatment.
  *
- * `links` overrides the session-derived navigation. Passing an empty array
+ * `links` overrides the backend-derived navigation. Passing an empty array
  * renders no navigation at all, which is how a focused single-task screen
- * (completing a review, verifying remediation) keeps the reader in the task.
+ * (completing a review, verifying remediation) keeps the reader in the task,
+ * and it also skips the navigation request entirely.
  */
 export function AppShell({
   active,
@@ -145,19 +126,8 @@ export function AppShell({
   links?: readonly WorkspaceLink[];
   children: ReactNode;
 }>) {
-  const stored = useSyncExternalStore(
-    subscribeToNavigation,
-    navigationSnapshot,
-    serverNavigationSnapshot,
-  );
-  const links = useMemo(
-    () =>
-      override ??
-      (stored.some((link) => link.route === "/")
-        ? stored
-        : [{ label: "Daily Success", route: "/" }, ...stored]),
-    [override, stored],
-  );
+  const authorised = useAuthorisedNavigation(override === undefined);
+  const links = useMemo(() => override ?? authorised, [override, authorised]);
 
   return (
     <div className="app-shell">

@@ -8,6 +8,7 @@ const authMocks = vi.hoisted(() => ({
 }));
 const clientMocks = vi.hoisted(() => ({
   foundation: {
+    getAuthorisedNavigationEndpoint: vi.fn(() => Promise.resolve({ cacheControl: "private, no-store", links: [] })),
     listAssignedAuditCentres: vi.fn(),
     listCorrectiveActionVerificationQueue: vi.fn(),
     getAuditPreparation: vi.fn(),

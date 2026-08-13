@@ -160,6 +160,23 @@ Every asynchronous surface implements four states, all of them usable:
 - **Partial** — `Notice`, which names what was not checked rather than
   silently reporting a smaller number.
 
+### Unknown is never zero
+
+A count is only rendered when its source was actually available and the viewer
+was authorised to read it. Where a source did not report, the backend omits the
+field entirely and the surface says **"Not checked"** — never `0`, `none`, `on
+track`, `steady` or `clear`.
+
+An affirmative empty state ("No open corrective actions", "No previous review")
+is a claim about the world and may only appear when the source was available
+and legitimately empty. When it was not, use the restrained partial state
+instead: `CoverageNote` inline, or a non-affirmative `EmptyState` that says what
+could not be checked.
+
+Keep these states calm. A source gap is a fact the reader needs in order to
+judge what they are looking at, not an incident: a quiet inline note beats an
+error panel. Never hide the uncertainty to keep a screen tidy.
+
 ## Responsive
 
 Design for laptop, tablet and phone. Verified breakpoints: 375, 768, 1024 and

@@ -7,7 +7,6 @@ import type { daily_success } from "../lib/client.generated";
 import { ErrCode, isAPIError } from "../lib/client.generated";
 import { useCentreSuccessAuthentication } from "../lib/centre-success-authentication";
 import { useAuthenticatedCentreSuccessClient } from "../lib/centre-success-client";
-import { storeAuthorisedNavigation } from "./app-shell";
 import { StatusPill } from "./workflow-shell";
 
 type Response = daily_success.DailySuccessResponse;
@@ -276,7 +275,6 @@ export function DailySuccessHome({ displayName }: Readonly<{ displayName: string
           setRequest({ perspective: stored.kind, ...(stored.centreId ? { centreId: stored.centreId } : {}) });
           return;
         }
-        storeAuthorisedNavigation(value.workspaceLinks);
         setResponse(value);
         setState("ready");
         setAnnouncement(value.status === "partial"

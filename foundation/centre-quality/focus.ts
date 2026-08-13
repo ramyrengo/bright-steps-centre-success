@@ -2,6 +2,7 @@ import type {
   CentreQualityFocus,
   CentreQualityTrend,
   QualityActionRollup,
+  QualityCentreCoverage,
   QualityFocusGroup,
   QualityQuarterComparison,
   QualityReviewSummary,
@@ -136,20 +137,24 @@ export function classifySection(input: SectionStandingInput): SectionStanding {
     return { standing: "NOT_SCORED", trend, ...(comparable ? { scoreDelta } : {}) };
   }
   return {
-    standing: input.score < input.overallScore ? "FOCUS" : "STRONG",
+    standing:
+      input.score < input.overallScore
+        ? "BELOW_CENTRE_RESULT"
+        : "AT_OR_ABOVE_CENTRE_RESULT",
     trend,
     ...(comparable ? { scoreDelta } : {}),
   };
 }
 
-/** Focus areas first, then template order, so the list is deterministic. */
+/** Sections below the centre result first, then template order, so the list
+ *  is deterministic. */
 export function sortSectionResults<
   T extends { standing: QualitySectionStanding; sortOrder: number; sectionId: string },
 >(sections: readonly T[]): T[] {
   const rank: Record<QualitySectionStanding, number> = {
-    FOCUS: 0,
+    BELOW_CENTRE_RESULT: 0,
     NOT_SCORED: 1,
-    STRONG: 2,
+    AT_OR_ABOVE_CENTRE_RESULT: 2,
   };
   return sections.slice().sort(
     (left, right) =>
@@ -159,22 +164,73 @@ export function sortSectionResults<
   );
 }
 
+const COVERAGE_KEYS = [
+  "quarterlyReviews",
+  "correctiveActions",
+  "uncoveredFindings",
+] as const;
+
+const COVERAGE_LABEL: Record<(typeof COVERAGE_KEYS)[number], string> = {
+  quarterlyReviews: "internal review",
+  correctiveActions: "corrective action",
+  uncoveredFindings: "review finding",
+};
+
+function formatList(values: readonly string[]): string {
+  if (values.length <= 1) return values[0] ?? "";
+  return `${values.slice(0, -1).join(", ")} and ${values[values.length - 1]}`;
+}
+
+/** Names what did not report, so an incomplete state is never mistaken for a
+ *  judgement about the centre. */
+export function describeIncompleteCoverage(coverage: QualityCentreCoverage): string {
+  const unavailable = COVERAGE_KEYS.filter(
+    (key) => coverage[key] === "UNAVAILABLE",
+  ).map((key) => COVERAGE_LABEL[key]);
+  const unauthorised = COVERAGE_KEYS.filter(
+    (key) => coverage[key] === "NOT_AUTHORIZED",
+  ).map((key) => COVERAGE_LABEL[key]);
+  const clauses: string[] = [];
+  if (unavailable.length > 0) {
+    clauses.push(`${formatList(unavailable)} information could not be checked`);
+  }
+  if (unauthorised.length > 0) {
+    clauses.push(`${formatList(unauthorised)} information is outside your access`);
+  }
+  const detail = clauses.join(", and ");
+  return `${detail.charAt(0).toUpperCase()}${detail.slice(1)}, so no overall position is stated for this centre`;
+}
+
 export interface FocusInput {
-  actions: QualityActionRollup;
-  uncoveredCriticalFindings: number;
-  latestReview: QualityReviewSummary | undefined;
+  coverage: QualityCentreCoverage;
+  /** Present only when `coverage.correctiveActions` is `AVAILABLE`. */
+  actions?: QualityActionRollup;
+  /** Present only when `coverage.uncoveredFindings` is `AVAILABLE`. */
+  uncoveredCriticalFindings?: number;
+  latestReview?: QualityReviewSummary;
 }
 
 /**
  * Groups a centre by the kind of leadership response it needs. This is a
  * support classification, never a rank: two centres in the same group are
  * not ordered against each other, and no centre is scored.
+ *
+ * Coverage is load-bearing here. Positive evidence of a support need is still
+ * reported when another source is missing, because hiding a known critical
+ * behind an information notice would be the more dangerous failure. Every
+ * remaining outcome is reassuring, so it may only be stated once every
+ * contributing source actually reported.
  */
 export function deriveFocus(input: FocusInput): {
   focus: CentreQualityFocus;
   reason: string;
 } {
-  const { actions, uncoveredCriticalFindings, latestReview } = input;
+  const { coverage, latestReview } = input;
+  const actionsKnown = coverage.correctiveActions === "AVAILABLE" && input.actions;
+  const actions = actionsKnown ? input.actions! : undefined;
+  const uncoveredCriticalFindings =
+    coverage.uncoveredFindings === "AVAILABLE" ? (input.uncoveredCriticalFindings ?? 0) : 0;
+
   if (uncoveredCriticalFindings > 0) {
     return {
       focus: "NEEDS_SUPPORT",
@@ -184,64 +240,77 @@ export function deriveFocus(input: FocusInput): {
           : `${uncoveredCriticalFindings} critical review findings have no active corrective action`,
     };
   }
-  if (actions.critical > 0) {
+  if (actions) {
+    if (actions.critical > 0) {
+      return {
+        focus: "NEEDS_SUPPORT",
+        reason:
+          actions.critical === 1
+            ? "A critical corrective action is still open"
+            : `${actions.critical} critical corrective actions are still open`,
+      };
+    }
+    if (actions.overdue > 0) {
+      return {
+        focus: "NEEDS_SUPPORT",
+        reason:
+          actions.overdue === 1
+            ? "A corrective action has passed its due date"
+            : `${actions.overdue} corrective actions have passed their due date`,
+      };
+    }
+    if (actions.returned > 0) {
+      return {
+        focus: "MONITOR",
+        reason:
+          actions.returned === 1
+            ? "Remediation was returned for more work"
+            : `${actions.returned} remediations were returned for more work`,
+      };
+    }
+    if (actions.awaitingVerification > 0) {
+      return {
+        focus: "MONITOR",
+        reason:
+          actions.awaitingVerification === 1
+            ? "Remediation is waiting for independent verification"
+            : `${actions.awaitingVerification} remediations are waiting for independent verification`,
+      };
+    }
+    if (actions.dueSoon > 0) {
+      return {
+        focus: "MONITOR",
+        reason:
+          actions.dueSoon === 1
+            ? "A corrective action falls due within seven days"
+            : `${actions.dueSoon} corrective actions fall due within seven days`,
+      };
+    }
+  }
+
+  // Everything below this line is a reassuring statement, so it requires every
+  // contributing source to have actually reported. A missing source must never
+  // become "Steady" or "Awaiting first review".
+  if (COVERAGE_KEYS.some((key) => coverage[key] !== "AVAILABLE")) {
     return {
-      focus: "NEEDS_SUPPORT",
-      reason:
-        actions.critical === 1
-          ? "A critical corrective action is still open"
-          : `${actions.critical} critical corrective actions are still open`,
+      focus: "INFORMATION_INCOMPLETE",
+      reason: describeIncompleteCoverage(coverage),
     };
   }
-  if (actions.overdue > 0) {
-    return {
-      focus: "NEEDS_SUPPORT",
-      reason:
-        actions.overdue === 1
-          ? "A corrective action has passed its due date"
-          : `${actions.overdue} corrective actions have passed their due date`,
-    };
-  }
-  if (actions.returned > 0) {
-    return {
-      focus: "MONITOR",
-      reason:
-        actions.returned === 1
-          ? "Remediation was returned for more work"
-          : `${actions.returned} remediations were returned for more work`,
-    };
-  }
-  if (actions.awaitingVerification > 0) {
-    return {
-      focus: "MONITOR",
-      reason:
-        actions.awaitingVerification === 1
-          ? "Remediation is waiting for independent verification"
-          : `${actions.awaitingVerification} remediations are waiting for independent verification`,
-    };
-  }
-  if (actions.dueSoon > 0) {
-    return {
-      focus: "MONITOR",
-      reason:
-        actions.dueSoon === 1
-          ? "A corrective action falls due within seven days"
-          : `${actions.dueSoon} corrective actions fall due within seven days`,
-    };
-  }
+
   if (!latestReview) {
     return {
       focus: "AWAITING_FIRST_REVIEW",
       reason: "No finalised internal review has been recorded for this centre yet",
     };
   }
-  if (actions.total > 0) {
+  if (actions!.total > 0) {
     return {
       focus: "MONITOR",
       reason:
-        actions.total === 1
+        actions!.total === 1
           ? "One corrective action remains open with no immediate deadline"
-          : `${actions.total} corrective actions remain open with no immediate deadline`,
+          : `${actions!.total} corrective actions remain open with no immediate deadline`,
     };
   }
   return {
@@ -253,6 +322,7 @@ export function deriveFocus(input: FocusInput): {
 const FOCUS_ORDER: readonly CentreQualityFocus[] = [
   "NEEDS_SUPPORT",
   "MONITOR",
+  "INFORMATION_INCOMPLETE",
   "AWAITING_FIRST_REVIEW",
   "STEADY",
 ];
@@ -268,6 +338,11 @@ const FOCUS_PRESENTATION: Record<
   MONITOR: {
     label: "Keep an eye on",
     description: "Active work that is moving but has not landed yet.",
+  },
+  INFORMATION_INCOMPLETE: {
+    label: "Information incomplete",
+    description:
+      "Some quality information could not be checked, so no position is stated for these centres.",
   },
   AWAITING_FIRST_REVIEW: {
     label: "Awaiting first review",

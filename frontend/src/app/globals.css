@@ -2122,6 +2122,36 @@ textarea {
   color: var(--text-secondary);
 }
 
+/* Incomplete source coverage is a fact the reader needs, not an incident.
+   It stays quiet and inline so it never reads as a technical failure panel,
+   while remaining impossible to miss when a figure is missing beside it. */
+.quality-coverage-note {
+  margin: 0;
+  padding: var(--space-3) var(--space-4);
+  background: var(--color-info-bg);
+  border-left: 3px solid var(--color-info);
+  border-radius: var(--radius-small);
+  color: var(--text-primary);
+  font-size: var(--type-small);
+  line-height: 1.5;
+}
+
+.quality-coverage-note__label {
+  display: block;
+  font-size: var(--type-label);
+  font-weight: 700;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--color-info);
+}
+
+.quality-hero__note {
+  margin: var(--space-3) 0 0;
+  color: var(--text-secondary);
+  font-size: var(--type-small);
+  max-width: 60ch;
+}
+
 .quality-review-line {
   display: flex;
   flex-wrap: wrap;

@@ -26,6 +26,7 @@ no longer governs the current architecture; its replacement record is normative.
 - [ADR-0014: People & Access invitation architecture](0014-people-and-access-invitation-architecture.md) — accepted / complete
 - [ADR-0015: Daily Success as a live read-only priority projection](0015-daily-success-live-priority-projection.md) — accepted and complete
 - [ADR-0016: Microsoft Graph staging invitation email delivery](0016-microsoft-graph-staging-invitation-email-delivery.md) — accepted architecture; implementation acceptance remediation in progress
+- [ADR-0017: Centre Quality & Performance as a narrow read-side projection](0017-centre-quality-performance-read-projection.md) — accepted as a narrow product-slice authorisation
 
 ## Superseded
 

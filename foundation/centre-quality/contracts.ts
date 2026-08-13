@@ -14,13 +14,41 @@ import type { Header, Query } from "encore.dev/api";
 export type CentreQualityViewKind = "centre" | "portfolio" | "organisation";
 
 /**
+ * Whether a source domain actually contributed to this projection.
+ * `AVAILABLE` means the source was queried successfully under the viewer's
+ * current authorisation, so a zero result is a real zero. `NOT_AUTHORIZED`
+ * and `UNAVAILABLE` both mean the projection does not know, and neither may
+ * ever be presented as an absence of records.
+ */
+export type QualitySourceCoverage = "AVAILABLE" | "NOT_AUTHORIZED" | "UNAVAILABLE";
+
+/**
+ * Coverage is a per-centre fact because authorisation is evaluated per centre
+ * per capability. One centre in a portfolio can have complete information
+ * while another has none, and the two must not be summarised as if they were
+ * the same.
+ */
+export interface QualityCentreCoverage {
+  /** `quarterly_audit.read` plus the quarterly-review source query. */
+  quarterlyReviews: QualitySourceCoverage;
+  /** `corrective_action.read` plus the corrective-action source query. */
+  correctiveActions: QualitySourceCoverage;
+  /** `finding.read`, which gates uncovered critical findings separately. */
+  uncoveredFindings: QualitySourceCoverage;
+}
+
+/**
  * Support grouping, deliberately not a rank or a score. It is derived only
  * from currently authorised source facts and is used to gather centres that
  * need the same kind of leadership response.
+ * `INFORMATION_INCOMPLETE` is a statement about source coverage, not about a
+ * centre's performance. It exists so that a missing source can never be
+ * reported as the reassuring `STEADY` or `AWAITING_FIRST_REVIEW`.
  */
 export type CentreQualityFocus =
   | "NEEDS_SUPPORT"
   | "MONITOR"
+  | "INFORMATION_INCOMPLETE"
   | "STEADY"
   | "AWAITING_FIRST_REVIEW";
 
@@ -100,19 +128,29 @@ export interface QualityActionRollup {
   waiting: number;
 }
 
+/**
+ * Every count on this card is optional on purpose. A field is present only
+ * when its source was `AVAILABLE`, so an unauthorised or failed source is
+ * absent rather than zero. Consumers must render absence as "not checked",
+ * never as "none".
+ */
 export interface QualityCentreCard {
   centreId: string;
   centreName: string;
   timezone: string;
   localDate: string;
+  coverage: QualityCentreCoverage;
   focus: CentreQualityFocus;
   focusReason: string;
+  /** Present only when `coverage.quarterlyReviews` is `AVAILABLE`. */
   latestReview?: QualityReviewSummary;
-  comparison: QualityQuarterComparison;
-  actions: QualityActionRollup;
-  uncoveredCriticalFindings: number;
-  strengthsCount: number;
-  completedLast30Days: number;
+  comparison?: QualityQuarterComparison;
+  /** Present only when `coverage.correctiveActions` is `AVAILABLE`. */
+  actions?: QualityActionRollup;
+  /** Present only when `coverage.uncoveredFindings` is `AVAILABLE`. */
+  uncoveredCriticalFindings?: number;
+  strengthsCount?: number;
+  completedLast30Days?: number;
   cta: CentreQualityCta;
 }
 
@@ -123,13 +161,22 @@ export interface QualityFocusGroup {
   centreIds: string[];
 }
 
+/**
+ * Focus counts are always present because `INFORMATION_INCOMPLETE` absorbs
+ * every centre whose sources did not fully report, which makes the five
+ * counts a complete partition of the centres in scope.
+ * The summed totals below are different: a sum over centres with missing
+ * sources would silently understate the portfolio, so each is present only
+ * when every contributing centre had `AVAILABLE` coverage for that source.
+ */
 export interface QualityPortfolioSummary {
   coverage: "complete" | "partial";
-  centreCount?: number;
-  needsSupportCount?: number;
-  monitorCount?: number;
-  steadyCount?: number;
-  awaitingFirstReviewCount?: number;
+  centreCount: number;
+  needsSupportCount: number;
+  monitorCount: number;
+  steadyCount: number;
+  awaitingFirstReviewCount: number;
+  informationIncompleteCount: number;
   openCriticalCount?: number;
   overdueCount?: number;
   awaitingVerificationCount?: number;
@@ -137,7 +184,8 @@ export interface QualityPortfolioSummary {
 
 export interface QualitySourceHealth {
   source: "quarterly_reviews" | "corrective_actions";
-  status: "available" | "unavailable";
+  /** Response-level roll-up of the per-centre coverage for this source. */
+  status: QualitySourceCoverage;
 }
 
 export interface QualityAuthorisationHealth {
@@ -205,8 +253,16 @@ export interface QualityUncoveredFinding {
  * How a section stands relative to the centre's own overall result for the
  * same review. This is a stated comparison between two numbers the
  * quarterly-review module already calculated, not a new score.
+ * The values are deliberately relational. An earlier draft used `STRONG`,
+ * which reads as an objective quality judgement and would have been applied
+ * to a barely observed section purely because its number sat at or above the
+ * centre's own overall result. Coverage is reported alongside so a partly
+ * observed section is never mistaken for a settled one.
  */
-export type QualitySectionStanding = "FOCUS" | "STRONG" | "NOT_SCORED";
+export type QualitySectionStanding =
+  | "BELOW_CENTRE_RESULT"
+  | "AT_OR_ABOVE_CENTRE_RESULT"
+  | "NOT_SCORED";
 
 export interface QualitySectionResult {
   sectionId: string;
@@ -225,19 +281,25 @@ export interface QualitySectionResult {
   trend: CentreQualityTrend;
 }
 
+/**
+ * Each list is absent when its source did not report, and empty only when the
+ * source was `AVAILABLE` and genuinely held no rows. `centre.coverage` states
+ * which case applies, so the frontend never has to guess whether an empty
+ * list means "none" or "not checked".
+ */
 export interface CentreQualityDetailResponse {
   cacheControl: Header<"Cache-Control">;
   asOf: string;
   status: "ready" | "partial";
   centre: QualityCentreCard;
-  openActions: QualityActionListItem[];
-  completedActions: QualityCompletedActionItem[];
-  strengths: QualityStrength[];
-  uncoveredFindings: QualityUncoveredFinding[];
+  openActions?: QualityActionListItem[];
+  completedActions?: QualityCompletedActionItem[];
+  strengths?: QualityStrength[];
+  uncoveredFindings?: QualityUncoveredFinding[];
   /** Per-section standing for the latest finalised review. Empty when the
    *  centre has no finalised review, rather than a fabricated zero row. */
-  sectionResults: QualitySectionResult[];
-  reviewHistory: QualityReviewSummary[];
+  sectionResults?: QualitySectionResult[];
+  reviewHistory?: QualityReviewSummary[];
   canAcknowledgeReview: boolean;
   sourceHealth: QualitySourceHealth[];
   warning?: string;

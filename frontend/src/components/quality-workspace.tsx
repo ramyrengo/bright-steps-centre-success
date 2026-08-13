@@ -23,10 +23,15 @@ import {
 
 type Workspace = centre_quality.CentreQualityWorkspaceResponse;
 type CentreCard = centre_quality.QualityCentreCard;
-type ViewKind = centre_quality.CentreQualityViewKind;
+type Coverage = centre_quality.QualityCentreCoverage;
 
 const SESSION_KEY = "centre-success.quality-view";
 
+/**
+ * Stable, unique selector value. `kind` alone is not enough: a principal
+ * responsible for several centres holds several `centre` views, and keying on
+ * the kind would make them indistinguishable in the control.
+ */
 function viewKey(view: centre_quality.CentreQualityView): string {
   return `${view.kind}:${view.centreId ?? ""}`;
 }
@@ -35,6 +40,7 @@ export function focusTone(focus: centre_quality.CentreQualityFocus) {
   return {
     NEEDS_SUPPORT: "critical" as const,
     MONITOR: "warning" as const,
+    INFORMATION_INCOMPLETE: "informational" as const,
     STEADY: "positive" as const,
     AWAITING_FIRST_REVIEW: "neutral" as const,
   }[focus];
@@ -44,9 +50,47 @@ export function focusLabel(focus: centre_quality.CentreQualityFocus): string {
   return {
     NEEDS_SUPPORT: "Needs support",
     MONITOR: "Keep an eye on",
+    INFORMATION_INCOMPLETE: "Information incomplete",
     STEADY: "Steady",
     AWAITING_FIRST_REVIEW: "No review yet",
   }[focus];
+}
+
+function formatList(values: readonly string[]): string {
+  if (values.length <= 1) return values[0] ?? "";
+  return `${values.slice(0, -1).join(", ")} and ${values[values.length - 1]}`;
+}
+
+/**
+ * States plainly which sources did not contribute. Absence is never rendered
+ * as a zero anywhere in Quality, so this note is what stands in its place.
+ * It stays deliberately quiet: a source gap is not an emergency, but it does
+ * change what the reader may safely conclude.
+ */
+export function CoverageNote({ coverage }: Readonly<{ coverage: Coverage }>) {
+  const unavailable: string[] = [];
+  const unauthorised: string[] = [];
+  const record = (state: centre_quality.QualitySourceCoverage, label: string) => {
+    if (state === "UNAVAILABLE") unavailable.push(label);
+    else if (state === "NOT_AUTHORIZED") unauthorised.push(label);
+  };
+  record(coverage.quarterlyReviews, "internal reviews");
+  record(coverage.correctiveActions, "corrective actions");
+  record(coverage.uncoveredFindings, "review findings");
+  if (unavailable.length === 0 && unauthorised.length === 0) return null;
+  const clauses: string[] = [];
+  if (unavailable.length > 0) {
+    clauses.push(`${formatList(unavailable)} could not be checked`);
+  }
+  if (unauthorised.length > 0) {
+    clauses.push(`${formatList(unauthorised)} are outside your access`);
+  }
+  return (
+    <p className="quality-coverage-note">
+      <span className="quality-coverage-note__label">Information incomplete</span>
+      {` Some quality information couldn't be checked: ${clauses.join(", and ")}. Nothing below counts as zero for those sources.`}
+    </p>
+  );
 }
 
 /**
@@ -54,6 +98,15 @@ export function focusLabel(focus: centre_quality.CentreQualityFocus): string {
  * centre has no finalised review it says so instead of rendering a zero.
  */
 export function ReviewLine({ centre }: Readonly<{ centre: CentreCard }>) {
+  if (centre.coverage.quarterlyReviews !== "AVAILABLE") {
+    return (
+      <p className="quality-review-line">
+        {centre.coverage.quarterlyReviews === "NOT_AUTHORIZED"
+          ? "Internal review information is outside your access for this centre."
+          : "Internal review information could not be checked, so no review is shown."}
+      </p>
+    );
+  }
   if (!centre.latestReview) {
     return (
       <p className="quality-review-line">
@@ -61,7 +114,22 @@ export function ReviewLine({ centre }: Readonly<{ centre: CentreCard }>) {
       </p>
     );
   }
-  const { latestReview: review, comparison } = centre;
+  const { latestReview: review } = centre;
+  const comparison = centre.comparison;
+  if (!comparison) {
+    return (
+      <div className="quality-review-line">
+        <span className="quality-review-line__score">
+          {formatScore(review.overallScore)}
+          {review.overallScore === undefined ? "" : <span aria-hidden="true">%</span>}
+        </span>
+        <span className="quality-review-line__quarter">
+          {review.quarterLabel} internal review
+          {review.performanceBandLabel ? ` · ${review.performanceBandLabel}` : ""}
+        </span>
+      </div>
+    );
+  }
   return (
     <div className="quality-review-line">
       <span className="quality-review-line__score">
@@ -89,16 +157,20 @@ export function ReviewLine({ centre }: Readonly<{ centre: CentreCard }>) {
 }
 
 export function CentreQualityCard({ centre }: Readonly<{ centre: CentreCard }>) {
-  const counts: readonly { term: string; value: number; attention: boolean }[] = [
-    { term: "Critical open", value: centre.actions.critical, attention: centre.actions.critical > 0 },
-    { term: "Overdue", value: centre.actions.overdue, attention: centre.actions.overdue > 0 },
-    {
-      term: "Awaiting verification",
-      value: centre.actions.awaitingVerification,
-      attention: false,
-    },
-    { term: "Open in total", value: centre.actions.total, attention: false },
-  ];
+  const actions = centre.actions;
+  const counts: readonly { term: string; value: number; attention: boolean }[] = actions
+    ? [
+        { term: "Critical open", value: actions.critical, attention: actions.critical > 0 },
+        { term: "Overdue", value: actions.overdue, attention: actions.overdue > 0 },
+        {
+          term: "Awaiting verification",
+          value: actions.awaitingVerification,
+          attention: false,
+        },
+        { term: "Open in total", value: actions.total, attention: false },
+      ]
+    : [];
+  const uncovered = centre.uncoveredCriticalFindings ?? 0;
   return (
     <li className="quality-centre-card" data-focus={centre.focus}>
       <div className="quality-centre-card__head">
@@ -107,20 +179,23 @@ export function CentreQualityCard({ centre }: Readonly<{ centre: CentreCard }>) 
       </div>
       <p className="quality-centre-card__reason">{centre.focusReason}</p>
       {centre.latestReview ? <ReviewLine centre={centre} /> : null}
-      <dl className="quality-counts">
-        {counts.map((count) => (
-          <div key={count.term} data-attention={count.attention ? "true" : undefined}>
-            <dt>{count.term}</dt>
-            <dd>{count.value}</dd>
-          </div>
-        ))}
-        {centre.uncoveredCriticalFindings > 0 ? (
-          <div data-attention="true">
-            <dt>Critical findings without an action</dt>
-            <dd>{centre.uncoveredCriticalFindings}</dd>
-          </div>
-        ) : null}
-      </dl>
+      <CoverageNote coverage={centre.coverage} />
+      {counts.length > 0 || uncovered > 0 ? (
+        <dl className="quality-counts">
+          {counts.map((count) => (
+            <div key={count.term} data-attention={count.attention ? "true" : undefined}>
+              <dt>{count.term}</dt>
+              <dd>{count.value}</dd>
+            </div>
+          ))}
+          {uncovered > 0 ? (
+            <div data-attention="true">
+              <dt>Critical findings without an action</dt>
+              <dd>{uncovered}</dd>
+            </div>
+          ) : null}
+        </dl>
+      ) : null}
       <Link className="button button--secondary" href={centre.cta.route}>
         {centre.cta.label}
         <span className="visually-hidden"> for {centre.centreName}</span>
@@ -129,56 +204,82 @@ export function CentreQualityCard({ centre }: Readonly<{ centre: CentreCard }>) 
   );
 }
 
-function PortfolioHero({ response }: Readonly<{ response: Workspace }>) {
+type CollectionScope = "portfolio" | "organisation";
+
+/**
+ * The heading must never assert an all-clear from incomplete information, so
+ * a portfolio holding unchecked centres says what it actually knows. Summed
+ * totals are rendered only when the backend supplied them, which it does only
+ * when every contributing centre reported.
+ */
+function CollectionHero({
+  response,
+  scope,
+}: Readonly<{ response: Workspace; scope: CollectionScope }>) {
   const { summary } = response;
-  if (summary.coverage === "partial") {
-    return (
-      <section className="quality-hero" aria-labelledby="quality-hero-title">
-        <h2 id="quality-hero-title">Portfolio quality</h2>
-        <p>
-          Some centres could not be checked, so no portfolio total is shown rather than
-          a total that would understate the picture.
-        </p>
-      </section>
-    );
-  }
-  const needsSupport = summary.needsSupportCount ?? 0;
+  const needsSupport = summary.needsSupportCount;
+  const incomplete = summary.informationIncompleteCount;
+  const organisation = scope === "organisation";
+
+  const headline =
+    needsSupport === 0
+      ? incomplete > 0
+        ? "No centre is showing critical or overdue work in the information available"
+        : "No centre is currently showing critical or overdue work"
+      : needsSupport === 1
+        ? organisation
+          ? "One centre is showing critical or overdue work"
+          : "One centre could use your support this week"
+        : organisation
+          ? `${needsSupport} centres are showing critical or overdue work`
+          : `${needsSupport} centres could use your support this week`;
+
   return (
     <section className="quality-hero" aria-labelledby="quality-hero-title">
-      <h2 id="quality-hero-title">
-        {needsSupport === 0
-          ? "No centre is currently showing critical or overdue work"
-          : needsSupport === 1
-            ? "One centre could use your support this week"
-            : `${needsSupport} centres could use your support this week`}
-      </h2>
+      <h2 id="quality-hero-title">{headline}</h2>
       <p>
-        Grouped by the kind of support a centre needs, from the internal reviews and
-        corrective actions those centres already own.
+        {organisation
+          ? "Grouped by the kind of support a centre needs, from the internal reviews and corrective actions each centre in the organisation already owns."
+          : "Grouped by the kind of support a centre needs, from the internal reviews and corrective actions those centres already own."}
       </p>
       <dl className="quality-hero__figures">
         <div data-emphasis={needsSupport > 0 ? "true" : undefined}>
           <dt>Needs support</dt>
           <dd>{needsSupport}</dd>
         </div>
+        {incomplete > 0 ? (
+          <div>
+            <dt>Information incomplete</dt>
+            <dd>{incomplete}</dd>
+          </div>
+        ) : null}
         <div>
           <dt>Critical open</dt>
-          <dd>{summary.openCriticalCount ?? 0}</dd>
+          <dd>{summary.openCriticalCount ?? "Not checked"}</dd>
         </div>
         <div>
           <dt>Overdue</dt>
-          <dd>{summary.overdueCount ?? 0}</dd>
+          <dd>{summary.overdueCount ?? "Not checked"}</dd>
         </div>
-        <div>
-          <dt>Awaiting verification</dt>
-          <dd>{summary.awaitingVerificationCount ?? 0}</dd>
-        </div>
+        {incomplete > 0 ? null : (
+          <div>
+            <dt>Awaiting verification</dt>
+            <dd>{summary.awaitingVerificationCount ?? "Not checked"}</dd>
+          </div>
+        )}
       </dl>
+      {summary.coverage === "partial" ? (
+        <p className="quality-hero__note">
+          Totals are shown only where every centre reported. Where a source could not be
+          checked, no total is stated rather than one that would understate the picture.
+        </p>
+      ) : null}
     </section>
   );
 }
 
 function CentreSummary({ centre }: Readonly<{ centre: CentreCard }>) {
+  const actions = centre.actions;
   return (
     <section className="quality-hero" aria-labelledby="quality-centre-hero">
       <h2 id="quality-centre-hero">{centre.focusReason}</h2>
@@ -186,22 +287,23 @@ function CentreSummary({ centre }: Readonly<{ centre: CentreCard }>) {
         Everything below comes from your centre&apos;s internal reviews and corrective
         actions. Nothing here is a regulatory rating.
       </p>
+      <CoverageNote coverage={centre.coverage} />
       <dl className="quality-hero__figures">
-        <div data-emphasis={centre.actions.yourAction > 0 ? "true" : undefined}>
+        <div data-emphasis={(actions?.yourAction ?? 0) > 0 ? "true" : undefined}>
           <dt>Needs you</dt>
-          <dd>{centre.actions.yourAction}</dd>
+          <dd>{actions ? actions.yourAction : "Not checked"}</dd>
         </div>
         <div>
           <dt>Critical open</dt>
-          <dd>{centre.actions.critical}</dd>
+          <dd>{actions ? actions.critical : "Not checked"}</dd>
         </div>
         <div>
           <dt>Waiting on others</dt>
-          <dd>{centre.actions.waiting}</dd>
+          <dd>{actions ? actions.waiting : "Not checked"}</dd>
         </div>
         <div>
           <dt>Completed in 30 days</dt>
-          <dd>{centre.completedLast30Days}</dd>
+          <dd>{centre.completedLast30Days ?? "Not checked"}</dd>
         </div>
       </dl>
     </section>
@@ -253,18 +355,29 @@ export function QualityWorkspaceView({
 }>) {
   const active = response.activeView;
   const isCentre = active?.kind === "centre";
+  const isOrganisation = active?.kind === "organisation";
   const centre = isCentre ? response.centres[0] : undefined;
   const businessDate = response.centres[0]?.localDate;
+
+  // An organisation-wide compliance view is not a personal portfolio. Saying
+  // "your centres" there would imply the reader owns every centre they can see.
+  const title = isCentre
+    ? (active?.centreName ?? "Centre quality")
+    : isOrganisation
+      ? "Centre quality across the organisation"
+      : "Centre quality across your portfolio";
+  const summary = isCentre
+    ? "Where your centre stands on internal review and corrective action, and what needs you next."
+    : isOrganisation
+      ? "Organisation-wide quality and compliance oversight, across every centre you are authorised to see."
+      : "Where your centres stand, and which of them could use support first.";
+
   return (
     <>
       <PageHeader
         eyebrow="Quality & Performance"
-        title={isCentre ? (active?.centreName ?? "Centre quality") : "Centre quality across your portfolio"}
-        summary={
-          isCentre
-            ? "Where your centre stands on internal review and corrective action, and what needs you next."
-            : "Where your centres stand, and which of them could use support first."
-        }
+        title={title}
+        summary={summary}
         meta={
           <>
             {businessDate ? <span>As at {businessDate}</span> : null}
@@ -273,15 +386,17 @@ export function QualityWorkspaceView({
         }
         actions={
           response.availableViews.length > 1 ? (
-            <SegmentedControl<ViewKind>
+            <SegmentedControl<string>
               label="Choose a quality view"
-              value={active?.kind}
+              value={active ? viewKey(active) : undefined}
               options={response.availableViews.map((view) => ({
-                value: view.kind,
+                value: viewKey(view),
                 label: view.kind === "centre" ? (view.centreName ?? "My centre") : view.label,
               }))}
-              onChange={(kind) => {
-                const next = response.availableViews.find((view) => view.kind === kind);
+              onChange={(key) => {
+                const next = response.availableViews.find(
+                  (view) => viewKey(view) === key,
+                );
                 if (next) onChooseView(next);
               }}
             />
@@ -290,8 +405,9 @@ export function QualityWorkspaceView({
       />
 
       {response.status === "partial" ? (
-        <Notice title="Some quality facts could not be checked. ">
-          {response.authorisationHealth.warning ?? response.warning ?? ""}
+        <Notice title="Some quality information couldn't be checked.">
+          {response.authorisationHealth.warning ??
+            "Where a source could not be checked, nothing is reported as zero. Treat the figures below as a partial picture."}
         </Notice>
       ) : null}
 
@@ -320,13 +436,15 @@ export function QualityWorkspaceView({
                 />
                 <Metric
                   label="Positive practice"
-                  value={centre.strengthsCount}
+                  value={centre.strengthsCount ?? "—"}
+                  unavailable={centre.strengthsCount === undefined}
                   note="Captured during internal review"
                 />
                 <Metric
                   label="Open actions"
-                  value={centre.actions.total}
-                  emphasis={centre.actions.total > 0}
+                  value={centre.actions?.total ?? "—"}
+                  unavailable={centre.actions === undefined}
+                  emphasis={(centre.actions?.total ?? 0) > 0}
                 />
               </MetricRow>
               <Link className="button button--accent" href={centre.cta.route}>
@@ -337,10 +455,17 @@ export function QualityWorkspaceView({
         </>
       ) : (
         <>
-          <PortfolioHero response={response} />
+          <CollectionHero
+            response={response}
+            scope={isOrganisation ? "organisation" : "portfolio"}
+          />
           {response.centres.length === 0 ? (
             <EmptyState
-              title="No centres are currently in your portfolio"
+              title={
+                isOrganisation
+                  ? "No centres are currently visible in this organisation view"
+                  : "No centres are currently in your portfolio"
+              }
               message="Centres appear here as soon as an active assignment gives you access to their internal reviews or corrective actions."
             />
           ) : (

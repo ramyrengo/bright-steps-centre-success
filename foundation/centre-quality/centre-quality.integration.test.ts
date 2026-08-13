@@ -1,7 +1,11 @@
 import { randomUUID } from "node:crypto";
-import { beforeAll, describe, expect, test } from "vitest";
+import { afterEach, beforeAll, describe, expect, test, vi } from "vitest";
+import { QualityActionSource } from "./action-source";
 import { centreSuccessDB } from "../db";
+import { buildAuthorisedNavigation } from "../navigation/service";
+import { QualityReviewSource } from "./review-source";
 import { buildCentreQualityDetail, buildCentreQualityWorkspace, CentreQualityError } from "./service";
+import { CentreQualitySourceUnavailableError } from "./types";
 
 /**
  * Centre Quality & Performance runs against a fully isolated organisation so
@@ -73,6 +77,61 @@ async function grant(
   `;
 }
 
+/**
+ * Grants an exact capability set through a bespoke organisation role, so a
+ * principal can hold one Quality source but not another. The canonical roles
+ * deliberately bundle these capabilities together, which would otherwise make
+ * partial source authorisation untestable.
+ */
+async function grantCapabilities(
+  organisationId: string,
+  principalId: string,
+  displayName: string,
+  capabilities: readonly string[],
+  centreId: string,
+): Promise<void> {
+  const membershipId = randomUUID();
+  const assignmentId = randomUUID();
+  const roleId = randomUUID();
+  await centreSuccessDB.exec`
+    INSERT INTO principals (id, display_name, status)
+    VALUES (${principalId}, ${displayName}, 'active')
+  `;
+  await centreSuccessDB.exec`
+    INSERT INTO organisation_memberships (id, organisation_id, principal_id, status, effective_from)
+    VALUES (${membershipId}, ${organisationId}, ${principalId}, 'active', '2030-01-01')
+  `;
+  await centreSuccessDB.exec`
+    INSERT INTO role_definitions (id, organisation_id, role_key, name, status)
+    VALUES (
+      ${roleId}, ${organisationId}, ${`synthetic_partial_${roleId.slice(0, 8)}`},
+      'Synthetic partial quality access', 'active'
+    )
+  `;
+  for (const capability of capabilities) {
+    await centreSuccessDB.exec`
+      INSERT INTO role_capabilities (role_definition_id, capability_code)
+      VALUES (${roleId}, ${capability})
+    `;
+  }
+  await centreSuccessDB.exec`
+    INSERT INTO role_assignments (
+      id, organisation_id, organisation_membership_id, role_definition_id,
+      status, effective_from, grant_source_type, reason
+    ) VALUES (
+      ${assignmentId}, ${organisationId}, ${membershipId}, ${roleId},
+      'active', '2030-01-01', 'system', 'Synthetic partial-source coverage fixture.'
+    )
+  `;
+  await centreSuccessDB.exec`
+    INSERT INTO assignment_scopes (
+      id, organisation_id, role_assignment_id, scope_type, centre_id, effective_from
+    ) VALUES (
+      ${randomUUID()}, ${organisationId}, ${assignmentId}, 'centre', ${centreId}, '2030-01-01'
+    )
+  `;
+}
+
 async function finalisedRun(
   organisationId: string,
   centreId: string,
@@ -85,9 +144,11 @@ async function finalisedRun(
     highFindingCount?: number;
     positivePracticeCount?: number;
     bandLabel?: string;
+    finalisedAt?: Date;
   },
 ): Promise<string> {
   const runId = randomUUID();
+  const finalisedAt = values.finalisedAt ?? AT;
   await centreSuccessDB.exec`
     INSERT INTO audit_runs (
       id, organisation_id, centre_id, template_version_id, auditor_principal_id,
@@ -96,7 +157,7 @@ async function finalisedRun(
       critical_finding_count, high_finding_count, action_count, positive_practice_count
     ) VALUES (
       ${runId}, ${organisationId}, ${centreId}, ${templateVersionId}, ${auditorId},
-      ${reviewPeriodStart}, 'FINALISED', ${AT}, ${AT}, ${auditorId},
+      ${reviewPeriodStart}, 'FINALISED', ${finalisedAt}, ${finalisedAt}, ${auditorId},
       ${values.overallScore}, ${values.bandLabel ?? "Synthetic internal band"}, 100,
       ${values.criticalFindingCount ?? 0}, ${values.highFindingCount ?? 0}, 0,
       ${values.positivePracticeCount ?? 0}
@@ -385,6 +446,11 @@ describe("Centre Quality & Performance authorised projection", () => {
       reviewPeriodStart: "2035-04-01",
       overallScore: 91,
     });
+    expect(centre.coverage).toEqual({
+      quarterlyReviews: "AVAILABLE",
+      correctiveActions: "AVAILABLE",
+      uncoveredFindings: "AVAILABLE",
+    });
     expect(centre.comparison).toMatchObject({
       available: true,
       comparable: true,
@@ -392,7 +458,10 @@ describe("Centre Quality & Performance authorised projection", () => {
       scoreDelta: 7,
       criticalDelta: -2,
     });
-    expect(centre.comparison.previous).toMatchObject({ quarterLabel: "Q1 2035", overallScore: 84 });
+    expect(centre.comparison?.previous).toMatchObject({
+      quarterLabel: "Q1 2035",
+      overallScore: 84,
+    });
   });
 
   test("surfaces critical, verification and completed corrective-action facts for the centre", async () => {
@@ -411,13 +480,13 @@ describe("Centre Quality & Performance authorised projection", () => {
     expect(detail.response.centre.focus).toBe("NEEDS_SUPPORT");
     expect(detail.response.centre.focusReason).toContain("critical review finding");
 
-    const ids = detail.response.openActions.map((action) => action.correctiveActionId);
+    const ids = detail.response.openActions?.map((action) => action.correctiveActionId);
     expect(ids).toEqual([fixture.criticalActionId, fixture.verificationActionId]);
-    expect(detail.response.completedActions.map((action) => action.correctiveActionId)).toEqual([
-      fixture.closedActionId,
-    ]);
+    expect(
+      detail.response.completedActions?.map((action) => action.correctiveActionId),
+    ).toEqual([fixture.closedActionId]);
     expect(detail.response.uncoveredFindings).toHaveLength(1);
-    expect(detail.response.strengths[0]?.description).toContain("calm transitions");
+    expect(detail.response.strengths?.[0]?.description).toContain("calm transitions");
   });
 
   test("shows where a centre is strong and where to focus, from stored section results", async () => {
@@ -427,24 +496,26 @@ describe("Centre Quality & Performance authorised projection", () => {
     );
     // Focus areas first, then template order: documentation (72 < 91 overall),
     // family engagement (unscored), learning environment (98 >= 91).
-    expect(detail.response.sectionResults.map((section) => section.title)).toEqual([
+    expect(detail.response.sectionResults?.map((section) => section.title)).toEqual([
       "Centre documentation",
       "Family engagement",
       "Learning environment",
     ]);
-    expect(detail.response.sectionResults[0]).toMatchObject({
-      standing: "FOCUS",
+    expect(detail.response.sectionResults?.[0]).toMatchObject({
+      standing: "BELOW_CENTRE_RESULT",
       score: 72,
       previousScore: 68,
       scoreDelta: 4,
       trend: "IMPROVED",
       coveragePercent: 100,
     });
-    expect(detail.response.sectionResults[2]).toMatchObject({
-      standing: "STRONG",
+    expect(detail.response.sectionResults?.[2]).toMatchObject({
+      standing: "AT_OR_ABOVE_CENTRE_RESULT",
       score: 98,
       trend: "IMPROVED",
     });
+    // No section may be described with an unqualified quality endorsement.
+    expect(JSON.stringify(detail.response.sectionResults)).not.toContain("STRONG");
   });
 
   test("reports an unscored section as not scored and states its observed coverage", async () => {
@@ -452,7 +523,7 @@ describe("Centre Quality & Performance authorised projection", () => {
       { principalId: fixture.centreDirectorId, centreId: fixture.centreIds[0] },
       { now },
     );
-    const unscored = detail.response.sectionResults.find(
+    const unscored = detail.response.sectionResults?.find(
       (section) => section.title === "Family engagement",
     );
     expect(unscored).toMatchObject({ standing: "NOT_SCORED", coveragePercent: 40 });
@@ -493,8 +564,8 @@ describe("Centre Quality & Performance authorised projection", () => {
       comparable: false,
       trend: "NOT_COMPARABLE",
     });
-    expect(detail.response.sectionResults.length).toBeGreaterThan(0);
-    for (const section of detail.response.sectionResults) {
+    expect(detail.response.sectionResults?.length).toBeGreaterThan(0);
+    for (const section of detail.response.sectionResults ?? []) {
       expect(section.score).toBeDefined();
       expect(section.previousScore).toBeUndefined();
       expect(section.scoreDelta).toBeUndefined();
@@ -525,7 +596,7 @@ describe("Centre Quality & Performance authorised projection", () => {
       { principalId: fixture.centreDirectorId, centreId: fixture.centreIds[0] },
       { now },
     );
-    const asDirector = director.response.openActions.find(
+    const asDirector = director.response.openActions?.find(
       (action) => action.correctiveActionId === fixture.verificationActionId,
     );
     expect(asDirector?.responsibility).toBe("WAITING_ON_SOMEONE_ELSE");
@@ -534,7 +605,7 @@ describe("Centre Quality & Performance authorised projection", () => {
       { principalId: fixture.areaManagerId, centreId: fixture.centreIds[0] },
       { now },
     );
-    const asAreaManager = areaManager.response.openActions.find(
+    const asAreaManager = areaManager.response.openActions?.find(
       (action) => action.correctiveActionId === fixture.verificationActionId,
     );
     expect(asAreaManager?.responsibility).toBe("YOU_NEED_TO_ACT");
@@ -584,7 +655,7 @@ describe("Centre Quality & Performance authorised projection", () => {
     expect(steady).toMatchObject({ focus: "STEADY" });
     expect(steady?.latestReview).toMatchObject({ quarterLabel: "Q2 2035", overallScore: 96 });
     expect(steady?.comparison).toMatchObject({ available: false, trend: "NOT_COMPARABLE" });
-    expect(steady?.comparison.scoreDelta).toBeUndefined();
+    expect(steady?.comparison?.scoreDelta).toBeUndefined();
 
     const empty = result.response.centres.find((centre) => centre.centreId === fixture.centreIds[2]);
     expect(empty).toMatchObject({ focus: "AWAITING_FIRST_REVIEW", strengthsCount: 0 });
@@ -792,5 +863,368 @@ describe("Centre Quality & Performance authorised projection", () => {
     const serialised = JSON.stringify(detail.response);
     expect(serialised).not.toMatch(/invitation|evidence_item|@|oid|tid|token/iu);
     expect(serialised).not.toContain(fixture.centreDirectorId);
+  });
+});
+
+/**
+ * Source coverage is the difference between "there is nothing" and "we do not
+ * know". A successfully queried, authorised source that returned no rows is a
+ * real zero. An unauthorised or failed source must never be presented as one.
+ */
+describe("Centre Quality source coverage never becomes a false zero", () => {
+  let partial: {
+    organisationId: string;
+    centreIds: string[];
+    reviewsOnlyId: string;
+    actionsOnlyId: string;
+  };
+
+  beforeAll(async () => {
+    const isolated = await createQualityFixture();
+    const reviewsOnlyId = randomUUID();
+    const actionsOnlyId = randomUUID();
+    // Reviews but no corrective-action or finding access, on the centre that
+    // genuinely has open critical work.
+    await grantCapabilities(
+      isolated.organisationId,
+      reviewsOnlyId,
+      "Reviews Only Principal",
+      ["quarterly_audit.read", "quarterly_audit.acknowledge"],
+      isolated.centreIds[0],
+    );
+    // Corrective actions and findings but no internal-review access, on the
+    // centre that has no finalised review at all.
+    await grantCapabilities(
+      isolated.organisationId,
+      actionsOnlyId,
+      "Actions Only Principal",
+      ["corrective_action.read", "corrective_action.remediate", "finding.read"],
+      isolated.centreIds[2],
+    );
+    partial = {
+      organisationId: isolated.organisationId,
+      centreIds: isolated.centreIds,
+      reviewsOnlyId,
+      actionsOnlyId,
+    };
+  });
+
+  afterEach(() => {
+    vi.restoreAllMocks();
+  });
+
+  test("treats an authorised source that returned nothing as a real zero", async () => {
+    // Ashgrove has a finalised review and genuinely no open corrective action.
+    const detail = await buildCentreQualityDetail(
+      { principalId: fixture.areaManagerId, centreId: fixture.centreIds[1] },
+      { now },
+    );
+    expect(detail.response.status).toBe("ready");
+    expect(detail.response.centre.coverage).toEqual({
+      quarterlyReviews: "AVAILABLE",
+      correctiveActions: "AVAILABLE",
+      uncoveredFindings: "AVAILABLE",
+    });
+    expect(detail.response.centre.actions).toMatchObject({ total: 0 });
+    expect(detail.response.openActions).toEqual([]);
+    expect(detail.response.centre.focus).toBe("STEADY");
+  });
+
+  test("never reports zero corrective actions when that source is not authorised", async () => {
+    const detail = await buildCentreQualityDetail(
+      { principalId: partial.reviewsOnlyId, centreId: partial.centreIds[0] },
+      { now },
+    );
+    expect(detail.response.centre.coverage).toEqual({
+      quarterlyReviews: "AVAILABLE",
+      correctiveActions: "NOT_AUTHORIZED",
+      uncoveredFindings: "NOT_AUTHORIZED",
+    });
+    expect(detail.response.status).toBe("partial");
+    // Absent, not zero.
+    expect(detail.response.centre.actions).toBeUndefined();
+    expect(detail.response.centre.uncoveredCriticalFindings).toBeUndefined();
+    expect(detail.response.centre.completedLast30Days).toBeUndefined();
+    expect(detail.response.openActions).toBeUndefined();
+    expect(detail.response.completedActions).toBeUndefined();
+    // The reassuring classification is suppressed.
+    expect(detail.response.centre.focus).toBe("INFORMATION_INCOMPLETE");
+    expect(detail.response.centre.focusReason).toMatch(/outside your access/iu);
+    // The review source it does hold still reports normally.
+    expect(detail.response.centre.latestReview).toBeDefined();
+  });
+
+  test("never claims a first review is awaited when the review source is not authorised", async () => {
+    const detail = await buildCentreQualityDetail(
+      { principalId: partial.actionsOnlyId, centreId: partial.centreIds[2] },
+      { now },
+    );
+    expect(detail.response.centre.coverage).toMatchObject({
+      quarterlyReviews: "NOT_AUTHORIZED",
+      correctiveActions: "AVAILABLE",
+    });
+    expect(detail.response.centre.focus).not.toBe("AWAITING_FIRST_REVIEW");
+    expect(detail.response.centre.focus).toBe("INFORMATION_INCOMPLETE");
+    expect(detail.response.centre.focusReason).not.toMatch(/no finalised internal review/iu);
+    expect(detail.response.centre.latestReview).toBeUndefined();
+    expect(detail.response.centre.comparison).toBeUndefined();
+    expect(detail.response.centre.strengthsCount).toBeUndefined();
+    expect(detail.response.reviewHistory).toBeUndefined();
+    expect(detail.response.sectionResults).toBeUndefined();
+    expect(detail.response.strengths).toBeUndefined();
+    expect(detail.response.canAcknowledgeReview).toBe(false);
+  });
+
+  test("reports an unavailable corrective-action source as unknown rather than empty", async () => {
+    vi.spyOn(QualityActionSource, "load").mockRejectedValueOnce(
+      new CentreQualitySourceUnavailableError("corrective_actions"),
+    );
+    const detail = await buildCentreQualityDetail(
+      { principalId: fixture.centreDirectorId, centreId: fixture.centreIds[0] },
+      { now },
+    );
+    expect(detail.response.centre.coverage).toMatchObject({
+      quarterlyReviews: "AVAILABLE",
+      correctiveActions: "UNAVAILABLE",
+    });
+    expect(detail.response.status).toBe("partial");
+    expect(detail.response.centre.actions).toBeUndefined();
+    expect(detail.response.openActions).toBeUndefined();
+    expect(detail.response.centre.focus).toBe("INFORMATION_INCOMPLETE");
+    expect(detail.response.centre.focusReason).toMatch(/could not be checked/iu);
+    expect(detail.response.sourceHealth).toContainEqual({
+      source: "corrective_actions",
+      status: "UNAVAILABLE",
+    });
+  });
+
+  test("does not fabricate a first-review state when the review source fails", async () => {
+    vi.spyOn(QualityReviewSource, "finalisedReviews").mockRejectedValueOnce(
+      new CentreQualitySourceUnavailableError("quarterly_reviews"),
+    );
+    const detail = await buildCentreQualityDetail(
+      { principalId: fixture.centreDirectorId, centreId: fixture.centreIds[0] },
+      { now },
+    );
+    expect(detail.response.centre.coverage).toMatchObject({
+      quarterlyReviews: "UNAVAILABLE",
+      uncoveredFindings: "UNAVAILABLE",
+    });
+    expect(detail.response.centre.focus).not.toBe("AWAITING_FIRST_REVIEW");
+    expect(detail.response.centre.focus).not.toBe("STEADY");
+    expect(detail.response.reviewHistory).toBeUndefined();
+    expect(detail.response.centre.latestReview).toBeUndefined();
+    expect(detail.response.canAcknowledgeReview).toBe(false);
+  });
+
+  test("recovers accurately on the next request with no cached or persisted artefact", async () => {
+    vi.spyOn(QualityReviewSource, "finalisedReviews").mockRejectedValueOnce(
+      new CentreQualitySourceUnavailableError("quarterly_reviews"),
+    );
+    const degraded = await buildCentreQualityDetail(
+      { principalId: fixture.centreDirectorId, centreId: fixture.centreIds[0] },
+      { now },
+    );
+    expect(degraded.response.status).toBe("partial");
+    vi.restoreAllMocks();
+
+    const recovered = await buildCentreQualityDetail(
+      { principalId: fixture.centreDirectorId, centreId: fixture.centreIds[0] },
+      { now },
+    );
+    expect(recovered.response.status).toBe("ready");
+    expect(recovered.response.centre.coverage).toEqual({
+      quarterlyReviews: "AVAILABLE",
+      correctiveActions: "AVAILABLE",
+      uncoveredFindings: "AVAILABLE",
+    });
+    expect(recovered.response.centre.latestReview).toMatchObject({ quarterLabel: "Q2 2035" });
+    expect(recovered.response.centre.focus).toBe("NEEDS_SUPPORT");
+  });
+
+  test("separates incomplete centres from steady ones in a portfolio", async () => {
+    vi.spyOn(QualityActionSource, "load").mockRejectedValueOnce(
+      new CentreQualitySourceUnavailableError("corrective_actions"),
+    );
+    const result = await buildCentreQualityWorkspace(
+      { principalId: fixture.areaManagerId, request: { view: "portfolio" } },
+      { now },
+    );
+    expect(result.response.status).toBe("partial");
+    expect(result.response.summary.coverage).toBe("partial");
+    expect(result.response.summary.informationIncompleteCount).toBeGreaterThan(0);
+    expect(result.response.summary.steadyCount).toBe(0);
+    // A sum that would understate the portfolio is omitted, not guessed.
+    expect(result.response.summary.overdueCount).toBeUndefined();
+    expect(result.response.summary.openCriticalCount).toBeUndefined();
+    expect(result.response.focusGroups.map((group) => group.focus)).not.toContain("STEADY");
+    const incomplete = result.response.focusGroups.find(
+      (group) => group.focus === "INFORMATION_INCOMPLETE",
+    );
+    expect(incomplete?.label).toBe("Information incomplete");
+  });
+
+  test("converts no missing source anywhere in the projection into a zero", async () => {
+    const detail = await buildCentreQualityDetail(
+      { principalId: partial.reviewsOnlyId, centreId: partial.centreIds[0] },
+      { now },
+    );
+    const centre = detail.response.centre;
+    // Every field whose source did not report must be absent from the payload
+    // entirely, so no consumer can read it as a count of nothing.
+    for (const [key, coverageState] of [
+      ["actions", centre.coverage.correctiveActions],
+      ["uncoveredCriticalFindings", centre.coverage.uncoveredFindings],
+      ["completedLast30Days", centre.coverage.correctiveActions],
+      ["latestReview", centre.coverage.quarterlyReviews],
+    ] as const) {
+      if (coverageState !== "AVAILABLE") {
+        expect(Object.hasOwn(centre, key)).toBe(false);
+      }
+    }
+    expect(JSON.stringify(detail.response)).not.toMatch(/"(actions|openActions)":\s*(0|\[\])/u);
+  });
+});
+
+/**
+ * Navigation is capability-derived on the server. These assertions are the
+ * backend half of the guarantee that no destination can be introduced from the
+ * browser; the frontend half proves storage cannot inject one.
+ */
+describe("authorised navigation is derived from current capability and scope", () => {
+  test("gives a System Administrator no business destination at all", async () => {
+    const result = await buildAuthorisedNavigation(
+      { principalId: fixture.systemAdministratorId },
+      { now },
+    );
+    const routes = result.response.links.map((link) => link.route);
+    expect(routes).not.toContain("/quality");
+    expect(routes).not.toContain("/centre");
+    expect(routes).not.toContain("/area-manager");
+    expect(routes).not.toContain("/compliance");
+  });
+
+  test("gives a Centre Director quality and centre work but no access administration", async () => {
+    const result = await buildAuthorisedNavigation(
+      { principalId: fixture.centreDirectorId },
+      { now },
+    );
+    const routes = result.response.links.map((link) => link.route);
+    expect(routes).toContain("/quality");
+    expect(routes).toContain("/centre");
+    expect(routes).not.toContain("/admin/people");
+    expect(routes).not.toContain("/compliance");
+  });
+
+  test("gives an Area Manager their review workspace and a Compliance Manager oversight", async () => {
+    const areaManager = await buildAuthorisedNavigation(
+      { principalId: fixture.areaManagerId },
+      { now },
+    );
+    expect(areaManager.response.links.map((link) => link.route)).toContain("/area-manager");
+    expect(areaManager.response.links.map((link) => link.route)).not.toContain("/admin/people");
+
+    const compliance = await buildAuthorisedNavigation(
+      { principalId: fixture.complianceManagerId },
+      { now },
+    );
+    const routes = compliance.response.links.map((link) => link.route);
+    expect(routes).toContain("/compliance");
+    expect(routes).toContain("/quality");
+  });
+
+  test("gives a principal from another organisation no destination, and never caches", async () => {
+    // The outsider holds an active membership in their own organisation, so
+    // navigation resolves normally and correctly yields nothing to show.
+    const outsider = await buildAuthorisedNavigation(
+      { principalId: fixture.outsiderId },
+      { now },
+    );
+    expect(outsider.response.links).toEqual([]);
+
+    const result = await buildAuthorisedNavigation(
+      { principalId: fixture.centreDirectorId },
+      { now },
+    );
+    expect(result.response.cacheControl).toBe("private, no-store");
+    // Bounded and independent of portfolio size: no per-centre authorizer.
+    const scale = await createQualityFixture(20);
+    const large = await buildAuthorisedNavigation(
+      { principalId: scale.areaManagerId },
+      { now },
+    );
+    expect(large.diagnostics.queryCount).toBe(result.diagnostics.queryCount);
+    expect(result.diagnostics.queryCount).toBe(8);
+  });
+});
+
+describe("previous quarter is always a strictly earlier quarter", () => {
+  test("skips a second finalised run in the same quarter", async () => {
+    const isolated = await createQualityFixture();
+    const centreId = isolated.centreIds[2];
+    // Q2 on template A, then Q2 again on template B finalised later, then Q1.
+    await finalisedRun(
+      isolated.organisationId, centreId, isolated.areaManagerId,
+      isolated.templateVersionId, "2035-04-01",
+      { overallScore: 70, finalisedAt: new Date("2035-05-01T00:00:00.000Z") },
+    );
+    await finalisedRun(
+      isolated.organisationId, centreId, isolated.areaManagerId,
+      isolated.otherTemplateVersionId, "2035-04-01",
+      { overallScore: 88, finalisedAt: new Date("2035-06-01T00:00:00.000Z") },
+    );
+    await finalisedRun(
+      isolated.organisationId, centreId, isolated.areaManagerId,
+      isolated.templateVersionId, "2035-01-01",
+      { overallScore: 61, finalisedAt: new Date("2035-02-01T00:00:00.000Z") },
+    );
+
+    const detail = await buildCentreQualityDetail(
+      { principalId: isolated.areaManagerId, centreId },
+      { now },
+    );
+    const history = detail.response.reviewHistory ?? [];
+    expect(history[0]).toMatchObject({ quarterLabel: "Q2 2035", overallScore: 88 });
+    // The other Q2 run must not be offered as the previous quarter.
+    expect(history[1]).toMatchObject({ quarterLabel: "Q1 2035", overallScore: 61 });
+    expect(history.map((review) => review.quarterLabel)).toEqual(["Q2 2035", "Q1 2035"]);
+    expect(detail.response.centre.comparison?.previous).toMatchObject({
+      quarterLabel: "Q1 2035",
+      overallScore: 61,
+    });
+  });
+
+  test("still compares two genuinely consecutive quarters on the same template", async () => {
+    const isolated = await createQualityFixture();
+    const centreId = isolated.centreIds[2];
+    await finalisedRun(
+      isolated.organisationId, centreId, isolated.areaManagerId,
+      isolated.templateVersionId, "2035-04-01",
+      { overallScore: 90, finalisedAt: new Date("2035-05-01T00:00:00.000Z") },
+    );
+    await finalisedRun(
+      isolated.organisationId, centreId, isolated.areaManagerId,
+      isolated.otherTemplateVersionId, "2035-04-01",
+      { overallScore: 55, finalisedAt: new Date("2035-04-15T00:00:00.000Z") },
+    );
+    await finalisedRun(
+      isolated.organisationId, centreId, isolated.areaManagerId,
+      isolated.templateVersionId, "2035-01-01",
+      { overallScore: 80, finalisedAt: new Date("2035-02-01T00:00:00.000Z") },
+    );
+
+    const detail = await buildCentreQualityDetail(
+      { principalId: isolated.areaManagerId, centreId },
+      { now },
+    );
+    expect(detail.response.centre.comparison).toMatchObject({
+      available: true,
+      comparable: true,
+      trend: "IMPROVED",
+      scoreDelta: 10,
+    });
+    expect(detail.response.centre.comparison?.previous).toMatchObject({
+      quarterLabel: "Q1 2035",
+    });
   });
 });
