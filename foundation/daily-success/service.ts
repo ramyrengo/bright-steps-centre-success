@@ -4,6 +4,7 @@ import { loadOrganisationCentreAuthorisationFacts } from "../authorization/batch
 import { loadPrincipalAuthorisationContextFromSnapshot } from "../authorization/context-loader";
 import { authorise, type PrincipalAuthorisationContext } from "../authorization/policy";
 import { centreSuccessDB } from "../db";
+import { deriveWorkspaceLinks } from "../navigation/workspace-links";
 import type {
   DailySourceHealth,
   DailySuccessPerspective,
@@ -181,24 +182,12 @@ function selectPerspective(
   return match;
 }
 
+/**
+ * Delegates to the one shared derivation so Daily Success and the `/navigation`
+ * projection can never offer different destinations for the same principal.
+ */
 function workspaceLinks(authorisation: DailyAuthorisationView): DailyWorkspaceLink[] {
-  const links: DailyWorkspaceLink[] = [];
-  if (
-    (authorisation.centreIdsByCapability.get(FOUNDATION_CAPABILITIES.correctiveActionRemediate)?.size ?? 0) > 0
-  ) links.push({ label: "Centre actions", route: "/centre" });
-  if (
-    (authorisation.centreIdsByCapability.get(FOUNDATION_CAPABILITIES.quarterlyAuditConduct)?.size ?? 0) > 0
-  ) links.push({ label: "Area Manager reviews", route: "/area-manager" });
-  if (authorisation.organisationCapabilities.has(FOUNDATION_CAPABILITIES.complianceOversightRead)) {
-    links.push({ label: "Compliance oversight", route: "/compliance" });
-  }
-  if (
-    authorisation.organisationCapabilities.has(FOUNDATION_CAPABILITIES.invitationRead) &&
-    authorisation.organisationCapabilities.has(FOUNDATION_CAPABILITIES.principalRead)
-  ) {
-    links.push({ label: "People & Access", route: "/admin/people" });
-  }
-  return links;
+  return deriveWorkspaceLinks(authorisation);
 }
 
 async function collectWithSavepoint(

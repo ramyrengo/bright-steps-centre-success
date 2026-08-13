@@ -8,6 +8,7 @@ const authMocks = vi.hoisted(() => ({
 }));
 const clientMocks = vi.hoisted(() => ({
   foundation: {
+    getAuthorisedNavigationEndpoint: vi.fn(() => Promise.resolve({ cacheControl: "private, no-store", links: [] })),
     listAssignedAuditCentres: vi.fn(),
     listCorrectiveActionVerificationQueue: vi.fn(),
     getAuditPreparation: vi.fn(),
@@ -197,7 +198,7 @@ describe("Milestone 2B role-focused workflows", () => {
     foundation.startQuarterlyAudit.mockResolvedValue({ auditId: AUDIT.id, status: "DRAFT", created: true });
     render(<AreaManagerWorkspace />);
     expect(await screen.findByText(/Scores shown below are internal Bright Steps/i)).toBeDefined();
-    fireEvent.click(await screen.findByRole("button", { name: "Prepare visit" }));
+    fireEvent.click(await screen.findByRole("button", { name: /^Prepare visit/u }));
     expect(await screen.findByText(/BSA Internal Audit Score is an internal Bright Steps/i)).toBeDefined();
     fireEvent.click(await screen.findByRole("button", { name: "Start quarterly review" }));
     await waitFor(() => expect(foundation.startQuarterlyAudit).toHaveBeenCalledWith({ centreId: ACTION.centreId }));

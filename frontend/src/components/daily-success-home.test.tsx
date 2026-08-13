@@ -10,7 +10,7 @@ const clientMocks = vi.hoisted(() => {
   const getDailySuccess = vi.fn();
   return {
     getDailySuccess,
-    client: { foundation: { getDailySuccess } },
+    client: { foundation: { getDailySuccess, getAuthorisedNavigationEndpoint: vi.fn(() => Promise.resolve({ cacheControl: "private, no-store", links: [] })) } },
   };
 });
 

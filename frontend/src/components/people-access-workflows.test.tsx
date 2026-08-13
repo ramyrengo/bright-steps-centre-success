@@ -10,6 +10,7 @@ const authMocks = vi.hoisted(() => ({
 }));
 const clientMocks = vi.hoisted(() => ({
   foundation: {
+    getAuthorisedNavigationEndpoint: vi.fn(() => Promise.resolve({ cacheControl: "private, no-store", links: [] })),
     listPeople: vi.fn(),
     getPeopleOptions: vi.fn(),
     createInvitation: vi.fn(),
@@ -156,7 +157,7 @@ describe("Milestone 2C People & Access experience", () => {
     expect(screen.getByText("Microsoft identity")).toBeDefined();
     expect(screen.getByText("Centre Success access")).toBeDefined();
     expect(screen.getByRole("link", { name: "Invite user" }).getAttribute("href")).toBe("/admin/people/invite");
-    expect(screen.getByRole("link", { name: "Review invitation" }).getAttribute("href")).toContain(INVITATION_ID);
+    expect(screen.getByRole("link", { name: /^Review invitation/u }).getAttribute("href")).toContain(INVITATION_ID);
     expect(screen.queryByText(/oid|jwt|access token/i)).toBeNull();
   });
 

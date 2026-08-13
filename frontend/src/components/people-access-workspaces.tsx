@@ -19,6 +19,15 @@ import {
 import { useCentreSuccessAuthentication } from "../lib/centre-success-authentication";
 import { useAuthenticatedCentreSuccessClient } from "../lib/centre-success-client";
 import {
+  DataList,
+  DataListRow,
+  Dialog,
+  Metric,
+  MetricRow,
+  Section,
+  StatusBadge,
+} from "./design-system";
+import {
   BusinessWorkspaceGate,
   formatDate,
   StatusPill,
@@ -103,25 +112,50 @@ function ConfirmationDialog({
   onCancel: () => void;
   onConfirm: () => void;
 }>) {
-  const titleId = useId();
   const errorId = useId();
+  const reasonHintId = useId();
   return (
-    <div className="workflow-dialog-backdrop">
-      <section aria-describedby={error ? errorId : undefined} aria-labelledby={titleId} aria-modal="true" className="workflow-dialog workflow-stack" role="dialog">
-        <div>
-          <p className="foundation-eyebrow">Confirm access change</p>
-          <h2 id={titleId}>{title}</h2>
-          <p><strong>{targetName}</strong></p>
-          <p>{description}</p>
+    <Dialog
+      eyebrow={destructive ? "Confirm this change" : "Confirm access change"}
+      title={title}
+      onDismiss={working ? () => undefined : onCancel}
+      footer={
+        <>
+          <button className="button button--secondary" disabled={working} onClick={onCancel} type="button">
+            Go back
+          </button>
+          <button
+            className={`button${destructive ? " workflow-button--danger" : ""}`}
+            aria-describedby={reason.trim() ? undefined : reasonHintId}
+            disabled={working || !reason.trim()}
+            onClick={onConfirm}
+            type="button"
+          >
+            {working ? "Applying…" : confirmLabel}
+          </button>
+        </>
+      }
+    >
+      <div>
+        <p><strong>{targetName}</strong></p>
+        <p>{description}</p>
+      </div>
+      <label>
+        {reasonLabel}
+        <textarea data-autofocus maxLength={500} onChange={(event) => onReason(event.target.value)} rows={4} value={reason} />
+      </label>
+      {reason.trim() ? null : (
+        <p className="metric__note" id={reasonHintId}>
+          A reason is required before this change can be applied.
+        </p>
+      )}
+      {error ? (
+        <div className="workflow-dialog__error" id={errorId} role="alert">
+          <strong>Action not completed.</strong>
+          <p>{error}</p>
         </div>
-        <label>{reasonLabel}<textarea autoFocus maxLength={500} onChange={(event) => onReason(event.target.value)} rows={4} value={reason} /></label>
-        {error ? <div className="workflow-dialog__error" id={errorId} role="alert"><strong>Action not completed.</strong><p>{error}</p></div> : null}
-        <div className="people-actions">
-          <button className="workflow-button workflow-button--secondary" disabled={working} onClick={onCancel} type="button">Go back</button>
-          <button className={`workflow-button${destructive ? " workflow-button--danger" : ""}`} disabled={working || !reason.trim()} onClick={onConfirm} type="button">{working ? "Applying…" : confirmLabel}</button>
-        </div>
-      </section>
-    </div>
+      ) : null}
+    </Dialog>
   );
 }
 
@@ -165,44 +199,96 @@ export function PeopleAccessWorkspace() {
             <span>Search people and invitations</span>
             <input value={query} onChange={(event) => setQuery(event.target.value)} type="search" />
           </label>
-          <Link className="workflow-link-button" href="/admin/people/invite">Invite user</Link>
+          <Link className="button" href="/admin/people/invite">Invite user</Link>
         </div>
         {error ? <WorkflowState kind="error" title="People & Access unavailable" message="Your authorised organisation view could not be loaded." onRetry={() => { setError(false); setAttempt((value) => value + 1); }} /> : null}
         {!error && filtered === null ? <WorkflowState kind="loading" title="Loading People & Access" message="Checking current PostgreSQL permissions and access records…" /> : null}
-        {filtered ? (
+        {filtered && data ? (
           <>
-            <section aria-labelledby="people-title">
-              <div className="section-heading"><h2 id="people-title">People</h2><span>{filtered.people.length} shown</span></div>
-              {filtered.people.length === 0 ? <WorkflowState kind="empty" title="No people found" message="Try another search or invite a person." /> : null}
-              <div className="card-grid">
-                {filtered.people.map((person) => (
-                  <article className="workflow-card" key={person.principalId}>
-                    <StatusPill tone={statusTone(person.status)}>{humaniseStatus(person.status)}</StatusPill>
-                    <h3>{person.displayName}</h3>
-                    <dl className="people-facts">
-                      <div><dt>Microsoft identity</dt><dd>{person.microsoftIdentity === "connected" ? "Connected" : "Not connected"}</dd></div>
-                      <div><dt>Centre Success access</dt><dd>{person.assignments.length} active assignment{person.assignments.length === 1 ? "" : "s"}</dd></div>
-                    </dl>
-                    <Link className="workflow-link" href={`/admin/people/${person.principalId}`}>View person</Link>
-                  </article>
-                ))}
-              </div>
-            </section>
-            <section aria-labelledby="invitations-title">
-              <div className="section-heading"><h2 id="invitations-title">Invitations</h2><span>{filtered.invitations.length} shown</span></div>
-              {filtered.invitations.length === 0 ? <WorkflowState kind="empty" title="No invitations found" message="New invitation drafts and delivery states will appear here." /> : null}
-              <div className="card-grid">
-                {filtered.invitations.map((invitation) => (
-                  <article className="workflow-card" key={invitation.id}>
-                    <StatusPill tone={statusTone(invitation.status)}>{humaniseStatus(invitation.status)}</StatusPill>
-                    <h3>{invitation.displayName}</h3>
-                    <p>{invitation.intendedEmail}</p>
-                    <p>{invitation.privilegeClass === "STANDARD" ? "Standard activation" : "Independent approval required"}</p>
-                    <Link className="workflow-link" href={`/admin/people/invitations/${invitation.id}`}>Review invitation</Link>
-                  </article>
-                ))}
-              </div>
-            </section>
+            <MetricRow>
+              <Metric label="People listed" value={data.people.length} />
+              <Metric
+                label="Active access"
+                value={data.people.filter((person) => person.status === "active").length}
+              />
+              <Metric
+                label="Awaiting approval"
+                value={data.invitations.filter((invitation) => invitation.status === "AWAITING_PRIVILEGED_APPROVAL").length}
+                emphasis={data.invitations.some((invitation) => invitation.status === "AWAITING_PRIVILEGED_APPROVAL")}
+              />
+              <Metric label="Open invitations" value={data.invitations.length} />
+            </MetricRow>
+
+            <Section
+              title="People"
+              description="Microsoft identity and Centre Success access are separate facts and are shown separately."
+              count={`${filtered.people.length} shown`}
+            >
+              {filtered.people.length === 0 ? (
+                <WorkflowState kind="empty" title="No people found" message="Try another search or invite a person." />
+              ) : (
+                <DataList label="People">
+                  {filtered.people.map((person) => (
+                    <DataListRow
+                      key={person.principalId}
+                      title={person.displayName}
+                      headingLevel={3}
+                      severity={person.status === "revoked" ? "critical" : person.status === "suspended" ? "warning" : "neutral"}
+                      badge={<StatusBadge tone={statusTone(person.status)}>{humaniseStatus(person.status)}</StatusBadge>}
+                      facts={[
+                        {
+                          term: "Microsoft identity",
+                          value: person.microsoftIdentity === "connected" ? "Connected" : "Not connected",
+                        },
+                        {
+                          term: "Centre Success access",
+                          value: `${person.assignments.length} active assignment${person.assignments.length === 1 ? "" : "s"}`,
+                        },
+                      ]}
+                      action={
+                        <Link className="button button--secondary" href={`/admin/people/${person.principalId}`}>
+                          View person<span className="visually-hidden"> {person.displayName}</span>
+                        </Link>
+                      }
+                    />
+                  ))}
+                </DataList>
+              )}
+            </Section>
+
+            <Section
+              title="Invitations"
+              description="No Centre Success membership or access exists until an invitation is verified and activated."
+              count={`${filtered.invitations.length} shown`}
+            >
+              {filtered.invitations.length === 0 ? (
+                <WorkflowState kind="empty" title="No invitations found" message="New invitation drafts and delivery states will appear here." />
+              ) : (
+                <DataList label="Invitations">
+                  {filtered.invitations.map((invitation) => (
+                    <DataListRow
+                      key={invitation.id}
+                      title={invitation.displayName}
+                      headingLevel={3}
+                      severity={["CANCELLED", "EXPIRED", "ADMINISTRATOR_REVIEW"].includes(invitation.status) ? "critical" : invitation.status === "AWAITING_PRIVILEGED_APPROVAL" ? "warning" : "neutral"}
+                      badge={<StatusBadge tone={statusTone(invitation.status)}>{humaniseStatus(invitation.status)}</StatusBadge>}
+                      facts={[
+                        { term: "Invited", value: invitation.intendedEmail },
+                        {
+                          term: "Activation",
+                          value: invitation.privilegeClass === "STANDARD" ? "Standard activation" : "Independent approval required",
+                        },
+                      ]}
+                      action={
+                        <Link className="button button--secondary" href={`/admin/people/invitations/${invitation.id}`}>
+                          Review invitation<span className="visually-hidden"> for {invitation.displayName}</span>
+                        </Link>
+                      }
+                    />
+                  ))}
+                </DataList>
+              )}
+            </Section>
           </>
         ) : null}
       </WorkflowShell>
@@ -285,7 +371,7 @@ export function InvitePersonWorkspace() {
         {!options && !error ? <WorkflowState kind="loading" title="Loading invitation options" message="Loading active canonical roles and valid scope choices…" /> : null}
         {error ? <p className="workflow-notice" role="alert">{error}</p> : null}
         {options && role ? (
-          <form className="people-form workflow-card workflow-card--detail" onSubmit={submit}>
+          <form className="people-form card card--feature" onSubmit={submit}>
             <label>Employee name<input name="displayName" required maxLength={200} /></label>
             <label>Delivery and correlation email<input name="email" type="email" required autoComplete="email" /></label>
             <label>Canonical role<select value={roleKey} onChange={(event) => { setRoleKey(event.target.value); setSelectedCentres([]); setOrganisationalUnitId(""); setFlexibleScopeType("organisation"); }}>
@@ -326,7 +412,7 @@ export function InvitePersonWorkspace() {
               <strong>{role.approval === "standard" ? "Standard package" : "Privileged or review package"}</strong>
               <p>{role.approval === "standard" ? "Verified acceptance may activate this reviewed package." : "A different current System Administrator must approve this exact package before activation."}</p>
             </aside>
-            <button className="workflow-button" disabled={working || (role.scopeMode !== "organisation" && role.scopeMode !== "flexible" && selectedCentres.length === 0) || flexibleSelectionMissing} type="submit">
+            <button className="button" disabled={working || (role.scopeMode !== "organisation" && role.scopeMode !== "flexible" && selectedCentres.length === 0) || flexibleSelectionMissing} type="submit">
               {working ? "Creating draft…" : "Review invitation draft"}
             </button>
           </form>
@@ -339,6 +425,7 @@ export function InvitePersonWorkspace() {
 export function InvitationReviewWorkspace({ invitationId }: Readonly<{ invitationId: string }>) {
   const client = useAuthenticatedCentreSuccessClient();
   const packageTitleId = useId();
+  const approvalHintId = useId();
   const [invitation, setInvitation] = useState<Invitation | null>(null);
   const [error, setError] = useState("");
   const [working, setWorking] = useState(false);
@@ -435,12 +522,33 @@ export function InvitationReviewWorkspace({ invitationId }: Readonly<{ invitatio
             {invitation.status === "AWAITING_PRIVILEGED_APPROVAL" ? <p className="workflow-notice" role="status">A different current System Administrator must approve this exact package.</p> : null}
             {invitation.status === "AWAITING_PRIVILEGED_APPROVAL" ? <label>Approval reason<textarea maxLength={500} value={approvalReason} onChange={(event) => setApprovalReason(event.target.value)} rows={3} /></label> : null}
             {invitation.status === "EXPIRED" ? <aside className="workflow-notice"><strong>This invitation expired and cannot be resent.</strong><p>Create a new invitation so the access package, expiry and correlation code are reviewed again.</p><Link className="workflow-link" href="/admin/people/invite">Create new invitation</Link></aside> : null}
+            {["SENT", "ADMINISTRATOR_REVIEW"].includes(invitation.status) ? (
+              <p className="metric__note">
+                Rotating and resending issues a new code and immediately invalidates the previous
+                one. The reviewed access package and its expiry are unchanged.
+              </p>
+            ) : null}
             <div className="people-actions">
-              {invitation.status === "DRAFT" ? <button className="workflow-button" disabled={working} onClick={() => void mutate("send")} type="button">Send invitation</button> : null}
-              {["SENT", "ADMINISTRATOR_REVIEW"].includes(invitation.status) ? <button className="workflow-button workflow-button--secondary" disabled={working} onClick={() => void mutate("resend")} type="button">Rotate and resend</button> : null}
-              {invitation.status === "AWAITING_PRIVILEGED_APPROVAL" ? <button className="workflow-button" disabled={working || !approvalReason.trim()} onClick={() => void mutate("approve")} type="button">Approve exact package</button> : null}
-              {!["ACTIVATED", "CANCELLED", "EXPIRED"].includes(invitation.status) ? <button className="workflow-button workflow-button--danger" disabled={working} onClick={() => { setCancellationError(""); setCancellationRequested(true); }} type="button">Cancel invitation</button> : null}
+              {invitation.status === "DRAFT" ? <button className="button" disabled={working} onClick={() => void mutate("send")} type="button">Send invitation</button> : null}
+              {["SENT", "ADMINISTRATOR_REVIEW"].includes(invitation.status) ? <button className="button button--secondary" disabled={working} onClick={() => void mutate("resend")} type="button">Rotate and resend</button> : null}
+              {invitation.status === "AWAITING_PRIVILEGED_APPROVAL" ? (
+                <button
+                  className="button"
+                  aria-describedby={approvalReason.trim() ? undefined : approvalHintId}
+                  disabled={working || !approvalReason.trim()}
+                  onClick={() => void mutate("approve")}
+                  type="button"
+                >
+                  Approve exact package
+                </button>
+              ) : null}
+              {!["ACTIVATED", "CANCELLED", "EXPIRED"].includes(invitation.status) ? <button className="button workflow-button--danger" disabled={working} onClick={() => { setCancellationError(""); setCancellationRequested(true); }} type="button">Cancel invitation</button> : null}
             </div>
+            {invitation.status === "AWAITING_PRIVILEGED_APPROVAL" && !approvalReason.trim() ? (
+              <p className="metric__note" id={approvalHintId}>
+                Record an approval reason before approving this package.
+              </p>
+            ) : null}
           </article>
         ) : null}
         {cancellationRequested && invitation ? <ConfirmationDialog
@@ -479,7 +587,28 @@ export function PersonWorkspace({ principalId }: Readonly<{ principalId: string 
       <WorkflowShell eyebrow="People & Access" title={person?.displayName ?? "Person"} summary="Microsoft identity connection and Centre Success access are shown separately.">
         {error ? <WorkflowState kind="error" title="Person unavailable" message="This person is not available in your current organisation scope." /> : null}
         {!person && !error ? <WorkflowState kind="loading" title="Loading person" message="Checking current principal and assignment state…" /> : null}
-        {person ? <article className="workflow-card workflow-card--detail"><StatusPill tone={statusTone(person.status)}>{humaniseStatus(person.status)}</StatusPill><dl className="people-facts"><div><dt>Microsoft identity</dt><dd>{person.microsoftIdentity === "connected" ? "Connected" : "Not connected"}</dd></div><div><dt>Centre Success access</dt><dd>{person.assignments.length} active assignment{person.assignments.length === 1 ? "" : "s"}</dd></div></dl><div className="people-actions"><Link className="workflow-link-button" href={`/admin/people/${person.principalId}/access`}>Manage access</Link><Link className="workflow-link-button workflow-link-button--secondary" href={`/admin/people/${person.principalId}/history`}>View history</Link></div></article> : null}
+        {person ? (
+          <article className="card card--feature">
+            <StatusPill tone={statusTone(person.status)}>{humaniseStatus(person.status)}</StatusPill>
+            <MetricRow>
+              <Metric
+                label="Microsoft identity"
+                value={person.microsoftIdentity === "connected" ? "Connected" : "Not connected"}
+                unavailable={person.microsoftIdentity !== "connected"}
+                note="Proves who signed in"
+              />
+              <Metric
+                label="Centre Success access"
+                value={person.assignments.length}
+                note={`Active assignment${person.assignments.length === 1 ? "" : "s"}`}
+              />
+            </MetricRow>
+            <div className="people-actions">
+              <Link className="button" href={`/admin/people/${person.principalId}/access`}>Manage access</Link>
+              <Link className="button button--secondary" href={`/admin/people/${person.principalId}/history`}>View history</Link>
+            </div>
+          </article>
+        ) : null}
       </WorkflowShell>
     </BusinessWorkspaceGate>
   );
@@ -605,35 +734,79 @@ export function PersonAccessWorkspace({ principalId }: Readonly<{ principalId: s
         {error ? <WorkflowState kind="error" title="Access change unavailable" message={error} onRetry={() => { setError(""); load(); }} /> : null}
         {!person || !options ? (!error ? <WorkflowState kind="loading" title="Loading current access" message="Checking active assignments and valid scope options…" /> : null) : (
           <div className="workflow-stack">
-            <article className="workflow-card">
+            <article className="card">
               <div className="section-heading"><h2>{person.displayName}</h2><StatusPill tone={statusTone(person.status)}>{humaniseStatus(person.status)}</StatusPill></div>
-              <ul className="summary-list">{person.assignments.map((assignment) => {
-                const role = options.roles.find((candidate) => candidate.roleKey === assignment.roleKey);
-                const centreOnly = assignment.scopes.every((scope) => scope.scopeType === "centre");
-                return <li key={assignment.id}><span><strong>{assignment.roleName}</strong><small>{assignmentScopeNames(assignment).join(", ")}</small></span><span className="people-actions">
-                  {centreOnly && (role?.scopeMode === "multi_centre" || role?.scopeMode === "single_centre") ? <button className="workflow-button workflow-button--secondary" disabled={working} onClick={() => { setPortfolioError(""); setPortfolio({ assignmentId: assignment.id, roleName: assignment.roleName, scopeMode: role.scopeMode as "multi_centre" | "single_centre", initialCentres: assignment.scopes.flatMap((scope) => scope.scopeType === "centre" ? [scope.centreId] : []), selectedCentres: assignment.scopes.flatMap((scope) => scope.scopeType === "centre" ? [scope.centreId] : []) }); }} type="button">Edit centre portfolio</button> : null}
-                  <button className="workflow-button workflow-button--danger" disabled={working} onClick={() => { setRemovalError(""); setRemoval({ assignmentId: assignment.id, roleName: assignment.roleName }); }} type="button">End assignment</button>
-                </span></li>;
-              })}</ul>
+              {person.assignments.length === 0 ? (
+                <WorkflowState kind="empty" title="No active assignments" message="This person currently holds no Centre Success access." />
+              ) : (
+                <DataList label="Active assignments">
+                  {person.assignments.map((assignment) => {
+                    const role = options.roles.find((candidate) => candidate.roleKey === assignment.roleKey);
+                    const centreOnly = assignment.scopes.every((scope) => scope.scopeType === "centre");
+                    const scopeNames = assignmentScopeNames(assignment);
+                    return (
+                      <DataListRow
+                        key={assignment.id}
+                        title={assignment.roleName}
+                        headingLevel={3}
+                        facts={[
+                          { term: "Authorised for", value: scopeNames.join(", ") },
+                          {
+                            term: "Centres",
+                            value: centreOnly ? `${scopeNames.length} centre${scopeNames.length === 1 ? "" : "s"}` : "Not centre scoped",
+                          },
+                        ]}
+                        action={
+                          <span className="people-actions">
+                            {centreOnly && (role?.scopeMode === "multi_centre" || role?.scopeMode === "single_centre") ? (
+                              <button className="button button--secondary" disabled={working} onClick={() => { setPortfolioError(""); setPortfolio({ assignmentId: assignment.id, roleName: assignment.roleName, scopeMode: role.scopeMode as "multi_centre" | "single_centre", initialCentres: assignment.scopes.flatMap((scope) => scope.scopeType === "centre" ? [scope.centreId] : []), selectedCentres: assignment.scopes.flatMap((scope) => scope.scopeType === "centre" ? [scope.centreId] : []) }); }} type="button">
+                                Edit centre portfolio
+                              </button>
+                            ) : null}
+                            <button className="button workflow-button--danger" disabled={working} onClick={() => { setRemovalError(""); setRemoval({ assignmentId: assignment.id, roleName: assignment.roleName }); }} type="button">
+                              End assignment
+                            </button>
+                          </span>
+                        }
+                      />
+                    );
+                  })}
+                </DataList>
+              )}
             </article>
-            <form className="people-form workflow-card" onSubmit={add}>
+            <form className="people-form card" onSubmit={add}>
               <h2>Add independent assignment</h2>
               <label>Standard role<select value={addRoleKey} onChange={(event) => { setAddRoleKey(event.target.value); setAddSelectedCentres([]); }}>{options.roles.filter((role) => role.approval === "standard").map((role) => <option value={role.roleKey} key={role.roleKey}>{role.name}</option>)}</select></label>
               {selectedRole?.scopeMode !== "organisation" ? <fieldset><legend>{selectedRole?.scopeMode === "single_centre" ? "Select one centre" : "Select centre portfolio"}</legend><div className="people-checklist">{options.centres.map((centre) => <label key={centre.id}><input type={selectedRole?.scopeMode === "single_centre" ? "radio" : "checkbox"} name="new-assignment-centre" checked={addSelectedCentres.includes(centre.id)} onChange={(event) => setAddSelectedCentres((current) => selectedRole?.scopeMode === "single_centre" ? (event.target.checked ? [centre.id] : []) : event.target.checked ? [...current, centre.id] : current.filter((id) => id !== centre.id))} />{centre.name}</label>)}</div></fieldset> : <p className="workflow-notice">This role uses explicit organisation scope.</p>}
               <label>Assignment reason<textarea value={addReason} onChange={(event) => setAddReason(event.target.value)} maxLength={500} rows={3} /></label>
-              <button className="workflow-button" disabled={working || !addReason.trim() || addSelectionInvalid} type="submit">Add assignment</button>
+              <button className="button" disabled={working || !addReason.trim() || addSelectionInvalid} type="submit">Add assignment</button>
             </form>
-            <article className="workflow-card"><h2>Lifecycle controls</h2><p>Each suspension, reactivation or permanent revocation requires a separate review and reason.</p><div className="people-actions">{person.status === "active" ? <button className="workflow-button workflow-button--secondary" disabled={working} onClick={() => { setLifecycleError(""); setLifecycleAction("suspend"); }} type="button">Suspend access</button> : null}{person.status === "suspended" ? <button className="workflow-button" disabled={working} onClick={() => { setLifecycleError(""); setLifecycleAction("reactivate"); }} type="button">Reactivate principal</button> : null}{person.status !== "revoked" ? <button className="workflow-button workflow-button--danger" disabled={working} onClick={() => { setLifecycleError(""); setLifecycleAction("revoke"); }} type="button">Revoke permanently</button> : <p>Revocation is terminal.</p>}</div></article>
+            <article className="card"><h2>Lifecycle controls</h2><p>Each suspension, reactivation or permanent revocation requires a separate review and reason.</p><div className="people-actions">{person.status === "active" ? <button className="button button--secondary" disabled={working} onClick={() => { setLifecycleError(""); setLifecycleAction("suspend"); }} type="button">Suspend access</button> : null}{person.status === "suspended" ? <button className="button" disabled={working} onClick={() => { setLifecycleError(""); setLifecycleAction("reactivate"); }} type="button">Reactivate principal</button> : null}{person.status !== "revoked" ? <button className="button workflow-button--danger" disabled={working} onClick={() => { setLifecycleError(""); setLifecycleAction("revoke"); }} type="button">Revoke permanently</button> : <p>Revocation is terminal.</p>}</div></article>
           </div>
         )}
-        {portfolio && person && options ? <div className="workflow-dialog-backdrop"><section aria-labelledby="portfolio-dialog-title" aria-modal="true" className="workflow-dialog workflow-stack" role="dialog">
-          <div><p className="foundation-eyebrow">Review full portfolio</p><h2 id="portfolio-dialog-title">Edit centre portfolio</h2><p><strong>{person.displayName} · {portfolio.roleName}</strong></p><p>Select the complete resulting portfolio. Saving atomically replaces the existing centre set for this assignment.</p></div>
-          <fieldset><legend>Authorised centres</legend><div className="people-checklist">{options.centres.map((centre) => <label key={centre.id}><input type={portfolio.scopeMode === "single_centre" ? "radio" : "checkbox"} name="portfolio-centre" checked={portfolio.selectedCentres.includes(centre.id)} onChange={(event) => setPortfolio((current) => current ? { ...current, selectedCentres: current.scopeMode === "single_centre" ? (event.target.checked ? [centre.id] : []) : event.target.checked ? [...current.selectedCentres, centre.id] : current.selectedCentres.filter((id) => id !== centre.id) } : current)} />{centre.name}</label>)}</div></fieldset>
-          <aside className="workflow-notice" aria-label="Resulting portfolio"><strong>Resulting portfolio</strong><ul>{portfolio.selectedCentres.map((id) => <li key={id}>{centreName(id)}</li>)}</ul>{portfolio.selectedCentres.length === 0 ? <p>No centres selected.</p> : null}</aside>
-          <label>Portfolio change reason<textarea autoFocus maxLength={500} onChange={(event) => setPortfolioReason(event.target.value)} rows={4} value={portfolioReason} /></label>
-          {portfolioError ? <div className="workflow-dialog__error" role="alert"><strong>Action not completed.</strong><p>{portfolioError}</p></div> : null}
-          <div className="people-actions"><button className="workflow-button workflow-button--secondary" disabled={working} onClick={() => { setPortfolio(null); setPortfolioReason(""); setPortfolioError(""); }} type="button">Go back</button><button className="workflow-button" disabled={working || !portfolioReason.trim() || portfolioUnchanged || portfolioSelectionInvalid} onClick={() => void savePortfolio()} type="button">{working ? "Saving…" : "Save full portfolio"}</button></div>
-        </section></div> : null}
+        {portfolio && person && options ? (
+          <Dialog
+            eyebrow="Review full portfolio"
+            title="Edit centre portfolio"
+            onDismiss={() => { if (!working) { setPortfolio(null); setPortfolioReason(""); setPortfolioError(""); } }}
+            footer={
+              <>
+                <button className="button button--secondary" disabled={working} onClick={() => { setPortfolio(null); setPortfolioReason(""); setPortfolioError(""); }} type="button">Go back</button>
+                <button className="button" disabled={working || !portfolioReason.trim() || portfolioUnchanged || portfolioSelectionInvalid} onClick={() => void savePortfolio()} type="button">{working ? "Saving…" : "Save full portfolio"}</button>
+              </>
+            }
+          >
+            <div>
+              <p><strong>{person.displayName} · {portfolio.roleName}</strong></p>
+              <p>Select the complete resulting portfolio. Saving atomically replaces the existing centre set for this assignment.</p>
+            </div>
+            <fieldset><legend>Authorised centres</legend><div className="people-checklist">{options.centres.map((centre) => <label key={centre.id}><input type={portfolio.scopeMode === "single_centre" ? "radio" : "checkbox"} name="portfolio-centre" checked={portfolio.selectedCentres.includes(centre.id)} onChange={(event) => setPortfolio((current) => current ? { ...current, selectedCentres: current.scopeMode === "single_centre" ? (event.target.checked ? [centre.id] : []) : event.target.checked ? [...current.selectedCentres, centre.id] : current.selectedCentres.filter((id) => id !== centre.id) } : current)} />{centre.name}</label>)}</div></fieldset>
+            <aside className="workflow-notice" aria-label="Resulting portfolio"><strong>Resulting portfolio</strong><ul>{portfolio.selectedCentres.map((id) => <li key={id}>{centreName(id)}</li>)}</ul>{portfolio.selectedCentres.length === 0 ? <p>No centres selected.</p> : null}</aside>
+            <label>Portfolio change reason<textarea data-autofocus maxLength={500} onChange={(event) => setPortfolioReason(event.target.value)} rows={4} value={portfolioReason} /></label>
+            {portfolioUnchanged && !portfolioSelectionInvalid ? <p className="metric__note">The portfolio is unchanged, so there is nothing to save yet.</p> : null}
+            {portfolioError ? <div className="workflow-dialog__error" role="alert"><strong>Action not completed.</strong><p>{portfolioError}</p></div> : null}
+          </Dialog>
+        ) : null}
         {removal && person ? <ConfirmationDialog title="End assignment?" description="This ends the selected assignment immediately. Other independent assignments remain unchanged." targetName={`${person.displayName} · ${removal.roleName}`} reasonLabel="Assignment end reason" confirmLabel="End assignment" reason={removalReason} error={removalError} working={working} destructive onReason={setRemovalReason} onCancel={() => { setRemoval(null); setRemovalReason(""); setRemovalError(""); }} onConfirm={() => void confirmRemoval()} /> : null}
         {lifecycleAction && person ? <ConfirmationDialog
           title={lifecycleAction === "suspend" ? "Suspend access?" : lifecycleAction === "reactivate" ? "Reactivate access?" : "Revoke access permanently?"}
@@ -671,7 +844,20 @@ export function PersonHistoryWorkspace({ principalId }: Readonly<{ principalId: 
       <WorkflowShell eyebrow="People & Access" title="Access history" summary="Append-only material access changes with safe attribution and no tokens or Microsoft object identifiers.">
         {error ? <WorkflowState kind="error" title="History unavailable" message="History is not available in your current organisation scope." /> : null}
         {!history && !error ? <WorkflowState kind="loading" title="Loading access history" message="Reading append-only audit events…" /> : null}
-        {history ? <ol className="timeline workflow-card">{history.events.map((event) => <li key={event.id}><span><strong>{event.action.replaceAll("_", " ")}</strong><small>{formatDate(event.occurredAt)}</small></span><span>{event.actorDisplayName ?? "System workflow"}</span><p>{event.reasonRecorded ? "A reason was recorded." : "No reason field applies."}</p></li>)}</ol> : null}
+        {history && history.events.length === 0 ? (
+          <WorkflowState kind="empty" title="No recorded access changes" message="Material access changes appear here as they happen." />
+        ) : null}
+        {history && history.events.length > 0 ? (
+          <ol className="timeline card">
+            {history.events.map((event) => (
+              <li key={event.id}>
+                <span><strong>{event.action.replaceAll("_", " ")}</strong></span>
+                <span className="timeline__when">{formatDate(event.occurredAt)} · {event.actorDisplayName ?? "System workflow"}</span>
+                <p>{event.reasonRecorded ? "A reason was recorded." : "No reason field applies."}</p>
+              </li>
+            ))}
+          </ol>
+        ) : null}
       </WorkflowShell>
     </BusinessWorkspaceGate>
   );
@@ -710,8 +896,8 @@ export function InvitationAcceptanceWorkspace() {
         {state.kind === "loading" ? <p role="status">Preparing secure Microsoft sign-in…</p> : null}
         {state.kind === "signed-out" || state.kind === "account-selection-required" ? <button className="auth-button" onClick={() => void signIn()} type="button">Sign in with Bright Steps Microsoft</button> : null}
         {state.kind === "unavailable" ? <p className="workflow-notice" role="alert">Microsoft sign-in is temporarily unavailable.</p> : null}
-        {state.kind === "signed-in" && !outcome ? <form className="people-form" onSubmit={accept}><label>Invitation code<input value={code} onChange={(event) => setCode(event.target.value)} autoComplete="one-time-code" required /></label><p>The code is sent in the invitation message and is submitted securely in the request body.</p><button className="auth-button" disabled={working || !code.trim()} type="submit">{working ? "Verifying…" : "Verify and continue"}</button></form> : null}
-        {outcome?.outcome === "activated" ? <div className="auth-access-state" role="status"><h2>Centre Success access ready</h2><p>Your reviewed access package is active. Return to Centre Success to continue.</p><Link className="workflow-link-button" href="/">Open Centre Success</Link></div> : null}
+        {state.kind === "signed-in" && !outcome ? <form className="people-form" onSubmit={accept}><label>Invitation code<input value={code} onChange={(event) => setCode(event.target.value)} autoComplete="one-time-code" inputMode="text" spellCheck={false} required /></label><p className="metric__note">The code is sent in the invitation message and is submitted securely in the request body. It is never shown in the address bar.</p><button className="auth-button" disabled={working || !code.trim()} type="submit">{working ? "Verifying…" : "Verify and continue"}</button></form> : null}
+        {outcome?.outcome === "activated" ? <div className="auth-access-state" role="status"><h2>Centre Success access ready</h2><p>Your reviewed access package is active. Return to Centre Success to continue.</p><Link className="button" href="/">Open Centre Success</Link></div> : null}
         {outcome?.outcome === "awaiting_approval" ? <div className="auth-access-state" role="status"><h2>Awaiting independent approval</h2><p>Your Microsoft identity was verified. No Centre Success access is active until another current System Administrator approves the exact package.</p></div> : null}
         {outcome?.outcome === "administrator_review" || error === "review" ? <div className="auth-access-state" role="status"><h2>Administrator review required</h2><p>Your identity could not be safely correlated. No Centre Success access was activated.</p></div> : null}
         {error === "expired" ? <div className="auth-access-state" role="alert"><h2>Invitation expired</h2><p>Ask a System Administrator to create a new invitation. Expired invitations cannot be resent.</p></div> : null}

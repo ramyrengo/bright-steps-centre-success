@@ -6,6 +6,7 @@ import { useCallback, useEffect, useState } from "react";
 
 import type { quarterly_reviews } from "../lib/client.generated";
 import { useAuthenticatedCentreSuccessClient } from "../lib/centre-success-client";
+import { DataList, DataListRow, Section, StatusBadge } from "./design-system";
 import { BusinessWorkspaceGate, formatDate, StatusPill, WorkflowShell, WorkflowState } from "./workflow-shell";
 
 type Centre = quarterly_reviews.AuditCentreSummary;
@@ -100,12 +101,12 @@ export function AreaManagerWorkspace() {
             <p className="internal-audit-framing">Scores shown below are internal Bright Steps quality/compliance measures, not ACECQA assessments or NQS ratings.</p>
             <div className="card-grid">
               {centres.map((centre) => (
-                <article className="workflow-card" key={centre.id}>
+                <article className="card" key={centre.id}>
                   <h3>{centre.name}</h3>
                   <p>{centre.openCorrectiveActions} open corrective action{centre.openCorrectiveActions === 1 ? "" : "s"}</p>
                   <p>Previous BSA Internal Audit Score: {centre.previousScore === undefined ? "No previous review" : `${centre.previousScore}%`}</p>
-                  <button className="workflow-button workflow-button--secondary" type="button" disabled={working} onClick={() => void prepare(centre.id)}>
-                    Prepare visit
+                  <button className="button button--secondary" type="button" disabled={working} onClick={() => void prepare(centre.id)}>
+                    Prepare visit<span className="visually-hidden"> at {centre.name}</span>
                   </button>
                 </article>
               ))}
@@ -113,20 +114,41 @@ export function AreaManagerWorkspace() {
           </section>
         ) : null}
 
-        <section aria-labelledby="verification-title">
-          <div className="section-heading"><h2 id="verification-title">Awaiting verification</h2><span>{queue.length} submitted</span></div>
-          {centres !== null && queue.length === 0 ? <WorkflowState kind="empty" title="Nothing awaiting verification" message="Submitted remediation will appear here." /> : null}
-          <div className="card-grid">
-            {queue.map((action) => (
-              <article className="workflow-card" key={action.id}>
-                <StatusPill tone={action.severity === "CRITICAL" ? "critical" : "warning"}>{action.severity}</StatusPill>
-                <h3>{action.title}</h3>
-                <p>{action.centreName} · submitted {action.submittedAt ? formatDate(action.submittedAt) : "recently"}</p>
-                <Link className="workflow-link-button" href={`/area-manager/verification/${action.id}`}>Review evidence</Link>
-              </article>
-            ))}
-          </div>
-        </section>
+        <Section
+          title="Awaiting verification"
+          description="Remediation your centres have submitted for independent review."
+          count={`${queue.length} submitted`}
+        >
+          {centres !== null && queue.length === 0 ? (
+            <WorkflowState kind="empty" title="Nothing awaiting verification" message="Submitted remediation will appear here." />
+          ) : (
+            <DataList label="Remediation awaiting verification">
+              {queue.map((action) => (
+                <DataListRow
+                  key={action.id}
+                  title={action.title}
+                  headingLevel={3}
+                  severity={action.severity === "CRITICAL" ? "critical" : "warning"}
+                  badge={
+                    <StatusBadge tone={action.severity === "CRITICAL" ? "critical" : "warning"}>
+                      {action.severity}
+                    </StatusBadge>
+                  }
+                  facts={[
+                    { term: "Centre", value: action.centreName },
+                    { term: "Submitted", value: action.submittedAt ? formatDate(action.submittedAt) : "Recently" },
+                  ]}
+                  action={
+                    <Link className="button button--secondary" href={`/area-manager/verification/${action.id}`}>
+                      Review evidence
+                      <span className="visually-hidden"> — {action.title}</span>
+                    </Link>
+                  }
+                />
+              ))}
+            </DataList>
+          )}
+        </Section>
       </WorkflowShell>
     </BusinessWorkspaceGate>
   );
