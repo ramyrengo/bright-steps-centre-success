@@ -1,7 +1,7 @@
 "use client";
 
 import Link from "next/link";
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 
 import {
   AnswerControl,
@@ -10,11 +10,12 @@ import {
   ErrorState,
   LoadingSkeleton,
   Notice,
-  PageHeader,
   StatusBadge,
 } from "./design-system";
+import { useBlockLeaveWhen } from "./app-shell";
 import {
   backendNotAvailableGateway,
+  businessDateLabel,
   timelinessLabel,
   timelinessTone,
   type CentreStandardsGateway,
@@ -28,11 +29,11 @@ import {
  * Centre Standards check surfaces.
  *
  * The completion experience is the only screen in Centre Success used standing
- * up, one-handed, outdoors and in a hurry. It therefore shows one question at a
- * time, carries no navigation chrome, and keeps every answer in React memory
- * until a single submit. Nothing is written to browser storage: unfinished
- * answers are ephemeral by design, so the experience warns before they would be
- * discarded rather than quietly persisting business content.
+ * up, one-handed, outdoors and in a hurry. It shows one question at a time,
+ * carries no navigation chrome, and keeps every answer in React memory until a
+ * single submit. Nothing is written to browser storage: unfinished answers are
+ * ephemeral by design, so the experience guards the ways out rather than
+ * quietly persisting business content.
  */
 
 /**
@@ -41,9 +42,7 @@ import {
  * see it. The wording comes from the backend so it cannot drift from what was
  * approved.
  */
-export function SyntheticNotice({
-  notice,
-}: Readonly<{ notice?: string }>) {
+export function SyntheticNotice({ notice }: Readonly<{ notice?: string }>) {
   if (!notice) return null;
   return (
     <p className="synthetic-notice">
@@ -53,16 +52,30 @@ export function SyntheticNotice({
   );
 }
 
-function CheckIdentity({ check }: Readonly<{ check: StandardsCheckSummary }>) {
+/**
+ * A compact header for the check screens.
+ *
+ * The standard name is context, not the task. Rendering it at page-display size
+ * made it 95px of the first screenful while the actual question sat at 20px
+ * below it, which inverts what an Educator needs to see first. The heading
+ * stays a real `h1` for structure and is simply not the loudest thing present.
+ */
+function CheckHeader({ check }: Readonly<{ check: StandardsCheckSummary }>) {
   return (
-    <>
-      <p className="standards-card__meta">
-        {check.centreName} · {check.businessDate}
-      </p>
-      <StatusBadge tone={timelinessTone(check.timeliness)}>
-        {timelinessLabel(check)}
-      </StatusBadge>
-    </>
+    <header className="check-header">
+      <p className="check-header__eyebrow">Centre Standards</p>
+      <h1 className="check-header__title" data-page-focus tabIndex={-1}>
+        {check.standardName}
+      </h1>
+      <div className="check-header__meta">
+        <StatusBadge tone={timelinessTone(check.timeliness)}>
+          {timelinessLabel(check)}
+        </StatusBadge>
+        <span>
+          {check.centreName} · {businessDateLabel(check.businessDate)}
+        </span>
+      </div>
+    </header>
   );
 }
 
@@ -90,6 +103,11 @@ export function StandardsCheckCompletion({
   const [step, setStep] = useState(0);
   const [phase, setPhase] = useState<CompletionPhase>({ kind: "answering" });
 
+  // A synchronous lock. `disabled` and `setPhase` both settle on the next
+  // render, so two native clicks dispatched in one batch would each see the
+  // stale state and submit. A ref changes on the first call.
+  const inFlight = useRef(false);
+
   const total = check.questions.length;
   const question = check.questions[step];
   const answered = question ? answers[question.questionId] : undefined;
@@ -100,8 +118,12 @@ export function StandardsCheckCompletion({
   const dirty = Object.keys(answers).length > 0;
   const finished = phase.kind === "completed" || phase.kind === "already";
 
-  // Answers live only in memory, so leaving would discard them. The browser
-  // prompt is the only honest guard available without persisting business data.
+  // Guards the shell's own leave paths — the brand link and sign out — which
+  // discard answers through client-side navigation without the browser ever
+  // asking.
+  useBlockLeaveWhen(dirty && !finished);
+
+  // Covers a real page unload, which the in-app guard cannot see.
   useEffect(() => {
     if (!dirty || finished) return;
     const warn = (event: BeforeUnloadEvent) => {
@@ -117,9 +139,8 @@ export function StandardsCheckCompletion({
   }, []);
 
   const onSubmit = useCallback(() => {
-    // Guard the in-flight case in state as well as in the disabled attribute,
-    // so a double tap that beats React's render cannot submit twice.
-    if (phase.kind === "submitting" || !allAnswered) return;
+    if (inFlight.current || !allAnswered) return;
+    inFlight.current = true;
     setPhase({ kind: "submitting" });
     void submit(
       check.questions.map((item) => ({
@@ -128,6 +149,8 @@ export function StandardsCheckCompletion({
       })),
     ).then(
       (result) => {
+        // Both outcomes are terminal, so the lock is deliberately never
+        // released: a completed check must not reopen the submission path.
         if (result.outcome === "COMPLETED") {
           setPhase({
             kind: "completed",
@@ -142,10 +165,14 @@ export function StandardsCheckCompletion({
           completedByRequester: result.completedByRequester,
         });
       },
-      // A recoverable failure must never unmount the form or clear an answer.
-      () => setPhase({ kind: "error" }),
+      () => {
+        // Recoverable: release the lock so retry works, and never unmount the
+        // form or clear an answer.
+        inFlight.current = false;
+        setPhase({ kind: "error" });
+      },
     );
-  }, [allAnswered, answers, check.questions, phase.kind, submit]);
+  }, [allAnswered, answers, check.questions, submit]);
 
   if (phase.kind === "completed") {
     return (
@@ -194,18 +221,16 @@ export function StandardsCheckCompletion({
 
   return (
     <div className="standards-check">
-      <PageHeader
-        eyebrow="Centre Standards"
-        title={check.standardName}
-        meta={<CheckIdentity check={check} />}
-      />
-      <SyntheticNotice notice={check.syntheticNotice} />
+      <CheckHeader check={check} />
+      <SyntheticNotice notice={check.synthetic ? check.syntheticNotice : undefined} />
       <CheckProgress current={step + 1} total={total} />
 
       {phase.kind === "error" ? (
+        // A network or timeout failure may have reached the server, so the copy
+        // must not claim the check definitely was not recorded.
         <ErrorState
-          title="That didn't send"
-          message="Your answers are still here. Nothing has been recorded yet — try again when you have a moment."
+          title="We couldn't confirm your check"
+          message="We couldn't confirm whether your check was recorded. Your answers are still here; it's safe to try again."
           onRetry={onSubmit}
         />
       ) : null}
@@ -222,7 +247,7 @@ export function StandardsCheckCompletion({
             onChange={(value) => choose(question.questionId, value)}
             disabled={submitting}
           />
-          <div className="check-actions">
+          <div className="check-actions" data-has-back={step > 0 ? "true" : undefined}>
             {step > 0 ? (
               <button
                 className="button button--secondary"
@@ -262,49 +287,63 @@ export function StandardsCheckCompletion({
 /**
  * What a principal with read authority sees, and what a completed occurrence
  * shows when reopened. It offers no completion control: authority comes from
- * the backend, never from a role name.
+ * the backend, never from a role name, and a completed occurrence carries no
+ * completion authority at all.
  */
 export function StandardsCheckReadOnly({
   check,
   note,
 }: Readonly<{ check: StandardsCheckDetail; note?: string }>) {
-  const completed =
-    check.timeliness === "COMPLETED_ON_TIME" || check.timeliness === "COMPLETED_LATE";
+  const completed = check.state === "COMPLETED";
+  const responses = check.state === "COMPLETED" ? check.responses : undefined;
   return (
     <div className="standards-check">
-      <PageHeader
-        eyebrow="Centre Standards"
-        title={check.standardName}
-        summary={
-          completed
-            ? "This check is complete. It is shown here as a record and cannot be changed."
-            : "This check has not been completed yet."
-        }
-        meta={<CheckIdentity check={check} />}
-      />
-      <SyntheticNotice notice={check.syntheticNotice} />
+      <CheckHeader check={check} />
+      <SyntheticNotice notice={check.synthetic ? check.syntheticNotice : undefined} />
       {note ? <Notice title={note} /> : null}
-      {check.responses && check.responses.length > 0 ? (
-        <section aria-labelledby="standards-responses-title">
-          <h2 id="standards-responses-title">What was recorded</h2>
-          <ul className="standards-responses" role="list">
-            {check.responses.map((response) => (
-              <li key={response.questionId}>
-                <span className="standards-responses__question">{response.wording}</span>
-                <span className="standards-responses__answer">{response.answerLabel}</span>
-              </li>
-            ))}
-          </ul>
+
+      {completed ? (
+        responses && responses.length > 0 ? (
+          <section className="check-record" aria-labelledby="standards-responses-title">
+            <h2 id="standards-responses-title" className="check-record__title">
+              What was recorded
+            </h2>
+            <ol className="standards-responses" role="list">
+              {responses.map((response) => (
+                <li key={response.questionId}>
+                  <span className="standards-responses__question">{response.wording}</span>
+                  <span className="standards-responses__answer">{response.answerLabel}</span>
+                </li>
+              ))}
+            </ol>
+            <p className="check-record__footnote">
+              Recorded answers cannot be changed. A correction is a separate step.
+            </p>
+          </section>
+        ) : (
+          <Notice title="The recorded answers are not available to you." />
+        )
+      ) : (
+        <section className="check-record" aria-labelledby="standards-pending-title">
+          <h2 id="standards-pending-title" className="check-record__title">
+            Not completed yet
+          </h2>
+          <p className="check-record__body">
+            This check has {check.questionCount} question
+            {check.questionCount === 1 ? "" : "s"} and has not been answered.
+          </p>
         </section>
-      ) : completed ? (
-        <Notice title="The recorded answers are not available to you." />
-      ) : null}
+      )}
+
+      <Link className="button button--secondary" href="/standards">
+        Back to checks
+      </Link>
     </div>
   );
 }
 
 /**
- * Chooses the surface from backend-supplied authority and state. A completed
+ * Chooses the surface from backend-supplied state and authority. A completed
  * occurrence is always read-only; an open one offers completion only to a
  * principal the backend says may complete it.
  */
@@ -315,10 +354,8 @@ export function CentreStandardsCheckView({
   check: StandardsCheckDetail;
   submit: (answers: readonly CheckAnswer[]) => Promise<CompleteCheckResult>;
 }>) {
-  const completed =
-    check.timeliness === "COMPLETED_ON_TIME" || check.timeliness === "COMPLETED_LATE";
-  if (completed) return <StandardsCheckReadOnly check={check} />;
-  if (!check.authority.canComplete) {
+  if (check.state === "COMPLETED") return <StandardsCheckReadOnly check={check} />;
+  if (!check.canComplete) {
     return (
       <StandardsCheckReadOnly
         check={check}
@@ -360,7 +397,7 @@ export function CentreStandardsCheck({
     [gateway, occurrenceId],
   );
 
-  if (state === "loading") return <LoadingSkeleton label="Opening your check." rows={3} />;
+  if (state === "loading") return <CheckSkeleton />;
   if (state === "error" || !check) {
     return (
       <ErrorState
@@ -375,3 +412,22 @@ export function CentreStandardsCheck({
   }
   return <CentreStandardsCheckView check={check} submit={submit} />;
 }
+
+/** Reserves the shape of the question that is coming, not a generic bar stack. */
+export function CheckSkeleton() {
+  return (
+    <div className="standards-check" role="status" aria-live="polite" aria-busy="true">
+      <span className="visually-hidden">Opening your check.</span>
+      <div className="check-skeleton" aria-hidden="true">
+        <span className="skeleton__bar skeleton__bar--short" />
+        <span className="skeleton__bar skeleton__bar--title" />
+        <span className="check-skeleton__progress" />
+        <span className="skeleton__bar skeleton__bar--wide" />
+        <span className="check-skeleton__option" />
+        <span className="check-skeleton__option" />
+      </div>
+    </div>
+  );
+}
+
+export { LoadingSkeleton };

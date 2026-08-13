@@ -2,61 +2,76 @@
  * The minimum frontend-facing interface Centre Standards 4A needs.
  *
  * This file is a UX-lane placeholder, not a backend contract. It describes the
- * smallest shape the completion experience requires, expressed in
- * presentation terms, so the components can be built and tested before the
- * backend exists. It deliberately guesses no database field: everything here
- * is either an opaque identifier the UI passes back untouched, or a value the
- * backend must render safe for an Educator to read.
+ * smallest shape the completion experience requires, expressed in presentation
+ * terms, so the components can be built and tested before the backend exists.
+ * It deliberately guesses no database field: everything here is either an
+ * opaque identifier the UI passes back untouched, or a value the backend must
+ * render safe for an Educator to read.
  *
- * When Codex publishes the real endpoints, the generated client replaces these
- * types and `CentreStandardsGateway` gains one adapter. Nothing else changes.
+ * The shapes are small discriminated unions rather than one wide optional
+ * record, so the states that must never occur are unrepresentable:
  *
- * Two rules are encoded in the shapes below rather than left to convention:
+ * - a `COMPLETED` occurrence cannot carry completion authority;
+ * - an `OPEN` occurrence cannot carry recorded responses;
+ * - a synthetic standard cannot omit its notice;
+ * - `unsupported` cannot carry an open-work assertion at all.
  *
- * 1. Absence is never zero. A list is optional, and is present only when the
- *    source was actually established. `openChecks: []` means "checked, none
- *    due"; `openChecks: undefined` means "not established".
- * 2. Nothing an Educator must not see has a place to live. There is no field
- *    for severity, due days, remediation, verification, finding or
- *    corrective-action terminology, or template/version identifiers.
+ * Absence is never zero. `openChecks` is present only where the source was
+ * actually established, and an empty array under `partial` coverage still may
+ * not be rendered as an all-clear.
  */
 
-/** Derived by the backend from pinned facts and one trusted request time. */
-export type CheckTimeliness =
-  | "DUE"
-  | "OVERDUE"
-  | "COMPLETED_ON_TIME"
-  | "COMPLETED_LATE";
-
-/**
- * What this principal may do with this occurrence, decided by the backend from
- * capability and scope. The UI never infers authority from a role name and
- * never shows a control it has not been granted.
- */
-export interface CheckAuthority {
-  canComplete: boolean;
-  canRead: boolean;
-}
-
-export interface StandardsCheckSummary {
+/** Identity shared by every occurrence shape. */
+export interface CheckIdentity {
   /** Opaque route identifier. Passed back untouched, never displayed. */
   occurrenceId: string;
-  /** Safe display name of the standard, e.g. "Centre Standards Pilot — Staging". */
+  /** Safe display name, e.g. "Centre Standards Pilot — Staging". */
   standardName: string;
-  /** True for staging pilot content, which must carry the synthetic notice. */
-  synthetic: boolean;
-  centreId: string;
   centreName: string;
-  /** Centre-local business date the occurrence belongs to. */
+  /** Centre-local business date, `YYYY-MM-DD`. */
   businessDate: string;
-  /** Presentation-ready centre-local due time, e.g. "9:00am". */
-  dueLocalTime: string;
-  timeliness: CheckTimeliness;
-  /** Presentation-ready centre-local completion time, e.g. "7:42am". */
-  completedLocalTime?: string;
   questionCount: number;
-  authority: CheckAuthority;
 }
+
+/**
+ * Staging pilot content must carry its approved notice, so the two travel
+ * together. The wording comes from the backend and is never composed in the
+ * browser, which is what stops the disclaimer drifting from what was approved.
+ */
+export type CheckOrigin =
+  | { synthetic: true; syntheticNotice: string }
+  | { synthetic: false };
+
+/**
+ * `canComplete` exists only while an occurrence is open, so a completed check
+ * cannot claim completion authority. There is no `canRead`: an occurrence the
+ * viewer may not read is not returned at all.
+ */
+export interface OpenCheckState {
+  state: "OPEN";
+  timeliness: "DUE" | "OVERDUE";
+  /** Presentation-ready centre-local time, e.g. "9:00am". */
+  dueLocalTime: string;
+  canComplete: boolean;
+}
+
+export interface CompletedCheckState {
+  state: "COMPLETED";
+  timeliness: "COMPLETED_ON_TIME" | "COMPLETED_LATE";
+  dueLocalTime: string;
+  completedLocalTime: string;
+}
+
+export type CheckTimeliness =
+  | OpenCheckState["timeliness"]
+  | CompletedCheckState["timeliness"];
+
+/** An open occurrence as the landing list shows it. */
+export type OpenCheckSummary = CheckIdentity & CheckOrigin & OpenCheckState;
+
+export type StandardsCheckSummary =
+  | OpenCheckSummary
+  | (CheckIdentity & CheckOrigin & CompletedCheckState);
 
 /** One permitted answer. `value` is opaque; only `label` is ever shown. */
 export interface CheckAnswerOption {
@@ -78,14 +93,16 @@ export interface CheckRecordedResponse {
   answerLabel: string;
 }
 
-export interface StandardsCheckDetail extends StandardsCheckSummary {
-  /** Exact approved synthetic wording. Supplied by the backend, never composed
-   *  in the browser, so the disclaimer cannot drift from what was approved. */
-  syntheticNotice?: string;
-  questions: CheckQuestion[];
-  /** Present only when completed and the viewer is authorised to read answers. */
-  responses?: CheckRecordedResponse[];
-}
+/** Recorded responses exist only on a completed occurrence, and only where the
+ *  viewer is authorised to read them. */
+export type StandardsCheckDetail =
+  | (CheckIdentity & CheckOrigin & OpenCheckState & { questions: CheckQuestion[] })
+  | (CheckIdentity &
+      CheckOrigin &
+      CompletedCheckState & {
+        questions: CheckQuestion[];
+        responses?: CheckRecordedResponse[];
+      });
 
 export interface CheckAnswer {
   questionId: string;
@@ -113,22 +130,18 @@ export type CompleteCheckResult =
       completedByRequester: boolean;
     };
 
-export type StandardsWorkspaceStatus = "ready" | "partial" | "unsupported";
-
-export interface StandardsWorkspace {
-  status: StandardsWorkspaceStatus;
-  asOf: string;
-  /** Open occurrences only. Absent when the source was not established, so an
-   *  unavailable source can never render as "nothing due". */
-  openChecks?: StandardsCheckSummary[];
-  /** Names what could not be checked. Present only when something could not. */
-  warning?: string;
-}
-
 /**
- * The three operations the 4A experience needs. Implemented against the
- * generated Encore client once the endpoints exist.
+ * `unsupported` carries no open-work field at all, so it cannot assert
+ * anything about work the request never looked for. `partial` always carries a
+ * warning, and its `openChecks` are the checks that *were* established — never
+ * evidence that no others exist.
  */
+export type StandardsWorkspace =
+  | { status: "ready"; openChecks: OpenCheckSummary[] }
+  | { status: "partial"; openChecks: OpenCheckSummary[]; warning: string }
+  | { status: "unsupported" };
+
+/** The three operations the 4A experience needs. */
 export interface CentreStandardsGateway {
   loadWorkspace(): Promise<StandardsWorkspace>;
   loadCheck(occurrenceId: string): Promise<StandardsCheckDetail>;
@@ -165,9 +178,9 @@ export function timelinessLabel(check: StandardsCheckSummary): string {
     case "OVERDUE":
       return "Overdue";
     case "COMPLETED_ON_TIME":
-      return `Completed ${check.completedLocalTime ?? ""}`.trim();
+      return `Completed ${check.completedLocalTime}`;
     case "COMPLETED_LATE":
-      return `Completed late · ${check.completedLocalTime ?? ""}`.trim();
+      return `Completed late · ${check.completedLocalTime}`;
   }
 }
 
@@ -184,4 +197,17 @@ export function timelinessTone(
     case "COMPLETED_LATE":
       return "warning";
   }
+}
+
+/** Renders the stored business date as a person would say it. */
+export function businessDateLabel(businessDate: string): string {
+  const match = /^(\d{4})-(\d{2})-(\d{2})$/.exec(businessDate);
+  if (!match) return businessDate;
+  const date = new Date(Date.UTC(Number(match[1]), Number(match[2]) - 1, Number(match[3])));
+  return new Intl.DateTimeFormat("en-AU", {
+    weekday: "short",
+    day: "numeric",
+    month: "short",
+    timeZone: "UTC",
+  }).format(date);
 }

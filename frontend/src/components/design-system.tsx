@@ -493,10 +493,20 @@ export function CompletionState({
   action?: ReactNode;
 }>) {
   const titleId = useId();
+  const heading = useRef<HTMLHeadingElement>(null);
+
+  // Completion replaces the form, so focus must be moved deliberately rather
+  // than left on a control that no longer exists. Without this, a keyboard or
+  // screen-reader user is dropped at the top of the document with no idea the
+  // check succeeded.
+  useEffect(() => {
+    heading.current?.focus();
+  }, []);
+
   return (
     <section className="completion-state" aria-labelledby={titleId} role="status">
       <span className="completion-state__mark" aria-hidden="true">✓</span>
-      <h1 id={titleId} data-page-focus tabIndex={-1}>{title}</h1>
+      <h1 id={titleId} ref={heading} data-page-focus tabIndex={-1}>{title}</h1>
       <p className="completion-state__message">{message}</p>
       {detail ? <p className="completion-state__detail">{detail}</p> : null}
       {action ? <div className="completion-state__action">{action}</div> : null}

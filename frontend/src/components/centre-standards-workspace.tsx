@@ -3,22 +3,16 @@
 import Link from "next/link";
 import { useCallback, useEffect, useState } from "react";
 
-import {
-  EmptyState,
-  ErrorState,
-  LoadingSkeleton,
-  Notice,
-  PageHeader,
-  StatusBadge,
-} from "./design-system";
+import { EmptyState, ErrorState, Notice, PageHeader, StatusBadge } from "./design-system";
 import { AppShell } from "./app-shell";
 import { SyntheticNotice } from "./centre-standards-check";
 import {
   backendNotAvailableGateway,
+  businessDateLabel,
   timelinessLabel,
   timelinessTone,
   type CentreStandardsGateway,
-  type StandardsCheckSummary,
+  type OpenCheckSummary,
   type StandardsWorkspace,
 } from "./centre-standards-contract";
 
@@ -29,16 +23,18 @@ import {
  * Only open checks appear: completed history is deliberately absent in 4A,
  * because an Educator's task list should shrink as they work, not grow.
  *
- * The unknown-is-not-zero rule established in Quality applies here too, and
- * matters more: "no checks due" and "we could not check" look identical to a
- * reader but mean opposite things when someone is deciding whether to walk the
- * playground.
+ * The unknown-is-not-zero rule established in Quality applies here and matters
+ * more: "nothing due" and "we could not check" look identical to a reader but
+ * mean opposite things when someone is deciding whether to walk the playground.
+ * Only `ready` may state an all-clear.
  */
 
-export function StandardsCheckCard({ check }: Readonly<{ check: StandardsCheckSummary }>) {
-  const canComplete = check.authority.canComplete;
+export function StandardsCheckCard({ check }: Readonly<{ check: OpenCheckSummary }>) {
   return (
     <li className="standards-card" data-timeliness={check.timeliness}>
+      {/* The centre leads, because in 4A every card carries the same standard
+          name and the centre is what actually distinguishes one from another. */}
+      <p className="standards-card__centre">{check.centreName}</p>
       <div className="standards-card__head">
         <h3 className="standards-card__title">{check.standardName}</h3>
         <StatusBadge tone={timelinessTone(check.timeliness)}>
@@ -46,17 +42,36 @@ export function StandardsCheckCard({ check }: Readonly<{ check: StandardsCheckSu
         </StatusBadge>
       </div>
       <p className="standards-card__meta">
-        {check.centreName} · {check.questionCount} question
+        {businessDateLabel(check.businessDate)} · {check.questionCount} question
         {check.questionCount === 1 ? "" : "s"}
       </p>
       <Link
-        className={`button ${canComplete ? "button--accent" : "button--secondary"}`}
+        className={`button ${check.canComplete ? "button--accent" : "button--secondary"}`}
         href={`/standards/checks/${check.occurrenceId}`}
       >
-        {canComplete ? "Start check" : "View check"}
-        <span className="visually-hidden"> — {check.standardName}</span>
+        {check.canComplete ? "Start check" : "View check"}
+        <span className="visually-hidden">
+          {" "}
+          — {check.standardName} at {check.centreName}
+        </span>
       </Link>
     </li>
+  );
+}
+
+function CheckList({ checks }: Readonly<{ checks: readonly OpenCheckSummary[] }>) {
+  const synthetic = checks.find((check) => check.synthetic);
+  return (
+    <>
+      <SyntheticNotice
+        notice={synthetic?.synthetic ? synthetic.syntheticNotice : undefined}
+      />
+      <ul className="standards-list" role="list">
+        {checks.map((check) => (
+          <StandardsCheckCard check={check} key={check.occurrenceId} />
+        ))}
+      </ul>
+    </>
   );
 }
 
@@ -79,59 +94,73 @@ export function CentreStandardsWorkspaceView({
     );
   }
 
+  const partial = response.status === "partial";
   const checks = response.openChecks;
-  const overdue = (checks ?? []).filter((check) => check.timeliness === "OVERDUE").length;
+  const overdue = checks.filter((check) => check.timeliness === "OVERDUE").length;
+
+  // Under partial coverage the heading follows what is known, never the count.
+  // An empty list means "we could not confirm", not "you are up to date".
+  const title = partial
+    ? overdue > 0
+      ? overdue === 1
+        ? "One check is overdue"
+        : `${overdue} checks are overdue`
+      : "Some check information couldn't be confirmed"
+    : overdue === 0
+      ? "Your checks"
+      : overdue === 1
+        ? "One check is overdue"
+        : `${overdue} checks are overdue`;
 
   return (
     <>
       <PageHeader
         eyebrow="Centre Standards"
-        title={
-          overdue === 0
-            ? "Your checks"
-            : overdue === 1
-              ? "One check is overdue"
-              : `${overdue} checks are overdue`
-        }
+        title={title}
         summary="Everything open for the centres you work in. Completed checks leave this list."
       />
 
-      {response.status === "partial" ? (
-        <Notice title="Some check information couldn't be checked.">
-          {response.warning ??
-            "This list may be incomplete. A check missing from it has not been confirmed as done."}
+      {partial ? (
+        <Notice title="Some check information couldn't be confirmed.">
+          {response.warning}
         </Notice>
       ) : null}
 
-      {checks === undefined ? (
-        // The source was never established, so no claim may be made either way.
-        <ErrorState
-          title="Your checks couldn't be loaded"
-          message="Nothing has been assumed. This does not mean there is nothing due — please try again shortly."
+      {checks.length > 0 ? (
+        <CheckList checks={checks} />
+      ) : partial ? (
+        // Never the affirmative empty state: nothing was established.
+        <EmptyState
+          title="We couldn't confirm your checks"
+          message="No check could be confirmed for you right now. This does not mean there is nothing due — please try again shortly."
         />
-      ) : checks.length === 0 ? (
+      ) : (
         <EmptyState
           title="Nothing due right now"
           message="You're up to date. Checks appear here when they open for your centre."
           mark="✓"
         />
-      ) : (
-        <>
-          <SyntheticNotice
-            notice={
-              checks.some((check) => check.synthetic)
-                ? "Synthetic staging check for Centre Success testing. This is not a Bright Steps policy, regulatory requirement or operational standard."
-                : undefined
-            }
-          />
-          <ul className="standards-list" role="list">
-            {checks.map((check) => (
-              <StandardsCheckCard check={check} key={check.occurrenceId} />
-            ))}
-          </ul>
-        </>
       )}
     </>
+  );
+}
+
+/** Reserves the shape of the check cards rather than a generic bar stack. */
+export function StandardsListSkeleton() {
+  return (
+    <div role="status" aria-live="polite" aria-busy="true">
+      <span className="visually-hidden">Checking your checks.</span>
+      <ul className="standards-list" aria-hidden="true">
+        {[0, 1].map((index) => (
+          <li className="standards-card standards-card--skeleton" key={index}>
+            <span className="skeleton__bar skeleton__bar--short" />
+            <span className="skeleton__bar skeleton__bar--title" />
+            <span className="skeleton__bar skeleton__bar--wide" />
+            <span className="check-skeleton__option" />
+          </li>
+        ))}
+      </ul>
+    </div>
   );
 }
 
@@ -152,7 +181,7 @@ export function CentreStandardsWorkspace({
         setState("ready");
         setAnnouncement(
           value.status === "partial"
-            ? "Some check information couldn't be checked."
+            ? "Some check information couldn't be confirmed."
             : "Your checks are ready.",
         );
       },
@@ -179,7 +208,7 @@ export function CentreStandardsWorkspace({
 
   let content;
   if (state === "loading") {
-    content = <LoadingSkeleton label="Checking your checks." rows={3} />;
+    content = <StandardsListSkeleton />;
   } else if (state === "error" || !response) {
     content = (
       <ErrorState

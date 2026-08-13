@@ -71,10 +71,18 @@ describe("Centre Standards layout contract", () => {
   });
 
   test("forced-colors keeps every Centre Standards boundary visible", () => {
-    const forced = css.lastIndexOf("@media (forced-colors: active)");
-    const tail = css.slice(forced);
-    for (const selector of [".answer-option", ".standards-card", ".completion-state"]) {
-      expect(tail).toContain(selector);
+    // There is more than one forced-colors block, so collect them all rather
+    // than assuming the requirements live in the last one written.
+    const blocks = [...css.matchAll(/@media \(forced-colors: active\) \{([\s\S]*?)\n\}/g)]
+      .map((match) => match[1])
+      .join("\n");
+    for (const selector of [
+      ".answer-option",
+      ".standards-card",
+      ".completion-state",
+      ".daily-occurrence",
+    ]) {
+      expect(blocks).toContain(selector);
     }
   });
 });
