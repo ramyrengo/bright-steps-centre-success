@@ -216,3 +216,62 @@ From `components/app-shell.tsx`: `AppShell`, `AppBar`, `BusinessWorkspaceGate`.
 
 Compose from these. If you need something new, add it here rather than
 styling one page privately.
+
+## Centre Standards primitives
+
+Three primitives were added for the Centre Standards completion experience.
+They live in `design-system.tsx` with everything else — Centre Standards has no
+private component library.
+
+| Primitive | Use |
+| --- | --- |
+| `AnswerControl` | One assessed question. Native radios with the label as the target. |
+| `CheckProgress` | "Question 2 of 3". The written count is the accessible truth; the bar is `aria-hidden`. |
+| `CompletionState` | The screen a finished task lands on. Moves focus to its own heading. |
+
+`AnswerControl` is built on native radios deliberately. Arrow-key movement, the
+accessible checked state and forced-colors support all come from the platform,
+and the visually hidden input keeps them while the styled label provides a 56px
+target. Re-implementing that with `role="radio"` buttons would have meant
+rebuilding roving focus by hand for no gain.
+
+### Target sizes
+
+The 44px minimum still holds everywhere. Primary answer controls exceed it at
+56px, because that surface is used standing up, one-handed and in motion.
+Inline links inside a sentence — the corrective-action origin line — are the
+documented WCAG exception and are not padded to 44px.
+
+### Completion is a destination
+
+A finished task renders a real screen, never a toast. Focus is moved to the
+completion heading, because the form it replaced is gone and a keyboard or
+screen-reader user would otherwise be left on a control that no longer exists.
+
+### Leaving with unsaved work
+
+`useBlockLeaveWhen(dirty)` registers a blocker with `AppShell`, which guards the
+two leave paths the shell owns: the brand link and sign out. `beforeunload`
+covers a real page unload and nothing else, so it is not sufficient on its own.
+The confirmation resolves navigation by rendering a real link rather than
+pushing through a router, which keeps the shell free of router coupling.
+
+## Consistency across the four surfaces
+
+Observations from reviewing Daily Success, Quality & Performance, Centre
+Standards and People & Access together. Nothing here is a defect in a shipped
+surface; they are the places where the suite could read more as one product.
+
+- **Timeliness vocabulary is now shared.** Daily Success `OVERDUE`, Quality
+  "Overdue" and Centre Standards "Overdue" agree, and "Missed" is used nowhere,
+  because an overdue item is still actionable in all three.
+- **Unknown is never zero, everywhere.** Quality established it; Centre
+  Standards follows it; the wording differs slightly by surface ("could not be
+  checked" versus "couldn't be confirmed") and could converge.
+- **Card leading line differs.** Quality centre cards lead with the centre;
+  Centre Standards cards now do too. Daily Success cards lead with the item.
+  That is defensible — Daily Success is a single mixed queue — but worth a
+  deliberate decision rather than an accident.
+- **People & Access still uses `WorkflowShell`** rather than composing
+  `PageHeader` and `DataList` directly. It looks correct because the adapter
+  delegates, but it is the one surface not built from the primitives.
