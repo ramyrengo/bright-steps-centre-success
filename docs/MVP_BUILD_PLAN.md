@@ -8,7 +8,11 @@
 
 **Milestone 2 — accepted / complete under controlled sub-milestone gates.** Milestones 2A, 2B, and **Milestone 2C — People & Access + User Invitations** are **ACCEPTED / COMPLETE**.
 
-**Milestone 3 — started under controlled sub-milestone gates. Milestone 3A — Daily Success is ACCEPTED / COMPLETE. Milestone 3B and later work remain locked, except for the narrow Centre Quality & Performance product slice authorised on 12 August 2026 under ADR-0017.**
+**Milestone 3 — started under controlled sub-milestone gates. Milestone 3A — Daily Success is ACCEPTED / COMPLETE. Milestone 3B remains locked. The narrow Centre Quality & Performance product slice authorised on 12 August 2026 under ADR-0017 remains a separate exception.**
+
+**Centre Standards Milestone 4A — LOCAL IMPLEMENTATION GATE PASSED at integration commit `1bf06b7`.** The recorded local evidence is: frontend tests 280/280 passed; frontend typecheck passed; frontend production build passed; migrations 020–022 passed; Encore/PostgreSQL database-backed integration tests passed; the Centre Standards query-budget gate passed; and the integration worktree was clean. This is local implementation evidence only. It is not a production deployment, production acceptance, hosted-CI result, or production-readiness decision.
+
+**Exactly one next product slice is authorised by the Product Owner on 13 August 2026: Area Manager Template & Form Builder.** ADR-0020 defines the boundary. No Milestone 4B, 4C or 4D number is assigned or implied. All other later business modules remain locked.
 
 Milestone 3A acceptance evidence, recorded 12 August 2026, in sequence: implementation completed; first independent review **PASS WITH CHANGES**; acceptance remediation completed; targeted independent re-review **PASS**; the full local regression gate green (backend typecheck, 141 unit tests, 100 database-backed integration tests, 90 frontend tests, frontend lint/typecheck/production build, generated-client reproducibility, authentication scope guard, `git diff --check`); hosted Foundation CI green; Encore Build green; merged to `main` through pull request #6. Migrations remain 001–018 and Milestone 3A added none. Acceptance is an implementation acceptance only and does not make Centre Success production-ready.
 
@@ -149,11 +153,27 @@ Acceptance-remediation evidence includes honest partial-source coverage with no 
 
 The earlier plan placed Area Manager internal audits in Milestone 3. Product Owner approval moved and completed that vertical slice as Milestone 2B. Its accepted evidence remains above; this note is retained only to explain the sequencing change.
 
-#### Milestone 3B and later — locked
+#### Milestone 3B — locked
 
-Stateful daily planning/check-in, living QIP, notifications, manual priorities, additional user perspectives, and every other later module require separate Product Owner authorisation. Milestone 3A does not imply or pre-authorise them.
+Stateful daily planning/check-in, living QIP, notifications, manual priorities, and additional user perspectives require separate Product Owner authorisation. Milestone 3A does not imply or pre-authorise them.
 
-One exception has been granted. **Milestone 3C — Centre Quality & Performance** is authorised as a narrow read-side projection under ADR-0017: a live, read-only view over existing Milestone 2B quarterly-review, finding and corrective-action data, with no migration, no new source of truth, no composite score and no regulatory rating inference. It adds Centre Director, Area Manager and Compliance Manager quality views and the shared Centre Success design system. It does not unlock the remainder of Milestone 5 or any part of Milestone 6.
+The previously granted **Milestone 3C — Centre Quality & Performance** exception remains authorised as a narrow read-side projection under ADR-0017: a live, read-only view over existing Milestone 2B quarterly-review, finding and corrective-action data, with no migration, no new source of truth, no composite score and no regulatory rating inference. It adds Centre Director, Area Manager and Compliance Manager quality views and the shared Centre Success design system. It does not unlock the remainder of Milestone 5 or any part of Milestone 6.
+
+### Centre Standards Milestone 4A — operational occurrence/completion engine
+
+**Status:** **LOCAL IMPLEMENTATION GATE PASSED.** The integrated implementation at commit `1bf06b7` passed 280/280 frontend tests, frontend typecheck, frontend production build, migrations 020–022, Encore/PostgreSQL database-backed integration tests, and the Centre Standards query-budget gate. The integration worktree was clean at the gate.
+
+This status records local implementation evidence only. It does not state or imply hosted CI, deployment, production acceptance, production data use, or production readiness.
+
+### Authorised next product slice — Area Manager Template & Form Builder
+
+**Status:** **PRODUCT SLICE AUTHORISED on 13 August 2026. No milestone number assigned.**
+
+The authorised slice provides reusable operational templates/forms, a template library, ordered sections and questions, initial Yes/No, single-select, multi-select, text, number and date questions, required/optional configuration, Draft/Published/Retired lifecycle, immutable published versions and version history, and phone preview before publish. Area Managers may assign a published operational template to one authorised centre, selected authorised centres, or their backend-authorised portfolio. Scheduling is limited to daily, weekly, monthly, quarterly and ad-hoc, with due-time/configuration support.
+
+Every protected operation remains subject to backend capability and resource-scope authorisation and an attributable audit trail. Configurable answer/remediation rules may feed the existing finding/corrective-action architecture. The slice must reuse the existing Centre Standards operational occurrence/completion engine; it must not create a disconnected forms or remediation system. Exact capability names, APIs, schema and operational rules must be designed within that boundary rather than inferred from role names or client-supplied authority.
+
+This authorisation does **not** include Centre Budgets, redesign of the existing Quarterly Area Manager Audit workflow, Centre Health Score, AI business functionality, production deployment, production data, unrelated later modules, or any other expansion beyond ADR-0020. All other later business modules remain locked.
 
 ### Milestone 5 — command views and operational hardening
 
