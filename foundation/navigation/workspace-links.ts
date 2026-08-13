@@ -26,6 +26,8 @@ export const WORKSPACE_LINK_CENTRE_CAPABILITIES = [
   FOUNDATION_CAPABILITIES.quarterlyAuditRead,
   FOUNDATION_CAPABILITIES.correctiveActionRemediate,
   FOUNDATION_CAPABILITIES.quarterlyAuditConduct,
+  FOUNDATION_CAPABILITIES.operationalCheckRead,
+  FOUNDATION_CAPABILITIES.operationalCheckComplete,
 ] as const;
 
 /** Organisation-scoped capabilities a caller must evaluate before deriving links. */
@@ -58,6 +60,12 @@ export function deriveWorkspaceLinks(
   }
   if (holdsAnyCentre(authorisation, FOUNDATION_CAPABILITIES.quarterlyAuditConduct)) {
     links.push({ label: "Area Manager reviews", route: "/area-manager" });
+  }
+  if (
+    holdsAnyCentre(authorisation, FOUNDATION_CAPABILITIES.operationalCheckRead) ||
+    holdsAnyCentre(authorisation, FOUNDATION_CAPABILITIES.operationalCheckComplete)
+  ) {
+    links.push({ label: "Centre Standards", route: "/standards" });
   }
   if (authorisation.organisationCapabilities.has(FOUNDATION_CAPABILITIES.complianceOversightRead)) {
     links.push({ label: "Compliance oversight", route: "/compliance" });

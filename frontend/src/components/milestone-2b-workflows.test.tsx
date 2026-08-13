@@ -70,9 +70,14 @@ const ACTION_DETAIL = {
   finding: {
     id: "00000000-0000-4000-8000-000000000401",
     description: "Synthetic internal review finding",
-    originatingAuditId: "00000000-0000-4000-8000-000000000501",
-    originatingAuditStatus: "FINALISED" as const,
-    originatingAuditAcknowledged: false,
+    origin: {
+      source: "QUARTERLY_AUDIT" as const,
+      label: "Quarterly review" as const,
+      quarterLabel: "Q2 2026",
+      auditId: "00000000-0000-4000-8000-000000000501",
+      auditStatus: "FINALISED" as const,
+      acknowledged: false,
+    },
     itemLineageKey: "emergency_information_available",
     repeatCount: 1,
   },
@@ -306,7 +311,7 @@ describe("Milestone 2B role-focused workflows", () => {
       .mockResolvedValueOnce(ACTION_DETAIL)
       .mockResolvedValueOnce({
         ...ACTION_DETAIL,
-        finding: { ...ACTION_DETAIL.finding, originatingAuditAcknowledged: true },
+        finding: { ...ACTION_DETAIL.finding, origin: { ...ACTION_DETAIL.finding.origin, acknowledged: true } },
       });
     foundation.acknowledgeQuarterlyAudit.mockResolvedValue({
       acknowledgementId: "00000000-0000-4000-8000-000000000701",
@@ -315,7 +320,7 @@ describe("Milestone 2B role-focused workflows", () => {
     render(<CentreActionWorkspace actionId={ACTION.id} />);
     fireEvent.click(await screen.findByRole("button", { name: "Acknowledge final audit" }));
     await waitFor(() => expect(foundation.acknowledgeQuarterlyAudit).toHaveBeenCalledWith(
-      ACTION_DETAIL.finding.originatingAuditId,
+      ACTION_DETAIL.finding.origin.auditId,
       { comment: "Reviewed in Centre Success." },
     ));
     expect(await screen.findByText("Final audit acknowledged")).toBeDefined();

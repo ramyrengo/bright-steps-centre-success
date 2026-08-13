@@ -121,6 +121,7 @@ export namespace foundation {
             this.approveInvitation = this.approveInvitation.bind(this)
             this.cancelInvitationEndpoint = this.cancelInvitationEndpoint.bind(this)
             this.completeEvidenceUpload = this.completeEvidenceUpload.bind(this)
+            this.completeStandardsOccurrence = this.completeStandardsOccurrence.bind(this)
             this.createInvitation = this.createInvitation.bind(this)
             this.finaliseQuarterlyAudit = this.finaliseQuarterlyAudit.bind(this)
             this.getAuditPreparation = this.getAuditPreparation.bind(this)
@@ -137,6 +138,8 @@ export namespace foundation {
             this.getPersonAccess = this.getPersonAccess.bind(this)
             this.getPersonHistory = this.getPersonHistory.bind(this)
             this.getQuarterlyAudit = this.getQuarterlyAudit.bind(this)
+            this.getStandardsCheck = this.getStandardsCheck.bind(this)
+            this.getStandardsWorkspace = this.getStandardsWorkspace.bind(this)
             this.health = this.health.bind(this)
             this.listAssignedAuditCentres = this.listAssignedAuditCentres.bind(this)
             this.listCorrectiveActionVerificationQueue = this.listCorrectiveActionVerificationQueue.bind(this)
@@ -194,6 +197,12 @@ export namespace foundation {
             // Now make the actual call to the API
             const resp = await this.baseClient.callTypedAPI("POST", `/evidence/${encodeURIComponent(evidenceId)}/complete`)
             return await resp.json() as quarterly_reviews.CompleteEvidenceUploadResponse
+        }
+
+        public async completeStandardsOccurrence(occurrenceId: string, params: centre_standards.CompleteStandardsCheckRequest): Promise<centre_standards.CompleteStandardsCheckResponse> {
+            // Now make the actual call to the API
+            const resp = await this.baseClient.callTypedAPI("POST", `/standards/checks/${encodeURIComponent(occurrenceId)}/complete`, JSON.stringify(params))
+            return await resp.json() as centre_standards.CompleteStandardsCheckResponse
         }
 
         public async createInvitation(params: people_access.CreateInvitationRequest): Promise<people_access.InvitationSummary> {
@@ -318,6 +327,26 @@ export namespace foundation {
             // Now make the actual call to the API
             const resp = await this.baseClient.callTypedAPI("GET", `/quarterly-reviews/audits/${encodeURIComponent(auditId)}`)
             return await resp.json() as quarterly_reviews.QuarterlyAuditView
+        }
+
+        public async getStandardsCheck(occurrenceId: string): Promise<centre_standards.StandardsCheckDetailResponse> {
+            // Now make the actual call to the API
+            const resp = await this.baseClient.callTypedAPI("GET", `/standards/checks/${encodeURIComponent(occurrenceId)}`)
+
+            //Populate the return object from the JSON body and received headers
+            const rtn = await resp.json() as centre_standards.StandardsCheckDetailResponse
+            rtn.cacheControl = mustBeSet("Header `cache-control`", resp.headers.get("cache-control"))
+            return rtn
+        }
+
+        public async getStandardsWorkspace(): Promise<centre_standards.StandardsWorkspaceResponse> {
+            // Now make the actual call to the API
+            const resp = await this.baseClient.callTypedAPI("GET", `/standards`)
+
+            //Populate the return object from the JSON body and received headers
+            const rtn = await resp.json() as centre_standards.StandardsWorkspaceResponse
+            rtn.cacheControl = mustBeSet("Header `cache-control`", resp.headers.get("cache-control"))
+            return rtn
         }
 
         /**
@@ -820,6 +849,88 @@ export namespace centre_quality {
     }
 }
 
+export namespace centre_standards {
+    export interface CompleteStandardsCheckRequest {
+        answers: {
+            questionId: string
+            value: string
+        }[]
+    }
+
+    export interface CompleteStandardsCheckResponse {
+        outcome: "COMPLETED" | "ALREADY_COMPLETED"
+        completedAt: string
+        completedLocalTime: string
+        issueRaised?: boolean
+        completedByRequester?: boolean
+    }
+
+    export interface OpenStandardsCheckSummary {
+        occurrenceId: string
+        standardName: string
+        synthetic: boolean
+        syntheticNotice?: string
+        centreName: string
+        businessDate: string
+        dueLocalTime: string
+        timeliness: "DUE" | "OVERDUE"
+        questionCount: number
+        state: "OPEN"
+        canComplete: boolean
+    }
+
+    export type OperationalTimeliness = "DUE" | "OVERDUE" | "COMPLETED_ON_TIME" | "COMPLETED_LATE"
+
+    export interface StandardsAnswerOption {
+        /**
+         * Opaque permitted outcome value, passed back untouched by the browser.
+         */
+        value: string
+
+        label: string
+        description?: string
+    }
+
+    export interface StandardsCheckDetailResponse {
+        cacheControl: string
+        occurrenceId: string
+        standardName: string
+        synthetic: boolean
+        syntheticNotice?: string
+        centreName: string
+        businessDate: string
+        dueLocalTime: string
+        timeliness: OperationalTimeliness
+        state: "OPEN" | "COMPLETED"
+        completedLocalTime?: string
+        questionCount: number
+        canComplete?: boolean
+        questions: StandardsQuestion[]
+        responses?: StandardsRecordedResponse[]
+    }
+
+    export interface StandardsQuestion {
+        questionId: string
+        wording: string
+        instructions?: string
+        options: StandardsAnswerOption[]
+    }
+
+    export interface StandardsRecordedResponse {
+        questionId: string
+        wording: string
+        answerLabel: string
+    }
+
+    export interface StandardsWorkspaceResponse {
+        status: "ready" | "partial" | "unsupported"
+        openChecks?: OpenStandardsCheckSummary[]
+        warning?: string
+        cacheControl: string
+        asOf: string
+    }
+}
+
 export namespace daily_success {
     export type DailyAttentionBand = "URGENT" | "TODAY" | "UPCOMING" | "WAITING" | "AWARENESS"
 
@@ -867,7 +978,7 @@ export namespace daily_success {
     export type DailyResponsibility = "YOU_NEED_TO_ACT" | "YOUR_CENTRE_NEEDS_TO_ACT" | "WAITING_ON_SOMEONE_ELSE" | "FOR_YOUR_AWARENESS"
 
     export interface DailySourceHealth {
-        source: "corrective_actions" | "quarterly_reviews" | "people_access"
+        source: "corrective_actions" | "quarterly_reviews" | "people_access" | "operational_checks"
         status: "available" | "unavailable" | "not_applicable"
     }
 
@@ -878,7 +989,7 @@ export namespace daily_success {
 
     export interface DailySuccessItem {
         id: string
-        sourceType: "corrective_action" | "finding" | "quarterly_review" | "people_access"
+        sourceType: "corrective_action" | "finding" | "quarterly_review" | "people_access" | "operational_check"
         sourceId: string
         centreId?: string
         centreName?: string
@@ -942,7 +1053,7 @@ export namespace daily_success {
     }
 
     export interface DailyWhyShown {
-        code: "CRITICAL_RISK" | "IMMEDIATE_RISK" | "ACTION_OVERDUE" | "ACTION_DUE_TODAY" | "ACTION_DUE_SOON" | "REMEDIATION_RETURNED" | "REMEDIATION_REQUIRED" | "VERIFICATION_REQUIRED" | "AUDIT_REQUIRES_ACTION" | "REVIEW_REQUIRES_ACKNOWLEDGEMENT" | "PRIVILEGED_APPROVAL_REQUIRED" | "IDENTITY_REVIEW_REQUIRED"
+        code: "CRITICAL_RISK" | "IMMEDIATE_RISK" | "ACTION_OVERDUE" | "ACTION_DUE_TODAY" | "ACTION_DUE_SOON" | "REMEDIATION_RETURNED" | "REMEDIATION_REQUIRED" | "VERIFICATION_REQUIRED" | "AUDIT_REQUIRES_ACTION" | "REVIEW_REQUIRES_ACKNOWLEDGEMENT" | "PRIVILEGED_APPROVAL_REQUIRED" | "IDENTITY_REVIEW_REQUIRED" | "CHECK_DUE_TODAY" | "CHECK_OVERDUE"
         label: string
     }
 
@@ -1288,11 +1399,23 @@ export namespace quarterly_reviews {
         finding: {
             id: string
             description: string
-            originatingAuditId: string
-            originatingAuditStatus: AuditStatus
-            originatingAuditAcknowledged: boolean
             itemLineageKey: string
             repeatCount: number
+            origin: {
+                source: "QUARTERLY_AUDIT"
+                label: "Quarterly review"
+                quarterLabel: string
+                auditId: string
+                auditStatus: AuditStatus
+                acknowledged: boolean
+            } | {
+                source: "OPERATIONAL_CHECK"
+                label: "Centre Standard"
+                occurrenceId: string
+                standardName: string
+                businessDate: string
+                synthetic: boolean
+            }
         }
         requiredRemediation: string
         evidenceRequirement: "none" | "optional" | "required"

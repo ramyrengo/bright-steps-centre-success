@@ -66,7 +66,9 @@ export interface DailyWhyShown {
     | "AUDIT_REQUIRES_ACTION"
     | "REVIEW_REQUIRES_ACKNOWLEDGEMENT"
     | "PRIVILEGED_APPROVAL_REQUIRED"
-    | "IDENTITY_REVIEW_REQUIRED";
+    | "IDENTITY_REVIEW_REQUIRED"
+    | "CHECK_DUE_TODAY"
+    | "CHECK_OVERDUE";
   label: string;
 }
 
@@ -77,7 +79,7 @@ export interface DailySuccessCta {
 
 export interface DailySuccessItem {
   id: string;
-  sourceType: "corrective_action" | "finding" | "quarterly_review" | "people_access";
+  sourceType: "corrective_action" | "finding" | "quarterly_review" | "people_access" | "operational_check";
   sourceId: string;
   centreId?: string;
   centreName?: string;
@@ -120,7 +122,7 @@ export interface DailyAuthorisationHealth {
 }
 
 export interface DailySourceHealth {
-  source: "corrective_actions" | "quarterly_reviews" | "people_access";
+  source: "corrective_actions" | "quarterly_reviews" | "people_access" | "operational_checks";
   status: "available" | "unavailable" | "not_applicable";
 }
 

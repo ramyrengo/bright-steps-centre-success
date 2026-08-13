@@ -15,6 +15,7 @@ import type {
 } from "./contracts";
 import { CorrectiveActionDailySource } from "./corrective-action-source";
 import { PeopleAccessDailySource } from "./people-access-source";
+import { OperationalCheckDailySource } from "./operational-check-source";
 import { buildCentreAttention, buildSections, sortDailyItems } from "./priority";
 import { QuarterlyReviewDailySource } from "./quarterly-review-source";
 import { businessDateContext, requireIanaTimezone } from "./time";
@@ -35,6 +36,8 @@ const DAILY_CENTRE_CAPABILITIES = [
   FOUNDATION_CAPABILITIES.quarterlyAuditConduct,
   FOUNDATION_CAPABILITIES.quarterlyAuditFinalise,
   FOUNDATION_CAPABILITIES.quarterlyAuditAcknowledge,
+  FOUNDATION_CAPABILITIES.operationalCheckRead,
+  FOUNDATION_CAPABILITIES.operationalCheckComplete,
 ] as const;
 
 const DAILY_ORGANISATION_CAPABILITIES = [
@@ -71,6 +74,7 @@ export interface DailySuccessDependencies {
   correctiveActionSource: typeof CorrectiveActionDailySource;
   quarterlyReviewSource: typeof QuarterlyReviewDailySource;
   peopleAccessSource: typeof PeopleAccessDailySource;
+  operationalCheckSource?: typeof OperationalCheckDailySource;
 }
 
 const runtimeDependencies: DailySuccessDependencies = {
@@ -78,6 +82,7 @@ const runtimeDependencies: DailySuccessDependencies = {
   correctiveActionSource: CorrectiveActionDailySource,
   quarterlyReviewSource: QuarterlyReviewDailySource,
   peopleAccessSource: PeopleAccessDailySource,
+  operationalCheckSource: OperationalCheckDailySource,
 };
 
 function countedExecutor(transaction: Transaction, onQuery: () => void): DailySuccessQueryExecutor {
@@ -123,6 +128,9 @@ function buildPerspectives(
   const acknowledge = authorisation.centreIdsByCapability.get(
     FOUNDATION_CAPABILITIES.quarterlyAuditAcknowledge,
   ) ?? new Set<string>();
+  // Centre Standards authority enriches an already-authorised Daily Success
+  // perspective; it does not create broad Educator access to Daily Success.
+  // Educators enter through /standards.
   const centreIds = new Set([...remediate, ...acknowledge]);
   const perspectives: DailySuccessPerspective[] = authorisation.centres
     .filter((centre) => centreIds.has(centre.id))
@@ -192,18 +200,20 @@ function workspaceLinks(authorisation: DailyAuthorisationView): DailyWorkspaceLi
 
 async function collectWithSavepoint(
   executor: DailySuccessQueryExecutor,
-  savepoint: "daily_corrective" | "daily_quarterly" | "daily_people",
+  savepoint: "daily_corrective" | "daily_quarterly" | "daily_people" | "daily_operational",
   collect: () => Promise<DailySourceResult>,
 ): Promise<{ result?: DailySourceResult; durationMs: number }> {
   const started = performance.now();
   if (savepoint === "daily_corrective") await executor.exec`SAVEPOINT daily_corrective`;
   if (savepoint === "daily_quarterly") await executor.exec`SAVEPOINT daily_quarterly`;
   if (savepoint === "daily_people") await executor.exec`SAVEPOINT daily_people`;
+  if (savepoint === "daily_operational") await executor.exec`SAVEPOINT daily_operational`;
   try {
     const result = await collect();
     if (savepoint === "daily_corrective") await executor.exec`RELEASE SAVEPOINT daily_corrective`;
     if (savepoint === "daily_quarterly") await executor.exec`RELEASE SAVEPOINT daily_quarterly`;
     if (savepoint === "daily_people") await executor.exec`RELEASE SAVEPOINT daily_people`;
+    if (savepoint === "daily_operational") await executor.exec`RELEASE SAVEPOINT daily_operational`;
     return { result, durationMs: performance.now() - started };
   } catch (error) {
     if (savepoint === "daily_corrective") {
@@ -217,6 +227,10 @@ async function collectWithSavepoint(
     if (savepoint === "daily_people") {
       await executor.exec`ROLLBACK TO SAVEPOINT daily_people`;
       await executor.exec`RELEASE SAVEPOINT daily_people`;
+    }
+    if (savepoint === "daily_operational") {
+      await executor.exec`ROLLBACK TO SAVEPOINT daily_operational`;
+      await executor.exec`RELEASE SAVEPOINT daily_operational`;
     }
     if (!isKnownSourceAvailabilityFailure(error)) throw error;
     console.warn("Daily Success source temporarily unavailable", { source: savepoint });
@@ -354,6 +368,7 @@ export async function buildDailySuccess(
         { source: "corrective_actions", status: "not_applicable" },
         { source: "quarterly_reviews", status: "not_applicable" },
         { source: "people_access", status: "not_applicable" },
+        { source: "operational_checks", status: "not_applicable" },
       ] as DailySourceHealth[],
       authorisationHealth: { status: "available" as const },
       workspaceLinks: workspaceLinks(authorisation),
@@ -384,10 +399,18 @@ export async function buildDailySuccess(
     }
 
     const sourceInput: DailySourceInput = { executor, authorisation, perspective: activePerspective };
+    const operationalCentreIds = new Set([
+      ...(centreIdsByCapability.get(FOUNDATION_CAPABILITIES.operationalCheckRead) ?? []),
+      ...(centreIdsByCapability.get(FOUNDATION_CAPABILITIES.operationalCheckComplete) ?? []),
+    ]);
+    const hasRelevantOperationalAuthority = activePerspective.kind === "centre"
+      ? Boolean(activePerspective.centreId && operationalCentreIds.has(activePerspective.centreId))
+      : operationalCentreIds.size > 0;
     const relevant = {
       corrective: activePerspective.kind !== "administration",
       quarterly: activePerspective.kind === "centre" || activePerspective.kind === "portfolio",
       people: activePerspective.kind === "administration",
+      operational: activePerspective.kind !== "administration" && hasRelevantOperationalAuthority,
     };
     const sourceDurationsMs: Record<string, number> = {};
     const results: DailySourceResult[] = [];
@@ -413,6 +436,13 @@ export async function buildDailySuccess(
       health.push({ source: "people_access", status: collected.result ? "available" : "unavailable" });
       if (collected.result) results.push(collected.result);
     } else health.push({ source: "people_access", status: "not_applicable" });
+    if (relevant.operational) {
+      const collected = await collectWithSavepoint(executor, "daily_operational", () =>
+        (dependencies.operationalCheckSource ?? OperationalCheckDailySource).collect(sourceInput));
+      sourceDurationsMs.operational_checks = collected.durationMs;
+      health.push({ source: "operational_checks", status: collected.result ? "available" : "unavailable" });
+      if (collected.result) results.push(collected.result);
+    } else health.push({ source: "operational_checks", status: "not_applicable" });
 
     const unavailable = health.some((source) => source.status === "unavailable");
     const authorisationPartial = activePerspective.kind === "portfolio"

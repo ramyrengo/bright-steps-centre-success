@@ -502,12 +502,34 @@ describe.sequential("Milestone 2B quarterly review vertical slice", () => {
       organisationId: ids.organisationId,
       principalId: ids.centreDirectorPrincipalIds[0],
     });
-    expect(owned).toHaveLength(2);
-    const critical = owned.find((action) => action.severity === "CRITICAL")!;
+    const quarterlyActionRows = await centreSuccessDB.queryAll<{ id: string }>`
+      SELECT action.id
+      FROM corrective_actions AS action
+      JOIN findings AS finding
+        ON finding.organisation_id = action.organisation_id
+       AND finding.id = action.finding_id
+      WHERE finding.organisation_id = ${ids.organisationId}
+        AND finding.audit_run_id = ${started.auditId}
+    `;
+    const quarterlyActionIds = new Set(quarterlyActionRows.map((row) => row.id));
+    const quarterlyOwned = owned.filter((action) => quarterlyActionIds.has(action.id));
+    expect(quarterlyOwned).toHaveLength(2);
+    const critical = quarterlyOwned.find((action) => action.severity === "CRITICAL")!;
+    const criticalDetail = await loadCorrectiveActionDetail(
+      ids.organisationId,
+      critical.id,
+      ids.centreDirectorPrincipalIds[0],
+    );
+    expect(criticalDetail.finding.origin).toMatchObject({
+      source: "QUARTERLY_AUDIT",
+      label: "Quarterly review",
+      quarterLabel: "Q3 2026",
+      auditId: started.auditId,
+    });
     const startedAction = await startCorrectiveAction({
       organisationId: ids.organisationId, actionId: critical.id,
       actorPrincipalId: ids.centreDirectorPrincipalIds[0],
-      expectedLockVersion: (await loadCorrectiveActionDetail(ids.organisationId, critical.id)).lockVersion,
+      expectedLockVersion: criticalDetail.lockVersion,
       at: new Date("2026-08-12T00:00:00.000Z"),
     });
     const upload = await requestEvidenceUpload({

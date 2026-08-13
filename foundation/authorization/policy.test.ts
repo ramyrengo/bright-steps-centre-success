@@ -126,6 +126,28 @@ describe("foundation capability and scope policy", () => {
     expect(decision(context, capability.organisationRead, organisationResource()).allowed).toBe(false);
   });
 
+  test("Educator completes operational checks only for the assigned centre", () => {
+    const context = principal(
+      [assignment("educator", [{ type: "centre", centreId: CENTRE_A }])],
+    );
+
+    expect(decision(
+      context,
+      capability.operationalCheckComplete,
+      centreResource(CENTRE_A, [NSW]),
+    ).allowed).toBe(true);
+    expect(decision(
+      context,
+      capability.operationalCheckComplete,
+      centreResource(CENTRE_B, [NSW]),
+    )).toEqual({ allowed: false, reason: "scope_mismatch" });
+    expect(decision(
+      context,
+      capability.operationalCheckRead,
+      centreResource(CENTRE_A, [NSW]),
+    )).toEqual({ allowed: false, reason: "capability_missing" });
+  });
+
   test("Assistant Director does not inherit Centre Director management", () => {
     const context = principal([
       assignment("assistant_director", [
@@ -220,6 +242,16 @@ describe("foundation capability and scope policy", () => {
       allowed: false,
       reason: "capability_missing",
     });
+    expect(decision(
+      context,
+      capability.operationalCheckRead,
+      centreResource(CENTRE_A, [NSW]),
+    )).toEqual({ allowed: false, reason: "capability_missing" });
+    expect(decision(
+      context,
+      capability.operationalCheckComplete,
+      centreResource(CENTRE_A, [NSW]),
+    )).toEqual({ allowed: false, reason: "capability_missing" });
   });
 
   test("Finance recognises scoped finance access without mutation or administration", () => {

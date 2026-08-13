@@ -8,6 +8,7 @@ const CONTROLLED_ROUTES = [
   new RegExp(`^/area-manager/centres/${UUID}/audit/${UUID}$`, "u"),
   new RegExp(`^/centre/actions/${UUID}$`, "u"),
   new RegExp(`^/centre/reviews/${UUID}$`, "u"),
+  new RegExp(`^/standards/checks/${UUID}$`, "u"),
   new RegExp(`^/admin/people/invitations/${UUID}$`, "u"),
 ] as const;
 

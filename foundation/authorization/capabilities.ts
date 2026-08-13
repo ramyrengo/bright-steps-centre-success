@@ -21,6 +21,8 @@ export const FOUNDATION_CAPABILITIES = {
   evidenceRead: "evidence.read",
   evidenceUpload: "evidence.upload",
   complianceOversightRead: "compliance.oversight.read",
+  operationalCheckRead: "operational_check.read",
+  operationalCheckComplete: "operational_check.complete",
   invitationRead: "invitation.read",
   invitationManage: "invitation.manage",
   accessHistoryRead: "access_history.read",

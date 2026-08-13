@@ -9,6 +9,7 @@ describe("Daily Success controlled CTA routes", () => {
     "/area-manager/centres/00000000-0000-4000-8000-000000000001/audit/00000000-0000-4000-8000-000000000002",
     "/centre/actions/00000000-0000-4000-8000-000000000001",
     "/centre/reviews/00000000-0000-4000-8000-000000000001",
+    "/standards/checks/00000000-0000-4000-8000-000000000001",
     "/admin/people/invitations/00000000-0000-4000-8000-000000000001",
   ])("accepts the controlled source route %s", (route) => {
     expect(controlledDailyCta("Continue", route)).toEqual({ label: "Continue", route });

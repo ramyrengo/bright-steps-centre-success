@@ -162,11 +162,25 @@ export interface CorrectiveActionDetail extends CorrectiveActionSummary {
   finding: {
     id: string;
     description: string;
-    originatingAuditId: string;
-    originatingAuditStatus: AuditStatus;
-    originatingAuditAcknowledged: boolean;
     itemLineageKey: string;
     repeatCount: number;
+    origin:
+      | {
+          source: "QUARTERLY_AUDIT";
+          label: "Quarterly review";
+          quarterLabel: string;
+          auditId: string;
+          auditStatus: AuditStatus;
+          acknowledged: boolean;
+        }
+      | {
+          source: "OPERATIONAL_CHECK";
+          label: "Centre Standard";
+          occurrenceId: string;
+          standardName: string;
+          businessDate: string;
+          synthetic: boolean;
+        };
   };
   requiredRemediation: string;
   evidenceRequirement: "none" | "optional" | "required";
