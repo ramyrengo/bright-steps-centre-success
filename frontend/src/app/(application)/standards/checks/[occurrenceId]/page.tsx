@@ -1,9 +1,10 @@
-import { AppShell, BusinessWorkspaceGate } from "@/components/app-shell";
+import { BusinessWorkspaceGate } from "@/components/app-shell";
 import { CentreStandardsCheck } from "@/components/centre-standards-check";
 
 /**
- * A focused single-task screen. `links={[]}` removes the workspace navigation
- * entirely so nothing competes with completing the check.
+ * The occurrence route. The shell belongs to the component rather than this
+ * page, because whether the screen is a focused single task or a read-only
+ * record is only known once the occurrence has loaded.
  */
 export default async function CentreStandardsCheckPage({
   params,
@@ -11,9 +12,7 @@ export default async function CentreStandardsCheckPage({
   const { occurrenceId } = await params;
   return (
     <BusinessWorkspaceGate>
-      <AppShell links={[]}>
-        <CentreStandardsCheck occurrenceId={occurrenceId} />
-      </AppShell>
+      <CentreStandardsCheck occurrenceId={occurrenceId} />
     </BusinessWorkspaceGate>
   );
 }

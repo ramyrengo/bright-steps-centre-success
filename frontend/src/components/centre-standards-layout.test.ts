@@ -70,6 +70,14 @@ describe("Centre Standards layout contract", () => {
     expect(css.slice(mediaRule, mediaRule + 260)).toContain("auto-fit");
   });
 
+  test("the progress track distinguishes reached from answered", () => {
+    // Three states, three treatments. Sharing one rule between "done" and
+    // "current" is what let the track claim an unanswered question was
+    // finished.
+    expect(block('.check-progress__step[data-state="done"]')).toContain("var(--color-garden)");
+    expect(block('.check-progress__step[data-state="current"]')).toContain("color-mix");
+  });
+
   test("forced-colors keeps every Centre Standards boundary visible", () => {
     // There is more than one forced-colors block, so collect them all rather
     // than assuming the requirements live in the last one written.
@@ -84,5 +92,9 @@ describe("Centre Standards layout contract", () => {
     ]) {
       expect(blocks).toContain(selector);
     }
+    // Once the palette is replaced, colour alone cannot separate the three
+    // progress states, so each one carries its own system colour.
+    expect(blocks).toContain('.check-progress__step[data-state="done"]');
+    expect(blocks).toContain('.check-progress__step[data-state="current"]');
   });
 });

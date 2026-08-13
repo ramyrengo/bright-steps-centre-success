@@ -12,7 +12,7 @@ import {
   Notice,
   StatusBadge,
 } from "./design-system";
-import { useBlockLeaveWhen } from "./app-shell";
+import { AppShell, useBlockLeaveWhen } from "./app-shell";
 import {
   backendNotAvailableGateway,
   businessDateLabel,
@@ -102,6 +102,11 @@ export function StandardsCheckCompletion({
   const [answers, setAnswers] = useState<Record<string, string>>({});
   const [step, setStep] = useState(0);
   const [phase, setPhase] = useState<CompletionPhase>({ kind: "answering" });
+
+  // True once the reader has moved between questions. Focus follows the
+  // question from then on; on arrival it is left on the heading that says
+  // which check this is.
+  const [stepped, setStepped] = useState(false);
 
   // A synchronous lock. `disabled` and `setPhase` both settle on the next
   // render, so two native clicks dispatched in one batch would each see the
@@ -216,6 +221,26 @@ export function StandardsCheckCompletion({
     );
   }
 
+  // A check with nothing to answer cannot be completed. Without this the screen
+  // renders a header, "Question 1 of 0" and no control at all — a dead end the
+  // reader can do nothing about. It sits below the terminal outcomes so a real
+  // result always wins over this fallback.
+  if (total === 0) {
+    return (
+      <div className="standards-check">
+        <CheckHeader check={check} />
+        <SyntheticNotice notice={check.synthetic ? check.syntheticNotice : undefined} />
+        <ErrorState
+          title="This check can't be completed"
+          message="It has no questions to answer, so there is nothing to record. Nothing has been submitted."
+        />
+        <Link className="button button--secondary" href="/standards">
+          Back to your checks
+        </Link>
+      </div>
+    );
+  }
+
   const submitting = phase.kind === "submitting";
   const last = step === total - 1;
 
@@ -246,13 +271,17 @@ export function StandardsCheckCompletion({
             value={answered}
             onChange={(value) => choose(question.questionId, value)}
             disabled={submitting}
+            takeFocus={stepped}
           />
           <div className="check-actions" data-has-back={step > 0 ? "true" : undefined}>
             {step > 0 ? (
               <button
                 className="button button--secondary"
                 type="button"
-                onClick={() => setStep((value) => value - 1)}
+                onClick={() => {
+                  setStepped(true);
+                  setStep((value) => value - 1);
+                }}
                 disabled={submitting}
               >
                 Back
@@ -271,7 +300,10 @@ export function StandardsCheckCompletion({
               <button
                 className="button button--accent check-actions__primary"
                 type="button"
-                onClick={() => setStep((value) => value + 1)}
+                onClick={() => {
+                  setStepped(true);
+                  setStep((value) => value + 1);
+                }}
                 disabled={answered === undefined}
               >
                 Next
@@ -329,8 +361,11 @@ export function StandardsCheckReadOnly({
             Not completed yet
           </h2>
           <p className="check-record__body">
-            This check has {check.questionCount} question
-            {check.questionCount === 1 ? "" : "s"} and has not been answered.
+            {check.questionCount === 0
+              ? "This check has not been answered."
+              : `This check has ${check.questionCount} question${
+                  check.questionCount === 1 ? "" : "s"
+                } and has not been answered.`}
           </p>
         </section>
       )}
@@ -343,10 +378,17 @@ export function StandardsCheckReadOnly({
 }
 
 /**
- * Chooses the surface from backend-supplied state and authority. A completed
- * occurrence is always read-only; an open one offers completion only to a
- * principal the backend says may complete it.
+ * Which surface an occurrence resolves to, from backend-supplied state and
+ * authority. A completed occurrence is always read-only; an open one offers
+ * completion only to a principal the backend says may complete it.
+ *
+ * It is exported because the shell around the screen depends on the answer:
+ * only the completion surface earns the chrome-free treatment.
  */
+export function checkSurface(check: StandardsCheckDetail): "complete" | "read" {
+  return check.state === "OPEN" && check.canComplete ? "complete" : "read";
+}
+
 export function CentreStandardsCheckView({
   check,
   submit,
@@ -366,6 +408,16 @@ export function CentreStandardsCheckView({
   return <StandardsCheckCompletion check={check} submit={submit} />;
 }
 
+/**
+ * The check route.
+ *
+ * It owns its own shell because the frame depends on what the occurrence turns
+ * out to be. Completing a check is a single task and keeps the chrome-free
+ * treatment; a reader opening a completed occurrence has no unsaved work to
+ * protect and would otherwise be stranded on a screen with no way anywhere but
+ * one link. Navigation is withheld while the answer is unknown, so it is only
+ * ever added after loading, never taken away.
+ */
 export function CentreStandardsCheck({
   occurrenceId,
   gateway = backendNotAvailableGateway,
@@ -373,6 +425,13 @@ export function CentreStandardsCheck({
   const [check, setCheck] = useState<StandardsCheckDetail>();
   const [state, setState] = useState<"loading" | "ready" | "error">("loading");
   const [attempt, setAttempt] = useState(0);
+  const [announcement, setAnnouncement] = useState("Opening your check.");
+
+  // Withheld while the occurrence is unknown, and released for good the moment
+  // it turns out not to be a completion task. Deriving this each render would
+  // make a retry from the error screen pass back through `loading` and pull the
+  // navigation bar out from under the reader.
+  const [chromeless, setChromeless] = useState(true);
 
   useEffect(() => {
     let current = true;
@@ -381,10 +440,23 @@ export function CentreStandardsCheck({
         if (!current) return;
         setCheck(value);
         setState("ready");
+        // The latch is released here rather than in a following effect. It is
+        // the same decision either way, but an effect body that calls setState
+        // synchronously causes a cascading render, and this is an async
+        // callback — where setting state belongs.
+        if (checkSurface(value) !== "complete") setChromeless(false);
+        setAnnouncement(
+          checkSurface(value) === "complete"
+            ? "Your check is ready to complete."
+            : "This check is open for reading only.",
+        );
       },
       () => {
         if (!current) return;
         setState("error");
+        // An error screen with no navigation would strand the reader.
+        setChromeless(false);
+        setAnnouncement("This check could not be opened.");
       },
     );
     return () => {
@@ -392,14 +464,24 @@ export function CentreStandardsCheck({
     };
   }, [attempt, gateway, occurrenceId]);
 
+  // The skeleton is replaced by a different screen entirely, so focus is moved
+  // deliberately rather than left at the top of the document. The landing
+  // surface already does this; a deep link into a check needs it more.
+  useEffect(() => {
+    if (state === "loading") return;
+    document.querySelector<HTMLElement>("[data-page-focus]")?.focus();
+  }, [check, state]);
+
   const submit = useCallback(
     (answers: readonly CheckAnswer[]) => gateway.completeCheck({ occurrenceId, answers }),
     [gateway, occurrenceId],
   );
 
-  if (state === "loading") return <CheckSkeleton />;
-  if (state === "error" || !check) {
-    return (
+  let content;
+  if (state === "loading") {
+    content = <CheckSkeleton />;
+  } else if (state === "error" || !check) {
+    content = (
       <ErrorState
         title="This check couldn't be opened"
         message="Nothing has been recorded. Please try again shortly."
@@ -409,8 +491,18 @@ export function CentreStandardsCheck({
         }}
       />
     );
+  } else {
+    content = <CentreStandardsCheckView check={check} submit={submit} />;
   }
-  return <CentreStandardsCheckView check={check} submit={submit} />;
+
+  return (
+    <AppShell {...(chromeless ? { links: [] } : {})}>
+      <p className="visually-hidden" role="status" aria-live="polite" aria-atomic="true">
+        {announcement}
+      </p>
+      {content}
+    </AppShell>
+  );
 }
 
 /** Reserves the shape of the question that is coming, not a generic bar stack. */

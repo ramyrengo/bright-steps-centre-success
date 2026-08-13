@@ -408,6 +408,7 @@ export function AnswerControl({
   onChange,
   disabled = false,
   instructions,
+  takeFocus = false,
 }: Readonly<{
   legend: string;
   name: string;
@@ -416,11 +417,34 @@ export function AnswerControl({
   onChange: (next: string) => void;
   disabled?: boolean;
   instructions?: string;
+  /**
+   * Moves focus to the group when it mounts.
+   *
+   * A one-question-at-a-time flow replaces the question in place while the
+   * step controls keep their position, so a screen-reader or keyboard user is
+   * left focused on a "Next" button with no signal that the question beneath
+   * it changed. Focusing the group makes the platform read the new question
+   * and its options, which is what a sighted reader gets for free.
+   *
+   * It is off for the first question so arriving on the screen does not yank
+   * focus past the heading that says which check this is.
+   */
+  takeFocus?: boolean;
 }>) {
   const instructionsId = useId();
+  const group = useRef<HTMLFieldSetElement>(null);
+
+  useEffect(() => {
+    if (takeFocus) group.current?.focus();
+  }, [takeFocus]);
+
   return (
     <fieldset
       className="answer-control"
+      ref={group}
+      // Only a programmatic target: it must never become a Tab stop, which
+      // would put an extra silent stop in front of every question.
+      {...(takeFocus ? { tabIndex: -1 } : {})}
       {...(instructions ? { "aria-describedby": instructionsId } : {})}
     >
       <legend className="answer-control__legend">{legend}</legend>
@@ -465,11 +489,16 @@ export function CheckProgress({
         Question {current} of {total}
       </p>
       <div className="check-progress__track" aria-hidden="true">
+        {/* The question in hand is "current", never "done". Filling it as done
+            told the reader they had answered one more question than they had,
+            which on the last step reads as a finished check. */}
         {Array.from({ length: total }, (_, index) => (
           <span
             key={index}
             className="check-progress__step"
-            data-state={index < current ? "done" : "todo"}
+            data-state={
+              index < current - 1 ? "done" : index === current - 1 ? "current" : "todo"
+            }
           />
         ))}
       </div>

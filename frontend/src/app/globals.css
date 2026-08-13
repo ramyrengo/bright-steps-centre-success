@@ -2443,6 +2443,12 @@ textarea {
   background: var(--color-garden);
 }
 
+/* The question in hand reads as reached but not answered, so the track never
+   counts a question the reader is still looking at as finished. */
+.check-progress__step[data-state="current"] {
+  background: color-mix(in srgb, var(--color-garden) 45%, var(--border-default));
+}
+
 /* --- answer control ---------------------------------------- */
 
 .answer-control {
@@ -2738,6 +2744,11 @@ textarea {
   }
   .check-progress__step[data-state="done"] {
     background: Highlight;
+  }
+  /* Colour alone cannot separate the three states once the palette is
+     replaced, so reached-but-unanswered gets its own system colour. */
+  .check-progress__step[data-state="current"] {
+    background: CanvasText;
   }
 }
 

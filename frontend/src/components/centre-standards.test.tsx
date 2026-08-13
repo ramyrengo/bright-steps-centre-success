@@ -19,6 +19,7 @@ vi.mock("../lib/centre-success-client", () => ({
 
 import { AppShell } from "./app-shell";
 import {
+  CentreStandardsCheck,
   CentreStandardsCheckView,
   StandardsCheckCompletion,
   StandardsCheckReadOnly,
@@ -466,6 +467,165 @@ describe("Centre Standards completion", () => {
     expect(document.body.textContent).not.toMatch(FORBIDDEN_TOKENS);
     expect(container.textContent).not.toContain(OCCURRENCE);
     expect(container.textContent).not.toContain("OPT_RECORDED");
+  });
+});
+
+describe("Centre Standards step navigation", () => {
+  test("carries focus to the question that replaced the last one", () => {
+    render(<StandardsCheckCompletion check={openDetail()} submit={vi.fn()} />);
+    // Arriving on the screen must not yank focus past the heading that says
+    // which check this is.
+    expect(screen.getByRole("group", { name: /Test question 1/u })).not.toBe(
+      document.activeElement,
+    );
+
+    fireEvent.click(screen.getByRole("radio", { name: /No issue to report/u }));
+    fireEvent.click(screen.getByRole("button", { name: "Next" }));
+
+    // The step controls keep their position, so without this a screen-reader
+    // user is left on "Next" with no signal the question beneath it changed.
+    expect(document.activeElement).toBe(screen.getByRole("group", { name: /Test question 2/u }));
+  });
+
+  test("carries focus back with the reader when they step back", () => {
+    render(<StandardsCheckCompletion check={openDetail()} submit={vi.fn()} />);
+    fireEvent.click(screen.getByRole("radio", { name: /No issue to report/u }));
+    fireEvent.click(screen.getByRole("button", { name: "Next" }));
+    fireEvent.click(screen.getByRole("button", { name: "Back" }));
+
+    expect(document.activeElement).toBe(screen.getByRole("group", { name: /Test question 1/u }));
+  });
+
+  test("leaves the question group out of the tab order", () => {
+    render(<StandardsCheckCompletion check={openDetail()} submit={vi.fn()} />);
+    fireEvent.click(screen.getByRole("radio", { name: /No issue to report/u }));
+    fireEvent.click(screen.getByRole("button", { name: "Next" }));
+    // A programmatic target only. A positive tabindex would put a silent extra
+    // stop in front of every question.
+    expect(
+      screen.getByRole("group", { name: /Test question 2/u }).getAttribute("tabindex"),
+    ).toBe("-1");
+  });
+
+  test("never counts the question in hand as answered", () => {
+    render(<StandardsCheckCompletion check={openDetail()} submit={vi.fn()} />);
+    const steps = () =>
+      [...document.querySelectorAll(".check-progress__step")].map((node) =>
+        node.getAttribute("data-state"),
+      );
+    expect(steps()).toEqual(["current", "todo", "todo"]);
+
+    fireEvent.click(screen.getByRole("radio", { name: /No issue to report/u }));
+    fireEvent.click(screen.getByRole("button", { name: "Next" }));
+    expect(steps()).toEqual(["done", "current", "todo"]);
+  });
+
+  test("offers a way out of a check with nothing to answer", () => {
+    render(<StandardsCheckCompletion check={openDetail({ questions: [] })} submit={vi.fn()} />);
+    // Previously this rendered a header, "Question 1 of 0" and no control at
+    // all — a dead end the reader could do nothing about.
+    expect(screen.getByText("This check can't be completed")).toBeDefined();
+    expect(document.body.textContent).toMatch(/no questions to answer/u);
+    expect(document.body.textContent).not.toMatch(/Question 1 of 0/u);
+    expect(screen.getByRole("link", { name: "Back to your checks" }).getAttribute("href")).toBe(
+      "/standards",
+    );
+    expect(screen.queryByRole("button", { name: "Submit check" })).toBeNull();
+  });
+});
+
+describe("Centre Standards check container", () => {
+  function gateway(
+    check: StandardsCheckDetail | Promise<StandardsCheckDetail>,
+  ): CentreStandardsGateway {
+    return {
+      loadWorkspace: () => Promise.reject(new Error("unused")),
+      loadCheck: () => Promise.resolve(check),
+      completeCheck: () => Promise.reject(new Error("unused")),
+    };
+  }
+
+  test("keeps the completion screen free of competing navigation", async () => {
+    navigationMocks.getAuthorisedNavigationEndpoint.mockResolvedValue({
+      cacheControl: "private, no-store",
+      links: [{ label: "Centre Standards", route: "/standards" }],
+    });
+    render(<CentreStandardsCheck occurrenceId={OCCURRENCE} gateway={gateway(openDetail())} />);
+
+    await screen.findByRole("group", { name: /Test question 1/u });
+    expect(screen.queryByRole("navigation", { name: "Centre Success workspaces" })).toBeNull();
+    // The chrome-free treatment is the reason not to spend a request on it.
+    expect(navigationMocks.getAuthorisedNavigationEndpoint).not.toHaveBeenCalled();
+  });
+
+  test("gives a reader navigation rather than stranding them", async () => {
+    navigationMocks.getAuthorisedNavigationEndpoint.mockResolvedValue({
+      cacheControl: "private, no-store",
+      links: [{ label: "Centre Standards", route: "/standards" }],
+    });
+    render(
+      <CentreStandardsCheck occurrenceId={OCCURRENCE} gateway={gateway(completedDetail())} />,
+    );
+
+    await screen.findByText("The recorded answers are not available to you.");
+    const nav = await screen.findByRole("navigation", { name: "Centre Success workspaces" });
+    // The bar starts on its Daily Success baseline, so wait for the
+    // capability-derived link rather than racing the request.
+    await within(nav).findByRole("link", { name: "Centre Standards" });
+    expect(screen.queryByRole("button", { name: "Submit check" })).toBeNull();
+  });
+
+  test("moves focus onto the check once it has opened", async () => {
+    render(<CentreStandardsCheck occurrenceId={OCCURRENCE} gateway={gateway(openDetail())} />);
+    const heading = await screen.findByRole("heading", { level: 1 });
+    await waitFor(() => expect(document.activeElement).toBe(heading));
+  });
+
+  test("announces what opened for assistive technology", async () => {
+    render(<CentreStandardsCheck occurrenceId={OCCURRENCE} gateway={gateway(openDetail())} />);
+    await waitFor(() => {
+      const spoken = screen.getAllByRole("status").map((node) => node.textContent);
+      expect(spoken.join(" ")).toContain("Your check is ready to complete.");
+    });
+  });
+
+  test("says nothing was recorded when the check cannot be opened", async () => {
+    render(
+      <CentreStandardsCheck
+        occurrenceId={OCCURRENCE}
+        gateway={{
+          loadWorkspace: () => Promise.reject(new Error("unused")),
+          loadCheck: () => Promise.reject(new Error("offline")),
+          completeCheck: () => Promise.reject(new Error("unused")),
+        }}
+      />,
+    );
+    await screen.findByText("This check couldn't be opened");
+    // Nothing was sent, so this screen may state that plainly — unlike a
+    // failed submission, which may have committed.
+    expect(document.body.textContent).toMatch(/Nothing has been recorded/u);
+  });
+
+  test("keeps navigation in place across a retry from the error screen", async () => {
+    render(
+      <CentreStandardsCheck
+        occurrenceId={OCCURRENCE}
+        gateway={{
+          loadWorkspace: () => Promise.reject(new Error("unused")),
+          loadCheck: () => Promise.reject(new Error("offline")),
+          completeCheck: () => Promise.reject(new Error("unused")),
+        }}
+      />,
+    );
+    await screen.findByText("This check couldn't be opened");
+    const nav = screen.getByRole("navigation", { name: "Centre Success workspaces" });
+
+    fireEvent.click(screen.getByRole("button", { name: "Try again" }));
+    // Retry passes back through loading. Deriving the frame each render would
+    // pull the bar out from under the reader mid-retry.
+    expect(screen.getByRole("navigation", { name: "Centre Success workspaces" })).toBe(nav);
+    await screen.findByText("This check couldn't be opened");
+    expect(screen.getByRole("navigation", { name: "Centre Success workspaces" })).toBeDefined();
   });
 });
 
