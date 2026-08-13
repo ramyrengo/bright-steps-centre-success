@@ -388,6 +388,122 @@ export function Dialog({
 }
 
 /** A short reason explaining why a control is unavailable, tied to it by id. */
+/**
+ * A single assessed answer, rendered as a set of large targets.
+ *
+ * Built on native radios so keyboard operation, arrow-key movement, the
+ * accessible selected state and forced-colors support all come from the
+ * platform rather than being re-implemented. The visible target is the label,
+ * which is what makes a 56px one-handed control possible without abandoning
+ * real form semantics.
+ *
+ * It is deliberately not a form framework: it renders permitted options for
+ * one question and reports the chosen opaque value.
+ */
+export function AnswerControl({
+  legend,
+  name,
+  options,
+  value,
+  onChange,
+  disabled = false,
+  instructions,
+}: Readonly<{
+  legend: string;
+  name: string;
+  options: readonly { value: string; label: string; description?: string }[];
+  value: string | undefined;
+  onChange: (next: string) => void;
+  disabled?: boolean;
+  instructions?: string;
+}>) {
+  const instructionsId = useId();
+  return (
+    <fieldset
+      className="answer-control"
+      {...(instructions ? { "aria-describedby": instructionsId } : {})}
+    >
+      <legend className="answer-control__legend">{legend}</legend>
+      {instructions ? (
+        <p className="answer-control__instructions" id={instructionsId}>
+          {instructions}
+        </p>
+      ) : null}
+      <div className="answer-control__options">
+        {options.map((option) => (
+          <label className="answer-option" key={option.value}>
+            <input
+              type="radio"
+              name={name}
+              value={option.value}
+              checked={value === option.value}
+              disabled={disabled}
+              onChange={() => onChange(option.value)}
+            />
+            <span className="answer-option__mark" aria-hidden="true" />
+            <span className="answer-option__body">
+              <span className="answer-option__label">{option.label}</span>
+              {option.description ? (
+                <span className="answer-option__description">{option.description}</span>
+              ) : null}
+            </span>
+          </label>
+        ))}
+      </div>
+    </fieldset>
+  );
+}
+
+/** Position within a check. The written count is the accessible source of truth. */
+export function CheckProgress({
+  current,
+  total,
+}: Readonly<{ current: number; total: number }>) {
+  return (
+    <div className="check-progress">
+      <p className="check-progress__text">
+        Question {current} of {total}
+      </p>
+      <div className="check-progress__track" aria-hidden="true">
+        {Array.from({ length: total }, (_, index) => (
+          <span
+            key={index}
+            className="check-progress__step"
+            data-state={index < current ? "done" : "todo"}
+          />
+        ))}
+      </div>
+    </div>
+  );
+}
+
+/**
+ * The screen a completed check lands on. Completion is a destination, never a
+ * toast: an educator who looked away must still be able to tell it worked.
+ */
+export function CompletionState({
+  title,
+  message,
+  detail,
+  action,
+}: Readonly<{
+  title: string;
+  message: string;
+  detail?: string;
+  action?: ReactNode;
+}>) {
+  const titleId = useId();
+  return (
+    <section className="completion-state" aria-labelledby={titleId} role="status">
+      <span className="completion-state__mark" aria-hidden="true">✓</span>
+      <h1 id={titleId} data-page-focus tabIndex={-1}>{title}</h1>
+      <p className="completion-state__message">{message}</p>
+      {detail ? <p className="completion-state__detail">{detail}</p> : null}
+      {action ? <div className="completion-state__action">{action}</div> : null}
+    </section>
+  );
+}
+
 export function DisabledReason({ id, children }: Readonly<{ id: string; children: ReactNode }>) {
   return <p className="metric__note" id={id}>{children}</p>;
 }
