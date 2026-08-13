@@ -276,15 +276,33 @@ is authorised:
 - Only `OPEN` occurrences are projected. A completed check is no longer active
   work, and any issue it raised travels through the existing corrective-action
   source — so one underlying problem is never two cards.
+- **`synthetic` must travel with the occurrence onto the card.** This is the
+  same propagation requirement `G` already states for the action origin: a
+  staging occurrence sitting in a Centre Director's real Daily Success list has
+  to say so where it is read, not only on the screen where it was created. The
+  card renders "Staging test content" from that flag alone — it does not need
+  `syntheticNotice`, because the full wording belongs on the check itself.
+
+The projection is a pure function on the frontend
+(`projectDailyOccurrences` in `centre-standards-integration.tsx`), so the
+completed-occurrence rule is enforced by the discriminated summary rather than
+by a filter Codex has to remember: a `COMPLETED` summary carries no
+`canComplete`, so it has nothing to build a call to action from and cannot
+reach a card by accident. Passing `StandardsCheckSummary[]` straight in is
+therefore safe.
+
+`responsibility` and whether to name the centre are supplied by the
+perspective, not by the check — they are facts about the view.
 
 ---
 
 ## What is already proven on the frontend
 
-255 frontend tests pass, including: single submission under three same-batch
-native clicks; partial-empty never rendering an all-clear; ambiguous failure
-keeping answers and retrying into `ALREADY_COMPLETED`; in-app leave protection
-on the brand link and sign out; focus moving to the completion heading; and no
-workflow vocabulary, option value or identifier reaching the DOM.
+The frontend suite covers: single submission under three same-batch native
+clicks; partial-empty never rendering an all-clear; ambiguous failure keeping
+answers and retrying into `ALREADY_COMPLETED`; in-app leave protection on the
+brand link and sign out; focus moving to the completion heading; a completed
+occurrence never reaching a Daily Success card; and no workflow vocabulary,
+option value or identifier reaching the DOM.
 
 Measured at 375px and 1024px: no horizontal overflow, 60px answer targets.

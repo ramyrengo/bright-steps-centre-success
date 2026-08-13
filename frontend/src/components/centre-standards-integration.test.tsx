@@ -4,14 +4,75 @@ import { afterEach, describe, expect, test } from "vitest";
 import {
   ActionOriginLine,
   DailyOccurrenceCard,
+  DailyOccurrenceList,
   actionOriginLabel,
   occurrenceCta,
+  projectDailyOccurrences,
 } from "./centre-standards-integration";
 import type { ActionOrigin } from "./centre-standards-integration";
+import type { StandardsCheckSummary } from "./centre-standards-contract";
 
 afterEach(cleanup);
 
 const OCCURRENCE = "b6f2b0c4-1a4e-4a5c-9f3d-0c2f1d5a7e01";
+const SECOND_OCCURRENCE = "3a1c9d70-6b2e-4f18-8a55-2d9e7c4b1f02";
+const SYNTHETIC_NOTICE =
+  "Synthetic staging check for Centre Success testing. This is not a Bright Steps policy, regulatory requirement or operational standard.";
+
+/** Typed fixtures only; the wording is unmistakable test scaffolding. */
+const IDENTITY = {
+  standardName: "Centre Standards Pilot — Staging",
+  centreName: "Ashgrove Quality Centre",
+  businessDate: "2026-08-13",
+  questionCount: 3,
+} as const;
+
+function openSummary(
+  overrides: {
+    occurrenceId?: string;
+    timeliness?: "DUE" | "OVERDUE";
+    canComplete?: boolean;
+    synthetic?: boolean;
+  } = {},
+): StandardsCheckSummary {
+  const open = {
+    ...IDENTITY,
+    occurrenceId: overrides.occurrenceId ?? OCCURRENCE,
+    state: "OPEN",
+    timeliness: overrides.timeliness ?? "DUE",
+    dueLocalTime: "9:00am",
+    canComplete: overrides.canComplete ?? true,
+  } as const;
+  return overrides.synthetic
+    ? { ...open, synthetic: true, syntheticNotice: SYNTHETIC_NOTICE }
+    : { ...open, synthetic: false };
+}
+
+function completedSummary(
+  overrides: { occurrenceId?: string } = {},
+): StandardsCheckSummary {
+  return {
+    occurrenceId: overrides.occurrenceId ?? SECOND_OCCURRENCE,
+    standardName: "Centre Standards Pilot — Staging",
+    centreName: "Ashgrove Quality Centre",
+    businessDate: "2026-08-13",
+    questionCount: 3,
+    synthetic: false,
+    state: "COMPLETED",
+    timeliness: "COMPLETED_ON_TIME",
+    dueLocalTime: "9:00am",
+    completedLocalTime: "7:42am",
+  };
+}
+
+const CENTRE_VIEW = {
+  responsibility: "YOUR_CENTRE_NEEDS_TO_ACT" as const,
+  includeCentreName: false,
+};
+const PORTFOLIO_VIEW = {
+  responsibility: "YOUR_CENTRE_NEEDS_TO_ACT" as const,
+  includeCentreName: true,
+};
 
 describe("Daily Success occurrence card", () => {
   const base = {
@@ -82,6 +143,108 @@ describe("Daily Success occurrence card", () => {
     expect(
       screen.getByRole("link", { name: /Start check — Centre Standards Pilot/u }),
     ).toBeDefined();
+  });
+});
+
+describe("Daily Success occurrence projection", () => {
+  test("keeps a completed occurrence out of the list entirely", () => {
+    const projected = projectDailyOccurrences(
+      [openSummary(), completedSummary()],
+      CENTRE_VIEW,
+    );
+    expect(projected).toHaveLength(1);
+    expect(projected[0].cta.route).toBe(`/standards/checks/${OCCURRENCE}`);
+
+    render(<DailyOccurrenceList occurrences={projected} />);
+    expect(screen.getAllByRole("listitem")).toHaveLength(1);
+    // A completed check is not active work, and any issue it raised travels
+    // through the corrective-action source instead — never a second card.
+    expect(document.body.textContent).not.toMatch(/Completed|7:42am/u);
+  });
+
+  test("renders nothing at all once every occurrence is completed", () => {
+    const projected = projectDailyOccurrences([completedSummary()], CENTRE_VIEW);
+    expect(projected).toEqual([]);
+
+    const { container } = render(<DailyOccurrenceList occurrences={projected} />);
+    // Daily Success owns the all-clear across every source; a quiet Centre
+    // Standards list must not speak for the whole day.
+    expect(container.innerHTML).toBe("");
+    expect(screen.queryByRole("list")).toBeNull();
+  });
+
+  test("carries overdue timeliness into why the card is shown", () => {
+    const [card] = projectDailyOccurrences(
+      [openSummary({ timeliness: "OVERDUE" })],
+      CENTRE_VIEW,
+    );
+    expect(card.whyShown).toBe("CHECK_OVERDUE");
+    expect(card.dueLocalTime).toBe("9:00am");
+  });
+
+  test("names the centre only where the perspective spans more than one", () => {
+    const [centre] = projectDailyOccurrences([openSummary()], CENTRE_VIEW);
+    const [portfolio] = projectDailyOccurrences([openSummary()], PORTFOLIO_VIEW);
+    expect(centre.centreName).toBeUndefined();
+    expect(portfolio.centreName).toBe("Ashgrove Quality Centre");
+  });
+
+  test("gives a reader a view label without changing the destination", () => {
+    const [card] = projectDailyOccurrences(
+      [openSummary({ canComplete: false })],
+      CENTRE_VIEW,
+    );
+    expect(card.cta.label).toBe("View check");
+    expect(card.cta.route).toBe(`/standards/checks/${OCCURRENCE}`);
+  });
+
+  test("carries the staging marker onto a real Daily Success list", () => {
+    const projected = projectDailyOccurrences(
+      [openSummary({ synthetic: true })],
+      CENTRE_VIEW,
+    );
+    render(<DailyOccurrenceList occurrences={projected} />);
+    // The reader of the card is the person who has to know it is pilot
+    // content, so the marker travels with the work rather than staying on the
+    // screen where it was created.
+    expect(screen.getByText("Staging test content")).toBeDefined();
+  });
+
+  test("leaves a real occurrence unmarked", () => {
+    render(
+      <DailyOccurrenceList
+        occurrences={projectDailyOccurrences([openSummary()], CENTRE_VIEW)}
+      />,
+    );
+    expect(screen.queryByText("Staging test content")).toBeNull();
+  });
+
+  test("exposes no identifier, option value or workflow vocabulary", () => {
+    render(
+      <DailyOccurrenceList
+        occurrences={projectDailyOccurrences(
+          [openSummary({ synthetic: true, timeliness: "OVERDUE" })],
+          PORTFOLIO_VIEW,
+        )}
+      />,
+    );
+    const text = document.body.textContent ?? "";
+    expect(text).not.toContain(OCCURRENCE);
+    expect(text).not.toMatch(/CHECK_OVERDUE|YOUR_CENTRE_NEEDS_TO_ACT|OPEN|COMPLETED/u);
+    expect(text).not.toMatch(/finding|corrective action|severity|verification|remediation/iu);
+  });
+
+  test("keeps each card distinct when a centre has more than one check", () => {
+    const projected = projectDailyOccurrences(
+      [
+        openSummary(),
+        openSummary({ occurrenceId: SECOND_OCCURRENCE, timeliness: "OVERDUE" }),
+      ],
+      PORTFOLIO_VIEW,
+    );
+    render(<DailyOccurrenceList occurrences={projected} />);
+    expect(screen.getAllByRole("listitem")).toHaveLength(2);
+    expect(screen.getAllByRole("link", { name: /Start check/u })).toHaveLength(2);
   });
 });
 

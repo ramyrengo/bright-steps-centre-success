@@ -74,6 +74,13 @@ function CheckHeader({ check }: Readonly<{ check: StandardsCheckSummary }>) {
         <span>
           {check.centreName} · {businessDateLabel(check.businessDate)}
         </span>
+        {/* What it was due by, stated only once the check is closed. While it
+            is open the badge already says it, and repeating it would be noise;
+            once it is completed the badge says only when, which leaves a
+            reader judging "completed late" against nothing. */}
+        {check.state === "COMPLETED" ? (
+          <span>Due by {check.dueLocalTime}</span>
+        ) : null}
       </div>
     </header>
   );
@@ -487,6 +494,10 @@ export function CentreStandardsCheck({
         message="Nothing has been recorded. Please try again shortly."
         onRetry={() => {
           setState("loading");
+          // Put the live region back to the loading wording. Left saying "could
+          // not be opened", a second identical failure changes no text and so
+          // announces nothing: the reader presses Try again and hears silence.
+          setAnnouncement("Opening your check.");
           setAttempt((value) => value + 1);
         }}
       />

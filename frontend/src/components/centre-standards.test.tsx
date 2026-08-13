@@ -627,6 +627,34 @@ describe("Centre Standards check container", () => {
     await screen.findByText("This check couldn't be opened");
     expect(screen.getByRole("navigation", { name: "Centre Success workspaces" })).toBeDefined();
   });
+
+  test("announces that a retry is under way rather than going silent", async () => {
+    const loadCheck = vi
+      .fn<() => Promise<StandardsCheckDetail>>()
+      .mockRejectedValueOnce(new Error("offline"))
+      .mockReturnValue(new Promise<StandardsCheckDetail>(() => {}));
+    render(
+      <CentreStandardsCheck
+        occurrenceId={OCCURRENCE}
+        gateway={{
+          loadWorkspace: () => Promise.reject(new Error("unused")),
+          loadCheck,
+          completeCheck: () => Promise.reject(new Error("unused")),
+        }}
+      />,
+    );
+    await screen.findByText("This check couldn't be opened");
+
+    // The page-level region is the one that carries state across screens; the
+    // skeleton's own label goes away with the skeleton.
+    const region = () => document.querySelector('p[role="status"][aria-atomic="true"]');
+    expect(region()?.textContent).toBe("This check could not be opened.");
+
+    fireEvent.click(screen.getByRole("button", { name: "Try again" }));
+    // Left on the failure wording, a second identical failure changes no text
+    // and so announces nothing: the reader presses Try again and hears silence.
+    await waitFor(() => expect(region()?.textContent).toBe("Opening your check."));
+  });
 });
 
 describe("Centre Standards in-app leave protection", () => {
@@ -768,6 +796,25 @@ describe("Centre Standards read-only occurrence", () => {
     expect(document.body.textContent).not.toMatch(/%/u);
   });
 
+  test("says what a completed check was due by, so 'late' can be judged", () => {
+    render(
+      <StandardsCheckReadOnly
+        check={completedDetail({ timeliness: "COMPLETED_LATE", completedLocalTime: "9:18am" })}
+      />,
+    );
+    // The badge says when it was completed; without the deadline beside it a
+    // reader is asked to accept "late" against nothing.
+    expect(screen.getByText("Completed late · 9:18am")).toBeDefined();
+    expect(screen.getByText("Due by 9:00am")).toBeDefined();
+  });
+
+  test("does not repeat the deadline while the check is still open", () => {
+    render(<StandardsCheckReadOnly check={openDetail({ canComplete: false })} />);
+    // The badge already reads "Due by 9:00am" on an open check, so a second
+    // copy would be noise rather than context.
+    expect(screen.getAllByText("Due by 9:00am")).toHaveLength(1);
+  });
+
   test("says answers are unavailable rather than showing an empty record", () => {
     render(<StandardsCheckReadOnly check={completedDetail()} />);
     expect(screen.getByText("The recorded answers are not available to you.")).toBeDefined();
@@ -837,6 +884,28 @@ describe("Centre Standards workspace container", () => {
     await screen.findByText("Your checks couldn't be loaded");
     expect(screen.queryByText("Nothing due right now")).toBeNull();
     expect(document.body.textContent).toMatch(/does not mean there is nothing due/iu);
+  });
+
+  test("announces that a retry is under way rather than going silent", async () => {
+    const loadWorkspace = vi
+      .fn<() => Promise<StandardsWorkspace>>()
+      .mockRejectedValueOnce(new Error("offline"))
+      .mockReturnValue(new Promise<StandardsWorkspace>(() => {}));
+    render(
+      <CentreStandardsWorkspace
+        gateway={{
+          loadWorkspace,
+          loadCheck: () => Promise.reject(new Error("unused")),
+          completeCheck: () => Promise.reject(new Error("unused")),
+        }}
+      />,
+    );
+    await screen.findByText("Your checks couldn't be loaded");
+    const region = () => document.querySelector('p[role="status"][aria-atomic="true"]');
+    expect(region()?.textContent).toBe("Your checks could not be loaded.");
+
+    fireEvent.click(screen.getByRole("button", { name: "Try again" }));
+    await waitFor(() => expect(region()?.textContent).toBe("Checking your checks."));
   });
 
   test("announces its state politely for assistive technology", async () => {

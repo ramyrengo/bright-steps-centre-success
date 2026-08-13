@@ -4,6 +4,10 @@ import Link from "next/link";
 
 import { StatusBadge } from "./design-system";
 import { businessDateLabel } from "./centre-standards-contract";
+import type {
+  OpenCheckSummary,
+  StandardsCheckSummary,
+} from "./centre-standards-contract";
 
 /**
  * Presentation for the two places Centre Standards appears inside surfaces it
@@ -60,6 +64,15 @@ export interface DailyOccurrenceCardProps {
   /** Presentation-ready centre-local time, e.g. "9:00am". */
   dueLocalTime: string;
   cta: DailyOccurrenceCta;
+  /**
+   * Marks pilot content where it is read, not only where it was created.
+   *
+   * A synthetic occurrence reaching a Director's real Daily Success list is the
+   * same propagation requirement the corrective-action origin line already
+   * carries: whoever reads the work must be able to tell it is staging content,
+   * and a card is where they read it.
+   */
+  synthetic?: boolean;
 }
 
 const WHY_SHOWN_LABEL: Record<OccurrenceWhyShown, string> = {
@@ -87,6 +100,7 @@ export function DailyOccurrenceCard({
   responsibility,
   dueLocalTime,
   cta,
+  synthetic = false,
 }: Readonly<DailyOccurrenceCardProps>) {
   const overdue = whyShown === "CHECK_OVERDUE";
   return (
@@ -104,11 +118,79 @@ export function DailyOccurrenceCard({
         {centreName ? `${centreName} · ` : ""}
         {overdue ? `Was due by ${dueLocalTime}` : `Due by ${dueLocalTime}`}
       </p>
+      {synthetic ? (
+        <p className="daily-occurrence__synthetic">Staging test content</p>
+      ) : null}
       <Link className="button button--secondary" href={cta.route}>
         {cta.label}
         <span className="visually-hidden"> — {standardName}</span>
       </Link>
     </article>
+  );
+}
+
+/**
+ * Which occurrences Daily Success shows, and how each one reads.
+ *
+ * A completed occurrence leaves the list the moment it is completed: it is no
+ * longer active work, and any issue it raised travels through the existing
+ * corrective-action source, so one underlying problem is never two cards. The
+ * discriminated summary makes that a projection rather than a filter on a
+ * nullable field — a completed occurrence carries no completion authority, so
+ * it has nothing to build a call to action from and cannot reach a card by
+ * accident.
+ *
+ * `responsibility` and `includeCentreName` are supplied by the perspective,
+ * because who needs to act and whether the centre is worth naming are facts
+ * about the view, not about the check.
+ */
+export function projectDailyOccurrences(
+  checks: readonly StandardsCheckSummary[],
+  perspective: Readonly<{
+    responsibility: OccurrenceResponsibility;
+    /** Portfolio and oversight views name the centre; a single-centre view does not. */
+    includeCentreName: boolean;
+  }>,
+): DailyOccurrenceCardProps[] {
+  return checks
+    .filter((check): check is OpenCheckSummary => check.state === "OPEN")
+    .map((check) => ({
+      standardName: check.standardName,
+      ...(perspective.includeCentreName ? { centreName: check.centreName } : {}),
+      whyShown:
+        check.timeliness === "OVERDUE"
+          ? ("CHECK_OVERDUE" as const)
+          : ("CHECK_DUE_TODAY" as const),
+      responsibility: perspective.responsibility,
+      dueLocalTime: check.dueLocalTime,
+      cta: occurrenceCta({
+        occurrenceId: check.occurrenceId,
+        canComplete: check.canComplete,
+      }),
+      synthetic: check.synthetic,
+    }));
+}
+
+/**
+ * The projected occurrences as a Daily Success list.
+ *
+ * It renders nothing at all when the projection is empty rather than an
+ * all-clear of its own: Daily Success owns the "on track" statement across
+ * every source, and a second one here would let a single quiet source speak
+ * for the whole day.
+ */
+export function DailyOccurrenceList({
+  occurrences,
+}: Readonly<{ occurrences: readonly DailyOccurrenceCardProps[] }>) {
+  if (occurrences.length === 0) return null;
+  return (
+    <ul className="daily-list" role="list">
+      {occurrences.map((occurrence) => (
+        <li key={occurrence.cta.route}>
+          <DailyOccurrenceCard {...occurrence} />
+        </li>
+      ))}
+    </ul>
   );
 }
 

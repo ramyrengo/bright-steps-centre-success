@@ -81,11 +81,11 @@ export function CentreStandardsWorkspaceView({
   if (response.status === "unsupported") {
     return (
       <>
-        <PageHeader
-          eyebrow="Centre Standards"
-          title="Centre Standards"
-          summary="Scheduled operational checks for the centres you work in."
-        />
+        {/* No eyebrow and no summary on this branch. The eyebrow exists to put
+            a varying headline in context, and here the headline *is* the module
+            name — repeating it stutters. The standing summary would also claim
+            "the centres you work in" to a principal who works in none. */}
+        <PageHeader title="Centre Standards" />
         <EmptyState
           title="No checks are assigned to you"
           message="Your account is connected, but no centre currently gives you scheduled checks. Technical administration alone does not grant this."
@@ -198,6 +198,10 @@ export function CentreStandardsWorkspace({
 
   const retry = useCallback(() => {
     setState("loading");
+    // Put the live region back to the loading wording. Left saying "could not
+    // be loaded", a second identical failure changes no text and so announces
+    // nothing: the reader presses Try again and hears silence.
+    setAnnouncement("Checking your checks.");
     setAttempt((value) => value + 1);
   }, []);
 
