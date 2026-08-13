@@ -1,6 +1,6 @@
 # Centre Standards 4A — frontend contract request
 
-**From:** Centre Standards UX lane (`feature/centre-standards-4a-ux`, HEAD `df1bee3`)
+**From:** Centre Standards UX lane, branch `feature/centre-standards-4a-ux`
 **To:** Centre Standards backend lane
 **Status:** Request for review. No backend work is implied or authorised by this
 document; it states what the built frontend needs in order to be wired.
