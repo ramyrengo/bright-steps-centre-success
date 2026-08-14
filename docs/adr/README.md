@@ -30,6 +30,8 @@ no longer governs the current architecture; its replacement record is normative.
 
 ## Proposed for independent review
 
+- [ADR-0018: Centre Standards — Milestone 4A operational loop](0018-centre-standards-milestone-4a-operational-loop.md) — implemented; local implementation gate passed at `1bf06b7`; independent review and acceptance outstanding
+- [ADR-0019: Finding source families](0019-finding-source-families.md) — implemented alongside ADR-0018; independent review and acceptance outstanding
 - [ADR-0021: Production readiness and the first production release boundary](0021-production-readiness-and-first-release-boundary.md) — defines Release Boundary P1; implementation not authorised
 
 ## Superseded

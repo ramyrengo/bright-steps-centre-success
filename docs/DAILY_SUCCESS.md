@@ -2,11 +2,13 @@
 
 ## Status and boundary
 
-**Milestone 3A is ACCEPTED / COMPLETE.** The Product Owner accepted the implementation on 12 August 2026 after, in sequence, implementation, a first independent review returning PASS WITH CHANGES, acceptance remediation, a targeted independent re-review returning PASS, a green local regression gate, green hosted Foundation CI and Encore Build, and merge to `main` through pull request #6. This document records the approved Daily Success architecture, remediation evidence, and implementation boundary. Every later milestone remains locked.
+**Milestone 3A is ACCEPTED / COMPLETE.** The Product Owner accepted the implementation on 12 August 2026 after, in sequence, implementation, a first independent review returning PASS WITH CHANGES, acceptance remediation, a targeted independent re-review returning PASS, a green local regression gate, green hosted Foundation CI and Encore Build, and merge to `main` through pull request #6. This document records the approved Daily Success architecture, remediation evidence, and implementation boundary. Milestone 3B remains locked. The separately authorised narrow Centre Quality & Performance read projection reserves ADR-0017 and remains valid for integration. ADR-0018 and ADR-0019 separately authorise Centre Standards 4A architecture review only; none of those records changes the accepted 3A boundary or authorises broader Daily Success implementation.
 
 Acceptance is an implementation acceptance only. Centre Success is not production-ready, and pilot/production readiness remains separately gated.
 
 Daily Success is a live, read-only orchestration and priority projection over existing Centre Success source workflows. Corrective actions, quarterly reviews, and People & Access remain authoritative. Daily Success may read, prioritise, safely summarise, and deep-link; it owns no workflow mutation or duplicate state.
+
+ADR-0018's architecture-only Centre Standards extension preserves that rule: its future adapter may project only authorised `OPEN` occurrences due today or overdue. Completion removes the occurrence from active Daily Success work; any generated obligation then appears only through the existing corrective-action source. CTA selection distinguishes `operational_check.complete` from read-only `operational_check.read`, and every destination reauthorises. This is a future 4A contract, not implemented Milestone 3A behaviour.
 
 Milestone 3A creates no Daily Success table, daily task, snapshot, copied status/due date/owner, generic task, completion, acknowledgement, dismissal, snooze, preference, notification, manual priority, or materialised projection. A source workflow change appears on the next request.
 
