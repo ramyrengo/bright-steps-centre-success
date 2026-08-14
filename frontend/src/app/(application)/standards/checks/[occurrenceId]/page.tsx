@@ -1,5 +1,5 @@
 import { BusinessWorkspaceGate } from "@/components/app-shell";
-import { CentreStandardsCheck } from "@/components/centre-standards-check";
+import { ConnectedCentreStandardsCheck } from "@/components/centre-standards-connected";
 
 /**
  * The occurrence route. The shell belongs to the component rather than this
@@ -12,7 +12,7 @@ export default async function CentreStandardsCheckPage({
   const { occurrenceId } = await params;
   return (
     <BusinessWorkspaceGate>
-      <CentreStandardsCheck occurrenceId={occurrenceId} />
+      <ConnectedCentreStandardsCheck occurrenceId={occurrenceId} />
     </BusinessWorkspaceGate>
   );
 }
