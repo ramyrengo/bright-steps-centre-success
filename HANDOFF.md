@@ -1,7 +1,7 @@
 # Centre Success — Session Handoff
 
-**Written:** 14 August 2026, at the end of a long session.
-**Status:** No work in progress. All background agents completed. Working tree clean.
+**Written:** 14 August 2026. **Revised** later the same day, after Centre Budgets and the operator ceremonies merged to `main`.
+**Status:** No work in progress from this line of work. A concurrent session is live on `feature/budget-threshold-bands` — see §1.
 
 ---
 
@@ -10,26 +10,25 @@
 | | |
 | --- | --- |
 | **Project** | Bright Steps Centre Success — operational assurance platform for Bright Steps Academy, a multi-centre Australian early childhood provider |
-| **Active worktree** | `/Users/ramymorkos/Documents/Claude/bright-steps-centre-success-budgets` |
-| **Branch** | `feature/centre-budgets` |
-| **Base** | `origin/main` at `24f0bcc` |
-| **Last code commit** | `bd22bf9` — 8 ahead of `main`. All gates green here; §7's test counts refer to it. **This is the review target.** |
-| **HEAD** | Tip of `feature/centre-budgets`. Everything after `bd22bf9` is this handoff — documentation only, no code. Check with `git log --oneline -3`. |
-| **Working tree** | **CLEAN.** `HANDOFF.md` is tracked as of `e9cc436`. |
+| **`main`** | **`0ca654a`** — Centre Budgets, both operator ceremonies, and the independent review are all merged and on the main line |
+| **Everything below is in `main`** | Nothing in this handoff is waiting on an unmerged branch any more. `feature/centre-budgets` and the three review branches are merged and deleted. |
+| **Live work elsewhere** | `feature/budget-threshold-bands` — a **concurrent session** is actively committing migration 029 and the `foundation/centre-budgets/` threshold rules there. Do not check that branch out, reset it, or commit to it. |
 
 **Stack:** Encore.ts + PostgreSQL modular monolith; Next.js/React/TypeScript frontend; Microsoft Entra ID authentication; PostgreSQL-owned authorisation.
 
-### Other worktrees (11 total, one shared Encore app id)
+### Worktrees (11 total, one shared Encore app id)
 
-| Path suffix | Branch | HEAD | State |
-| --- | --- | --- | --- |
-| *(main)* | `main` | `24f0bcc` | Has uncommitted governance docs — **do not touch** |
-| `-budgets` | `feature/centre-budgets` | `bd22bf9` + handoff | **Active. This handoff.** |
-| `-form-builder-integration` | `integration/form-builder` | `9d099c6` | **WIP, gate FAILS.** See §4 |
-| `-form-builder-{base,backend,ux}` | — | `9866018`/`1768630`/`149e055` | Synced, idle |
-| `-standards-{backend,ux}`, `-4a-integration`, `-product`, `-production-readiness` | — | — | Idle |
+| Path suffix | Branch | State |
+| --- | --- | --- |
+| *(main)* | `main` | At `24f0bcc`, **stale**, and holds uncommitted governance docs — **do not touch, do not pull** |
+| `-budgets` | `feature/budget-threshold-bands` | **A concurrent session is working here right now.** Leave it alone |
+| `-form-builder-integration` | `integration/form-builder` | **WIP, gate FAILS.** See §4 |
+| `-form-builder-{base,backend,ux}` | — | Synced, idle |
+| `-standards-{backend,ux}`, `-4a-integration`, `-product`, `-production-readiness` | — | Idle |
 
-> **All 11 worktrees share one Encore app id.** The shared local dev database is on migration **version 22** from a Centre Standards worktree, while this branch has **001–019 + 026–028**. `encore exec` therefore fails against it. **DO NOT reset that database** — another session may be using it. Use this worktree's isolated Encore test database.
+> **All 11 worktrees share one Encore app id.** The shared local dev database is on migration **version 22** from a Centre Standards worktree, so `encore exec` fails against it. **DO NOT reset that database** — another session may be using it. Use an isolated Encore test database.
+
+> **If you need a working tree, make one.** Both existing candidates are occupied: the `main` worktree has uncommitted governance docs, and `-budgets` has a live session in it. `git worktree add <dir> -b <branch> origin/main` is how the review work was done today, and it disturbed nobody. A docs-only change needs no `npm ci`; anything touching code does.
 
 ---
 
@@ -51,7 +50,9 @@
 
 ## 3. Work completed this session
 
-### Commits on `feature/centre-budgets` (oldest first)
+All of the below is merged to `main`, via **PR #14** (Centre Budgets and the ceremonies) and **PR #15** (the independent review and its fixes).
+
+### Commits, oldest first
 
 | Hash | Description |
 | --- | --- |
@@ -63,6 +64,10 @@
 | `dac1333` | Reviewed organisation reference load with a dry run |
 | `ef4c2d4` | ADR-0021 D5 production first-administrator ceremony, with dry run |
 | `bd22bf9` | Organisation load runnable in staging/production under a reviewed environment gate |
+| `cf10c96` | **Independent review record**, and the first tests running the load and the ceremony in sequence |
+| `dfc7626` | **R-1** — the ceremony takes `effective_from` from the database clock |
+| `593abe8` | **R-3, R-4, R-5** — gate signature, capability collation, guarded rollbacks |
+| `072961d` | **R-6** — one shared advisory lock for the two reviewed operator tools |
 
 ### Key files created
 
@@ -109,13 +114,25 @@ Frontend at `587b460`: typecheck ✅ · **223 tests** ✅ · lint ✅ · build �
 ### ✅ Working
 - **Centre Budgets end to end** — backend, frontend, categories seeded, reachable from navigation
 - **Organisation reference load tooling** — dry run verified, matches approved spec exactly
-- All gates green at `bd22bf9`
+- **Both operator ceremonies independently reviewed**, all seven findings resolved — see below
+- All gates green at `0ca654a`
 
-### ✅ D5 first-administrator ceremony — COMPLETE and verified (built `ef4c2d4`, environment gate extracted `bd22bf9`)
+### ✅ Independent review — DONE, and its findings are fixed
 
-Built, dry-run, committed. **`--apply` has never been run outside an isolated test database.**
+`docs/OPERATOR_CEREMONY_INDEPENDENT_REVIEW.md`. Read it before touching either ceremony; it is the record ADR-0021 asks for and it carries the reasoning behind several deliberate choices that look arbitrary in the code.
 
-> **Reviewing this ceremony means reviewing it at `bd22bf9`, not `ef4c2d4`.** `bd22bf9` changed ~100 lines of `first-administrator-ceremony.ts`, moving the four environment locks into the shared `operations/reviewed-environment-gate.ts`. The behavioural test file is byte-identical and still passes, so behaviour is unchanged — but the extraction is exactly the code an independent review has to check, and a review taken against `ef4c2d4` would never see it.
+Six actionable findings, all closed. The one that mattered:
+
+> **R-1.** The ceremony stamped `effective_from` from the **application** clock, and migration 017's reachability guard compared it against the **database** clock fixed at `BEGIN`. Two clocks, no margin — a database 2 ms behind, as measured locally, made the ceremony reach nobody and refuse `exactly_one_violated`. It failed closed, so nothing incorrect could commit; the cost was that an operator running a one-shot production ceremony would have read it as a serious invariant breach. `effective_from` now comes from `now()` inside the transaction.
+
+**Two things to carry forward from that review, because they will recur:**
+
+1. **R-1 was found only by running the two tools in sequence.** Each was fully green in isolation. The bug lived in the seam, and the test that exposed it was written to close a *coverage* finding, not to hunt a defect.
+2. **Four of the six findings were invisible to the test suite by construction.** Pinned clocks hid R-1; a `C`-collation database hides R-4 and half of R-3; R-6 cannot be tested behaviourally at all, because `pg_advisory_xact_lock` blocks rather than fails, so a test would hang rather than fail. This subsystem attracts properties that no behavioural test can catch — which is why it uses structural source assertions, and why `dependencies.now` was **removed** rather than repointed. Do not add an injectable clock back; it restores exactly the blindness that hid R-1.
+
+### ✅ D5 first-administrator ceremony — COMPLETE, reviewed, and fixed
+
+Built, dry-run, reviewed, committed. **`--apply` has never been run outside an isolated test database.**
 
 - `foundation/authentication/first-administrator-ceremony.ts` (~900 lines), `scripts/bootstrap-first-administrator.ts`, 2 test files (24 integration + 8 structural). No migration needed.
 - npm scripts: `admin:bootstrap:dry-run` / `admin:bootstrap:apply`
@@ -216,13 +233,13 @@ The blocker the D5 agent found is resolved. `foundation/operations/reviewed-envi
 
 ## 6. Exact next steps
 
-1. **Independent review of BOTH operator ceremonies — the first gate before either is run.** ADR-0021 requires independent review of the D5 ceremony before implementation; it was implemented under Product Owner authorisation and the review is still outstanding. The organisation load's environment gate (`bd22bf9`) should be reviewed in the same pass. Note both tools' staging/production paths are proven by integration tests simulating those environments, **never executed against a real deployment**.
+> **The independent review is DONE** and its six findings are fixed — see §4. What used to be step 1 here is no longer engineering work. **The critical path is now blocked on operator steps, not on code.**
 
-2. **Establish how `encore exec` reaches a deployed environment.** Both `admin:bootstrap:*` and `organisation:load:*` mirror the same invocation shape and share the same open question. Also confirm `appMeta().environment.name` is literally `staging` / `production` there — the gate matches **exactly**, so a name like `stg` refuses.
+1. **Establish how `encore exec` reaches a deployed environment.** This is now the first real blocker, and it is operator work rather than engineering. Both `admin:bootstrap:*` and `organisation:load:*` mirror the same invocation shape and share the same open question. Also confirm `appMeta().environment.name` is literally `staging` / `production` there — the gate matches **exactly**, so a name like `stg` refuses. Nothing on the critical path can move until this is answered.
 
-3. **Independent review of the D5 ceremony.** ADR-0021's own "What would unblock this" requires independent review *before* implementation. It was implemented under Product Owner authorisation; the review is still outstanding and is the first gate before it is ever run.
+2. **Decide whether an AI-performed review discharges ADR-0021's requirement.** `docs/OPERATOR_CEREMONY_INDEPENDENT_REVIEW.md` says plainly that it was written by an AI assistant that did not write the code, and deliberately does **not** assume this satisfies the record. If a human reviewer is intended, that review is still outstanding. ADR-0021 also asks for independent review *of the record itself*, which nothing has addressed.
 
-3. **Migration 029 for budget threshold bands.** 027 cannot express the approved rules. Five blockers:
+3. **Migration 029 for budget threshold bands.** ⚠️ **A concurrent session is already building this** on `feature/budget-threshold-bands`. Check that branch before starting; do not duplicate it. 027 cannot express the approved rules — five blockers:
    - No column for Rule B (remaining as a proportion of approved)
    - Rule B ≠ Rule A restated — they invert at negative approved budgets
    - `[min, max)` bounds cannot express "100 inclusive, red strictly above"
@@ -250,18 +267,20 @@ The blocker the D5 agent found is resolved. `foundation/operations/reviewed-envi
 export PATH="/Users/ramymorkos/.nvm/versions/node/v24.16.0/bin:/opt/homebrew/bin:$PATH"
 node --version   # MUST be v24.16.0
 
-cd /Users/ramymorkos/Documents/Claude/bright-steps-centre-success-budgets
-pwd
-git branch --show-current            # feature/centre-budgets
-git status --short                   # expect clean except untracked HANDOFF.md
-git log --oneline -8                 # HEAD is bd22bf9
-git worktree list
+# Do NOT run these in the -budgets worktree: a concurrent session is working
+# there. Make your own worktree off main first.
+git -C /Users/ramymorkos/Documents/Claude/bright-steps-centre-success-budgets worktree \
+  add /tmp/cs-verify --detach origin/main
+cd /tmp/cs-verify
+git log --oneline -1                 # expect 0ca654a or later
+git worktree list                    # 11 before yours
 
 docker info >/dev/null 2>&1 && echo DOCKER_OK || echo DOCKER_DOWN
 
+npm ci                               # a fresh worktree has no node_modules
 npm run typecheck
-npm run test:unit                    # 367 expected at bd22bf9
-npm run test:integration             # 248 expected at bd22bf9
+npm run test:unit                    # 373 expected at 0ca654a
+npm run test:integration             # 251 expected at 0ca654a
 npm --prefix frontend run typecheck
 npm --prefix frontend test           # 223 expected
 npm --prefix frontend run lint
@@ -269,9 +288,9 @@ npm --prefix frontend run build
 git diff --check
 ```
 
-If counts are **below** those numbers, something regressed. `bd22bf9` is the known-good commit.
+If counts are **below** those numbers, something regressed. `0ca654a` is the known-good commit.
 
-> Known flake, not hidden: `people-access.integration.test.ts > recovers stale dispatch claims` timed out once on a cold 33s run and passed on three subsequent runs. Pre-existing; not modified.
+> **Known flake, not hidden:** the timeouts in `people-access.integration.test.ts` are pre-existing and unmodified. Two different tests in that file have now timed out on a cold run and passed on every subsequent one — *"recovers stale dispatch claims"* and *"keeps proposals outside active grants…"*. Treat a single timeout in that file as noise; treat two consecutive as real.
 
 ---
 
@@ -280,7 +299,8 @@ If counts are **below** those numbers, something regressed. `bd22bf9` is the kno
 - **No secrets are in this repository.** No credential value appears in this handoff.
 - **Files that reference secrets by NAME only** (never values): `foundation/**` via Encore `secret()` — `EntraTenantId`, `EntraApiClientId`, `EntraWebClientId`, `InvitationTokenDigestKey`, `InvitationDeliveryEncryptionKey`, `InvitationPublicBaseUrl`, `MicrosoftGraphClientSecret`. Configured in Encore Cloud, not in code. `.github/scripts/secret-configuration-guard.mjs` checks presence, never values.
 - **Real personal data:** staff names and email addresses were given verbally and are deliberately **NOT committed**. They are operator input at invitation time. Keep it that way.
-- **Do not reset, stash, discard or overwrite** any worktree's uncommitted work. The main worktree has uncommitted governance docs; the form-builder-integration worktree has unreviewed edits. Both are deliberate.
+- **Do not reset, stash, discard or overwrite** any worktree's uncommitted work. The `main` worktree has uncommitted governance docs; `-form-builder-integration` has unreviewed edits; **`-budgets` has a concurrent session actively committing to it**. All three are deliberate.
+- **Check `git status` immediately before any destructive git operation, and never use `reset --hard` in a shared worktree.** During today's review, two tracked files appeared in `-budgets` within a minute of a clean status — a `reset --hard` would have destroyed another session's uncommitted work. `reset --mixed` followed by `git restore` on named paths does the same job without touching anything else.
 - **Do not reset the shared local Encore database.** Eleven worktrees share one app id.
 - Real staff data in **staging is still real personal data** — access control, retention and deletion apply.
 
@@ -294,11 +314,15 @@ If counts are **below** those numbers, something regressed. `bd22bf9` is the kno
 4. **Shared-device sign-in** — classroom tablets pass between educators all day; the flow assumes a personal device. **Blocks the entire Educator experience.**
 5. **Currency** — no currency approved anywhere. Budget figures render the ISO code the record carries, or plainly if none.
 6. **Period grain** — Budgets assumes monthly. The source says "financial period" against an organisation calendar and leaves the calendar open.
-7. **Production vs staging for the real organisation load** — `--apply` is local-only today; extending it is a separate operator ceremony.
-8. **Independent review of the D5 ceremony** — ADR-0021 requires it before the ceremony is *run* in production, separate from authorising the build.
+7. ~~Production vs staging for the real organisation load~~ — **resolved.** `--apply` reaches staging and production under the shared reviewed environment gate, since `bd22bf9`.
+8. **Does an AI-performed review discharge ADR-0021's independent-review requirement?** The review is written and its findings are fixed, but the record does not assume it satisfies the ADR. If a human reviewer is intended, that is still outstanding — as is ADR-0021's separate ask for independent review *of the record itself*.
+9. **How `encore exec` reaches a deployed environment**, and whether that deployment reports its name as exactly `staging` / `production`. Now the first blocker on the critical path.
 
 ### The critical path, stated plainly
+
 **Nobody can use any of this until:** D5 ceremony built → first administrator created → **second** administrator created (Bronwyn, Katie and Helena all classify PRIVILEGED and need an independent approver) → six invitations → each person signs in with a verified Entra identity. Hannah's pilot invitation sits behind all of it.
+
+**What changed today:** the first link is now built, reviewed and fixed, and the organisation load that has to precede it can reach a deployed environment. **Everything still outstanding on this path is operator work or a Product Owner decision — none of it is engineering.** Neither ceremony has ever run against a real deployment; their staging and production paths are proven by integration tests that simulate those environments, which is not the same as having run.
 
 ---
 
@@ -306,14 +330,18 @@ If counts are **below** those numbers, something regressed. `bd22bf9` is the kno
 
 > Continue Bright Steps Centre Success as lead full-stack engineer.
 >
-> Read `HANDOFF.md` at `/Users/ramymorkos/Documents/Claude/bright-steps-centre-success-budgets/HANDOFF.md` first, then the task list — tasks #5–#13 carry every Product Owner decision with its reasoning.
+> Read `HANDOFF.md` in the repository root first — it is on `main` — then `docs/OPERATOR_CEREMONY_INDEPENDENT_REVIEW.md`, then the task list. Tasks #5–#13 carry Product Owner decisions with their reasoning, but **trust the handoff over the task states**; several are stale.
 >
 > **Before anything else:** `export PATH="/Users/ramymorkos/.nvm/versions/node/v24.16.0/bin:/opt/homebrew/bin:$PATH"` and confirm `node --version` is v24.16.0. The default v18 is below this repo's engine floor and results obtained under it are meaningless.
 >
-> Both operator ceremonies are built and green at `bd22bf9`, and the tree is clean: the D5 first-administrator ceremony and the organisation reference load, sharing one reviewed environment gate. **Neither has ever been run against a real deployment** — their staging/production paths are proven only by integration tests that simulate those environments.
+> **Do not work in an existing worktree.** The `main` one holds uncommitted governance docs and the `-budgets` one has a concurrent session live in it. Make your own with `git worktree add <dir> -b <branch> origin/main`.
 >
-> In order: (1) migration 029 so the approved budget threshold bands can be seeded — migration 027 cannot express them, five blockers in HANDOFF §6; (2) close Phase A in the form-builder-integration worktree (11 fixture errors plus an unreviewed diff); (3) task #13, administrator support diagnostics.
+> `main` is at `0ca654a`. Centre Budgets, both operator ceremonies, and an independent review of those ceremonies with all six of its findings fixed, are merged. **Neither ceremony has ever been run against a real deployment** — their staging and production paths are proven only by integration tests that simulate those environments.
 >
-> Do not run either ceremony's `--apply` against a deployed environment without the independent review and operator steps in HANDOFF §6.
+> The critical path to real users is no longer blocked on engineering. Its first blocker is operator work: establish how `encore exec` reaches a deployed environment, and confirm that deployment reports its name as exactly `staging` or `production` — the gate matches exactly, so `stg` refuses. Ask me about that before assuming an answer.
 >
-> Do not invent regulatory requirements, thresholds, categories or currencies. Do not weaken tests to make a gate pass. Do not push, merge to main, or reset any worktree. Ask me before assuming any unresolved item in HANDOFF §9.
+> Engineering work available in the meantime, in order: (1) close Phase A in the form-builder-integration worktree — 11 fixture errors plus an unreviewed diff; (2) task #13, administrator support diagnostics. **Migration 029 for the budget threshold bands is already being built by a concurrent session on `feature/budget-threshold-bands`** — check before starting it.
+>
+> Do not run either ceremony's `--apply` against a deployed environment. Do not re-introduce an injectable clock into the first-administrator ceremony; `dependencies.now` was removed deliberately, and the review record says why.
+>
+> Do not invent regulatory requirements, thresholds, categories or currencies. Do not weaken tests to make a gate pass. Do not push to `main`, merge to `main`, or reset any worktree without asking. Ask me before assuming any unresolved item in HANDOFF §9.
