@@ -32,7 +32,7 @@ interface StandardsExecutor extends AuthorisationQueryExecutor {
   exec: (strings: TemplateStringsArray, ...values: Primitive[]) => Promise<void>;
 }
 
-interface PrincipalOrganisation {
+export interface PrincipalOrganisation {
   principalId: string;
   organisationId: string;
   context: PrincipalAuthorisationContext;
@@ -103,7 +103,7 @@ function countedExecutor(transaction: Transaction, onQuery: () => void): Standar
   };
 }
 
-async function loadPrincipalOrganisation(
+export async function loadPrincipalOrganisation(
   executor: StandardsExecutor,
   principalId: string,
   decisionAt: Date,

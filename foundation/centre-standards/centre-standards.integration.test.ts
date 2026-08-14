@@ -13,7 +13,9 @@ import { generateOperationalCheckOccurrences } from "./generator";
 import { buildStandardsWorkspace, completeStandardsCheck, loadStandardsCheckDetail } from "./service";
 import { loadCorrectiveActionDetail } from "../quarterly-reviews/queries";
 import { loadComplianceOversight } from "../quarterly-reviews/service";
-import { seedSyntheticStandardsPilot, SYNTHETIC_STANDARDS_PILOT_IDS, SYNTHETIC_STANDARDS_REMEDIATION } from "./synthetic-pilot";
+import { seedSyntheticStandardsPilot, SYNTHETIC_STANDARDS_PILOT_IDS, SYNTHETIC_STANDARDS_REMEDIATION, SyntheticStandardsSeedError } from "./synthetic-pilot";
+import { seedSyntheticStandardsPilotForPrincipal } from "./synthetic-pilot-operation";
+import { CentreStandardsError } from "./types";
 
 const localEnvironment = { cloud: "local" as const, name: "local", type: "development" as const };
 const ORGANISATION = "b5c40000-0000-4000-8000-000000000010";
@@ -909,5 +911,53 @@ describe.sequential("Milestone 4A Centre Standards vertical slice", () => {
     );
     expect(portfolio.diagnostics.queryCount).toBe(baseline.diagnostics.queryCount);
     expect(portfolio.response.status).toBe("ready");
+  });
+
+  test("only technical administration may seed the pilot, and an altered pilot is protected", async () => {
+    const staging = { cloud: "encore" as const, name: "staging", type: "development" as const };
+
+    // An Educator can complete the pilot's checks all day and still may not
+    // create one. Seeding is technical administration of an environment, not
+    // authorship of operational content, so it needs `system.configure`.
+    await expect(
+      seedSyntheticStandardsPilotForPrincipal({
+        principalId: EDUCATOR,
+        centreId: CENTRES[0],
+        environment: staging,
+        now: () => AT,
+      }),
+    ).rejects.toBeInstanceOf(CentreStandardsError);
+
+    // A pilot already exists. Asking for one that differs from it — here by
+    // effective date — must not silently reconcile the difference in either
+    // direction. The seed compares the whole approved definition (organisation,
+    // centre, title, synthetic flag, effective date, question and outcome
+    // counts, deployment status) and refuses on any mismatch, which is what
+    // stops this operation quietly rewriting content someone is using.
+    //
+    // The authorised caller is the one that proves it: the refusal is about the
+    // pilot's state, not about who is asking.
+    const snapshot = async () =>
+      centreSuccessDB.queryRow<{ deployments: number; status: string; effective_from: string }>`
+        SELECT
+          (SELECT count(*)::integer FROM operational_standard_deployments) AS deployments,
+          status, effective_from::text
+        FROM operational_standard_deployments
+        WHERE id = ${SYNTHETIC_STANDARDS_PILOT_IDS.deploymentId}
+      `;
+    const before = await snapshot();
+    expect(before).toBeDefined();
+
+    await expect(
+      seedSyntheticStandardsPilotForPrincipal({
+        principalId: SYSTEM_ADMINISTRATOR,
+        centreId: CENTRES[0],
+        effectiveFrom: "2020-01-01",
+        environment: staging,
+        now: () => AT,
+      }),
+    ).rejects.toBeInstanceOf(SyntheticStandardsSeedError);
+
+    expect(await snapshot()).toEqual(before);
   });
 });
