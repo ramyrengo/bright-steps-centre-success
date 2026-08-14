@@ -101,7 +101,7 @@ describe("the reviewed environment gate", () => {
   test("refuses to apply outside the policy's closed allow-list", () => {
     const refusal = evaluateReviewedEnvironmentGate(
       { declaredEnvironment: "development", apply: true },
-      { cloud: "encore", name: "development", type: "development" },
+      { name: "development", type: "development" },
       LOAD_POLICY,
     );
     expect(refusal).toMatchObject({ code: "environment_not_permitted" });
@@ -137,7 +137,7 @@ describe("the reviewed environment gate", () => {
               apply: true,
               confirmProduction: name === "production",
             },
-            { cloud: "encore", name, type },
+            { name, type },
             LOAD_POLICY,
           ),
         ).toMatchObject({ code: "environment_type_not_permitted" });

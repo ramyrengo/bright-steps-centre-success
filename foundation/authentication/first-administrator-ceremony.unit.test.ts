@@ -74,11 +74,20 @@ describe("first-administrator ceremony — no API surface", () => {
     };
     walk(`${repositoryRoot}foundation`);
 
-    // Only its own integration test imports it. Nothing in a request path does,
-    // so it cannot reach an Encore endpoint or the generated client.
+    // Only integration tests import it: its own, and the one that proves the
+    // organisation reference load hands off to it. Nothing in a request path
+    // does, so it cannot reach an Encore endpoint or the generated client.
     expect(importers.sort()).toEqual([
       "foundation/authentication/first-administrator-ceremony.test.ts",
+      "foundation/organisation-reference/organisation-reference.integration.test.ts",
     ]);
+
+    // The list above is exact so that a new importer has to be added
+    // deliberately. This states the property that list exists to protect, so
+    // that adding one cannot quietly admit something on a request path.
+    for (const importer of importers) {
+      expect(importer).toMatch(/\.test\.ts$/);
+    }
   });
 
   test("the committed generated client carries no trace of the ceremony", () => {
@@ -137,6 +146,79 @@ describe("first-administrator ceremony — no API surface", () => {
     expect(gateIndex).toBeGreaterThan(-1);
     expect(transactionIndex).toBeGreaterThan(-1);
     expect(gateIndex).toBeLessThan(transactionIndex);
+  });
+
+  /**
+   * Exactly the kind of property this file exists for: it would be lost by an
+   * edit, not by a failing call.
+   *
+   * `effective_from` was once stamped from the application clock before the
+   * transaction opened, while migration 017's reachability guard compared it
+   * against the database clock fixed at BEGIN. Two clocks with no margin, so a
+   * database milliseconds behind the application made the ceremony reach nobody
+   * and refuse `exactly_one_violated` — fail-closed, but indistinguishable to an
+   * operator from a serious invariant breach, on a ceremony that will not run
+   * twice. It was found only by running the load and the ceremony in sequence
+   * against a real database with a −2 ms skew.
+   *
+   * No behavioural test can be trusted to protect it. On a machine whose clocks
+   * agree, an application-clock stamp passes every time. So assert the source.
+   */
+  test("effective_from is taken from the database clock, inside the transaction", () => {
+    expect(normalise(ceremonySource)).toContain(
+      "const clock = await transaction.queryRow<{ at: Date }>`SELECT now() AS at`;",
+    );
+    expect(normalise(ceremonySource)).toContain("const occurredAt = clock.at;");
+
+    // Read after BEGIN, so it is this transaction's clock and not another's.
+    const beginIndex = ceremonySource.indexOf("await centreSuccessDB.begin()");
+    const clockIndex = ceremonySource.indexOf("SELECT now() AS at");
+    expect(clockIndex).toBeGreaterThan(beginIndex);
+
+    // No application clock, and no seam to inject one back through. A test that
+    // supplied its own clock would restore the blindness that hid this.
+    expect(ceremonySource).not.toContain("new Date(");
+    expect(ceremonySource).not.toContain("Date.now(");
+    expect(ceremonySource).not.toMatch(/\bnow\?:\s*\(\)\s*=>\s*Date/);
+  });
+
+  /**
+   * Also a property no behavioural test can protect. The capability check is a
+   * SET comparison against a JavaScript-sorted constant. Leaning on the query's
+   * `ORDER BY` instead would make it depend on the database's collation —
+   * glibc's `en_US.UTF-8` ignores `.` and `_` at the primary level where `C`
+   * does not — so a future code such as `system_health.read` beside
+   * `system.health.read` would make a correct role refuse
+   * `canonical_role_unavailable` in production. On a `C`-collation test
+   * database, nothing would fail first.
+   */
+  test("the capability comparison sorts in JavaScript, not in the database", () => {
+    expect(normalise(ceremonySource)).toContain(
+      "const codes = rows.map(({ capability_code }) => capability_code).sort();",
+    );
+    expect(normalise(ceremonySource)).toContain(
+      "const SYSTEM_ADMINISTRATOR_CAPABILITIES = [ ...SYSTEM_ADMINISTRATOR_ROLE.capabilities, ].sort();",
+    );
+  });
+
+  /**
+   * The gate reads `name` and `type`. It cannot read `cloud`, because its
+   * parameter type no longer carries it — which is a stronger guarantee than a
+   * test, and the reason there is no assertion about it here.
+   *
+   * What this pins is the consequence: proving that an environment calling
+   * itself `local` really is local stays the tool's own job. The ceremony never
+   * admits local at all; the organisation reference load does, and does it by
+   * calling the untouched guard rather than by trusting the name.
+   */
+  test("the ceremony never admits local, so it asserts nothing about cloud", () => {
+    expect(ceremonySource).not.toContain("assertLocalDevelopmentEnvironment");
+    expect(normalise(ceremonySource)).toContain(
+      "export const CEREMONY_APPLY_ENVIRONMENT_NAMES = REVIEWED_APPLY_ENVIRONMENT_NAMES;",
+    );
+    expect(normalise(gateSource)).toContain(
+      "environment: Pick<EnvironmentMeta, \"name\" | \"type\">,",
+    );
   });
 });
 
