@@ -518,6 +518,43 @@ describe.sequential("Milestone 3A Daily Success live projection", () => {
     expect(JSON.stringify(administrator.response)).not.toContain("Synthetic critical Daily Success action");
   });
 
+  test("every built response forbids caching, whichever path produced it", async () => {
+    // Daily Success is a per-principal authorisation-derived projection: one
+    // reader's list cached and served to another is a disclosure, not a stale
+    // page. The unit test at api.test.ts asserted this against its own fixture
+    // literal, which restates the fixture rather than exercising the service, so
+    // the guarantee is asserted here against genuinely built responses instead.
+    //
+    // The service writes the header in two places -- the base used by the
+    // early-return paths and the fully projected response -- so both are built.
+    const dependencies = {
+      now: () => AT,
+      correctiveActionSource: CorrectiveActionDailySource,
+      quarterlyReviewSource: QuarterlyReviewDailySource,
+      peopleAccessSource: PeopleAccessDailySource,
+    };
+
+    const built = await Promise.all([
+      buildDailySuccess({
+        principalId: seedIds.centreDirectorPrincipalIds[0],
+        request: { perspective: "centre", centreId: seedIds.centreIds[0] },
+      }, dependencies),
+      buildDailySuccess({
+        principalId: seedIds.complianceManagerPrincipalId,
+        request: { perspective: "compliance" },
+      }, dependencies),
+      buildDailySuccess({
+        principalId: LOCAL_FIRST_ADMINISTRATOR_BOOTSTRAP_IDS.targetPrincipalId,
+        request: { perspective: "administration" },
+      }, dependencies),
+    ]);
+
+    expect(built).not.toHaveLength(0);
+    for (const { response } of built) {
+      expect(response.cacheControl).toBe("private, no-store");
+    }
+  });
+
   test("fails requested cross-scope perspectives and reflects portfolio removal on the next request", async () => {
     const fixture = await createPortfolioFixture(1);
     const first = await buildDailySuccess({ principalId: fixture.principalId, request: {} }, {

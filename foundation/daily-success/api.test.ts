@@ -29,7 +29,13 @@ describe("Daily Success protected endpoint boundary", () => {
       principalId: "00000000-0000-4000-8000-000000000001",
       request: { perspective: "centre", centreId: "requested-centre" },
     });
-    expect(RESPONSE.cacheControl).toBe("private, no-store");
+    // Deliberately no `cacheControl` assertion here. `RESPONSE` is this file's
+    // own literal, injected as the mocked `build` result, so asserting against
+    // it restates the fixture and would keep passing even if the service
+    // stopped setting the header. The guarantee is asserted against genuinely
+    // built responses in daily-success.integration.test.ts. What this boundary
+    // test can prove is that the endpoint forwards the projection untouched,
+    // which the `resolves.toBe(RESPONSE)` identity check above already does.
   });
 
   test("rejects absent AuthData before projection work", async () => {
