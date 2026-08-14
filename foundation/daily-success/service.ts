@@ -35,6 +35,12 @@ const DAILY_CENTRE_CAPABILITIES = [
   FOUNDATION_CAPABILITIES.quarterlyAuditConduct,
   FOUNDATION_CAPABILITIES.quarterlyAuditFinalise,
   FOUNDATION_CAPABILITIES.quarterlyAuditAcknowledge,
+  // Contributes no Daily Success item or perspective. It is evaluated here
+  // only because `deriveWorkspaceLinks` reads it, and Daily Success and the
+  // `/navigation` projection must never offer different destinations for the
+  // same principal. Evaluation is in memory over centres already loaded, so
+  // this costs no additional query.
+  FOUNDATION_CAPABILITIES.budgetPositionRead,
 ] as const;
 
 const DAILY_ORGANISATION_CAPABILITIES = [

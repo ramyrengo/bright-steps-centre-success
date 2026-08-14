@@ -2,6 +2,7 @@ import { randomUUID } from "node:crypto";
 import { beforeAll, describe, expect, test } from "vitest";
 import { centreSuccessDB } from "../db";
 import { FOUNDATION_CAPABILITIES } from "../authorization/capabilities";
+import { buildAuthorisedNavigation } from "../navigation/service";
 import {
   buildCentreBudgetMonth,
   buildPortfolioBudgetMonth,
@@ -1074,5 +1075,220 @@ describe("capability registration", () => {
       ORDER BY template.role_key
     `;
     expect(rows.map((row) => row.role_key)).toEqual(["centre_director"]);
+  });
+});
+
+/**
+ * Unknown is not zero, and it is not a colour either.
+ *
+ * Seeding bands is the change most likely to break that quietly: once a policy
+ * governs a month, a centre-month with no actual recorded could start
+ * resolving to whichever band happens to cover zero, and a green light would
+ * appear where nobody has entered anything at all.
+ *
+ * The policy installed here is the worst case for that failure — a single band
+ * spanning every percentage from zero upwards, so any band lookup that ran at
+ * all would return a colour. It is classified as development/test data and is
+ * not a proposed Bright Steps threshold.
+ */
+async function installCoveringPolicy(local: BudgetFixture): Promise<string> {
+  const policyId = randomUUID();
+  await centreSuccessDB.exec`
+    INSERT INTO budget_threshold_policies (
+      id, organisation_id, policy_key, version, name, status,
+      source_classification, effective_from_month,
+      approved_by_principal_id, approval_reference
+    ) VALUES (
+      ${policyId}, ${local.organisationId}, 'synthetic_covering_policy', 1,
+      'Synthetic policy whose band covers every percentage', 'active',
+      'BSA_DEVELOPMENT_TEST', '2036-01-01'::date,
+      ${local.centreDirectorId}, 'SYNTHETIC-FIXTURE'
+    )
+  `;
+  await centreSuccessDB.exec`
+    INSERT INTO budget_threshold_bands (
+      id, organisation_id, threshold_policy_id, band_code, label,
+      minimum_percent_used, maximum_percent_used, priority
+    ) VALUES (
+      ${randomUUID()}, ${local.organisationId}, ${policyId},
+      'SYNTHETIC_EVERYTHING', 'Synthetic band covering every percentage', 0, NULL, 1
+    )
+  `;
+  return policyId;
+}
+
+describe("a seeded band never turns an absent actual into a colour", () => {
+  test("an approved budget with no actual is unbanded under a policy covering every percentage", async () => {
+    const local = await createBudgetFixture(1);
+    await installCoveringPolicy(local);
+
+    const result = await buildCentreBudgetMonth(
+      { principalId: local.centreDirectorId, centreId: local.centreIds[0], month: MONTH },
+      { now },
+    );
+
+    // The policy is in force, so this is not the NOT_CONFIGURED case: a band
+    // lookup really did run for every category and really did return nothing.
+    expect(result.response.thresholdPolicyConfigured).toBe(true);
+    expect(result.response.categories.length).toBeGreaterThan(0);
+    for (const position of result.response.categories) {
+      expect(position.state).toBe("AWAITING_ACTUAL");
+      expect(position.threshold.state).toBe("NOT_APPLICABLE");
+      expect(position.threshold.bandCode).toBeUndefined();
+      expect(position.threshold.bandLabel).toBeUndefined();
+      expect(position.actual).toBeUndefined();
+      expect(position.remaining).toBeUndefined();
+      expect(position.percentUsed).toBeUndefined();
+    }
+
+    // Nor may the month-level roll-up carry one, because the month is not
+    // complete and a total over a partly entered month understates spend.
+    expect(result.response.summary.coverage).toBe("partial");
+    expect(result.response.summary.threshold).toBeUndefined();
+    expect(result.response.summary.totalRecordedActual).toBeUndefined();
+    expect(result.response.summary.totalRemaining).toBeUndefined();
+    expect(result.response.summary.totalPercentUsed).toBeUndefined();
+    // No absent figure may have been rendered as a spend of zero on the way out.
+    expect(JSON.stringify(result.response)).not.toMatch(
+      /"(?:actual|remaining|percentUsed)":\s*"?0/u,
+    );
+  });
+
+  test("a category with nothing recorded at all is unbanded under the same policy", async () => {
+    const local = await createBudgetFixture(1, { seedApprovedBudget: false });
+    await installCoveringPolicy(local);
+
+    const result = await buildCentreBudgetMonth(
+      { principalId: local.centreDirectorId, centreId: local.centreIds[0], month: MONTH },
+      { now },
+    );
+
+    expect(result.response.thresholdPolicyConfigured).toBe(true);
+    expect(result.response.categories.length).toBeGreaterThan(0);
+    for (const position of result.response.categories) {
+      expect(position.state).toBe("NOTHING_RECORDED");
+      expect(position.threshold.state).toBe("NOT_APPLICABLE");
+      expect(position.threshold.bandCode).toBeUndefined();
+      expect(position.approvedBudget).toBeUndefined();
+      expect(position.actual).toBeUndefined();
+    }
+    expect(result.response.summary.nothingRecordedCount).toBe(
+      result.response.categories.length,
+    );
+    expect(result.response.summary.totalApprovedBudget).toBeUndefined();
+  });
+
+  /**
+   * The control for the two assertions above. Without it they could pass
+   * because no band ever resolves, rather than because absence is respected.
+   */
+  test("bands the one category whose actual was actually recorded, and no other", async () => {
+    const local = await createBudgetFixture(1);
+    await installCoveringPolicy(local);
+
+    await recordCentreBudgetActual(
+      {
+        principalId: local.centreDirectorId,
+        request: {
+          centreId: local.centreIds[0],
+          month: MONTH,
+          categoryId: local.categoryIds[0],
+          amount: "250.00",
+          currency: CURRENCY,
+        },
+      },
+      { now },
+    );
+
+    const result = await buildCentreBudgetMonth(
+      { principalId: local.centreDirectorId, centreId: local.centreIds[0], month: MONTH },
+      { now },
+    );
+
+    const entered = result.response.categories.find(
+      (position) => position.categoryId === local.categoryIds[0],
+    );
+    expect(entered?.state).toBe("BUDGET_AND_ACTUAL");
+    expect(entered?.threshold.state).toBe("BANDED");
+    expect(entered?.threshold.bandCode).toBe("SYNTHETIC_EVERYTHING");
+
+    for (const position of result.response.categories) {
+      if (position.categoryId === local.categoryIds[0]) continue;
+      expect(position.state).toBe("AWAITING_ACTUAL");
+      expect(position.threshold.state).toBe("NOT_APPLICABLE");
+      expect(position.threshold.bandCode).toBeUndefined();
+    }
+  });
+});
+
+/**
+ * The Budgets destination is reachable only for the capability the budget read
+ * endpoints themselves check, so a link can never promise access a request
+ * would then refuse.
+ */
+describe("Budgets navigation is derived from budget read capability", () => {
+  test("gives a Centre Director and an Area Manager the Budgets destination", async () => {
+    const director = await buildAuthorisedNavigation(
+      { principalId: fixture.centreDirectorId },
+      { now },
+    );
+    expect(director.response.links).toContainEqual({ label: "Budgets", route: "/budgets" });
+
+    const areaManager = await buildAuthorisedNavigation(
+      { principalId: fixture.areaManagerId },
+      { now },
+    );
+    expect(areaManager.response.links.map((link) => link.route)).toContain("/budgets");
+  });
+
+  test("withholds it from a principal without budget position read", async () => {
+    // Finance holds `budget.summary.read`, the older synthetic marker that
+    // PERMISSIONS.md says does not authorise a budget module. It must not open
+    // the door that `budget.position.read` guards.
+    const finance = await buildAuthorisedNavigation(
+      { principalId: fixture.financeId },
+      { now },
+    );
+    expect(finance.response.links.map((link) => link.route)).not.toContain("/budgets");
+
+    // And the endpoint agrees with the link.
+    await expect(
+      buildCentreBudgetMonth(
+        { principalId: fixture.financeId, centreId: fixture.centreIds[0], month: MONTH },
+        { now },
+      ),
+    ).rejects.toBeInstanceOf(CentreBudgetError);
+  });
+
+  test("gives a System Administrator no Budgets destination", async () => {
+    const administrator = await buildAuthorisedNavigation(
+      { principalId: fixture.systemAdministratorId },
+      { now },
+    );
+    // Technical administration confers no authority over financial content, so
+    // it produces no link and no read either.
+    expect(administrator.response.links.map((link) => link.route)).not.toContain("/budgets");
+    await expect(
+      buildCentreBudgetMonth(
+        {
+          principalId: fixture.systemAdministratorId,
+          centreId: fixture.centreIds[0],
+          month: MONTH,
+        },
+        { now },
+      ),
+    ).rejects.toBeInstanceOf(CentreBudgetError);
+  });
+
+  test("changes no destination a principal already had", async () => {
+    const director = await buildAuthorisedNavigation(
+      { principalId: fixture.centreDirectorId },
+      { now },
+    );
+    const routes = director.response.links.map((link) => link.route);
+    expect(routes).toContain("/quality");
+    expect(routes).toContain("/centre");
+    expect(routes).not.toContain("/admin/people");
+    expect(routes).not.toContain("/compliance");
   });
 });

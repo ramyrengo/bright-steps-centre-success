@@ -102,6 +102,51 @@ describe("Centre Budgets governed-data boundary", () => {
   });
 });
 
+/**
+ * The approved reporting taxonomy is data, and the seed migration is the only
+ * place it is stated. It cannot be observed from an integration test, because
+ * organisations are created at runtime and the seed reaches only those that
+ * exist when it runs, so the governed decision is asserted at its source.
+ */
+describe("Centre Budgets approved reporting categories", () => {
+  const migration = readMigration("028_centre_budget_reporting_categories.up.sql");
+
+  test("seeds exactly the three approved categories in their approved order", () => {
+    const seeded = [...code(migration).matchAll(/\('([a-z_]+)',\s*'([^']+)',\s*(\d+)\)/gu)].map(
+      (match) => [match[1], match[2], Number(match[3])],
+    );
+    expect(seeded).toEqual([
+      ["supplies", "Supplies", 1],
+      ["staff_engagement", "Staff Engagement", 2],
+      ["special_days", "Special Days", 3],
+    ]);
+  });
+
+  test("seeds them active and for every organisation, inventing no other column", () => {
+    expect(migration).toContain("FROM organisations AS organisation");
+    expect(code(migration)).toContain("'active'");
+    // A description would be invented prose on a governed row, and a monetary
+    // or threshold column has no business in a taxonomy seed.
+    expect(code(migration)).not.toMatch(/\bdescription\b/iu);
+    expect(code(migration)).not.toMatch(/\b(?:amount|currency|percent)\b/iu);
+  });
+
+  /**
+   * Both approved threshold rules were withheld because 027 cannot carry them.
+   * If a later change seeds a band, it must be a deliberate act with its own
+   * migration and its own review, never a quiet addition to this one.
+   */
+  test("seeds no threshold policy or band", () => {
+    expect(migration).not.toMatch(/INSERT\s+INTO\s+budget_threshold_(?:policies|bands)/giu);
+    expect(code(migration)).not.toMatch(/\b(?:green|amber|red)\b/giu);
+    expect(code(migration)).not.toMatch(/\b(?:85|90|100)\b/u);
+  });
+
+  test("creates and alters nothing", () => {
+    expect(code(migration)).not.toMatch(/\b(?:CREATE|ALTER|DROP)\b/iu);
+  });
+});
+
 describe("Centre Budgets money handling", () => {
   const source = MODULE_SOURCES.map(read).join("\n");
 
