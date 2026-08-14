@@ -12,6 +12,7 @@ interface OperationalCheckDailyRow {
   standard_name: string;
   business_date: string;
   due_at: Date;
+  synthetic: boolean;
 }
 
 export const OperationalCheckDailySource = {
@@ -32,7 +33,8 @@ export const OperationalCheckDailySource = {
     const rows = await input.executor.queryAll<OperationalCheckDailyRow>`
       SELECT occurrence.id, occurrence.centre_id, centre.name AS centre_name,
              occurrence.centre_timezone AS timezone, version.title AS standard_name,
-             occurrence.business_date::text, occurrence.due_at
+             occurrence.business_date::text, occurrence.due_at,
+             version.synthetic
       FROM operational_check_occurrences AS occurrence
       JOIN centres AS centre
         ON centre.organisation_id = occurrence.organisation_id
@@ -72,6 +74,9 @@ export const OperationalCheckDailySource = {
             : { code: "CHECK_DUE_TODAY", label: "Centre Standard check is due today" },
           due,
           riskLevel: "STANDARD",
+          // The occurrence's own screens mark pilot content; this is the same
+          // fact carried to the surface it is read from first.
+          ...(row.synthetic ? { synthetic: true as const } : {}),
           cta: controlledDailyCta(canComplete ? "Complete check" : "View check", `/standards/checks/${row.id}`),
         };
       }),

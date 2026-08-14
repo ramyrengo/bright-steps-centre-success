@@ -101,6 +101,45 @@ describe("Milestone 3A Daily Success home", () => {
     expect(within(card).getByRole("link").getAttribute("href")).toBe("/centre/actions/action-1");
   });
 
+  test("marks staging pilot work on the card a Director actually reads", async () => {
+    // A synthetic Centre Standard carries a notice on its own screen. Daily
+    // Success is where it is first read, so the marker has to arrive here too —
+    // otherwise pilot content sits in a real list looking like real work.
+    clientMocks.getDailySuccess.mockResolvedValue(response({
+      sections: [
+        { key: "DO_FIRST", label: "DO FIRST", items: [item()] },
+        {
+          key: "TODAY",
+          label: "TODAY",
+          items: [item({
+            id: "operational_check:occurrence-1",
+            sourceType: "operational_check",
+            sourceId: "occurrence-1",
+            headline: "Centre Standards Pilot — Staging",
+            summary: "A Centre Standard check is due today",
+            attentionBand: "TODAY",
+            riskLevel: "STANDARD",
+            whyShown: { code: "CHECK_DUE_TODAY", label: "Centre Standard check is due today" },
+            synthetic: true,
+            cta: { label: "Complete check", route: "/standards/checks/occurrence-1" },
+          })],
+        },
+        { key: "NEXT", label: "NEXT", items: [] },
+        { key: "WAITING", label: "WAITING", items: [] },
+        { key: "ON_TRACK", label: "ON TRACK", items: [] },
+      ],
+    }));
+    render(<DailySuccessHome displayName="Synthetic Centre Director" />);
+
+    const pilot = (await screen.findByRole("heading", { name: "Centre Standards Pilot — Staging" })).closest("li")!;
+    expect(within(pilot).getByText("Staging test content")).toBeDefined();
+
+    // The marker is carried, not painted on every card. Real work in the same
+    // response stays unmarked, or the marker means nothing.
+    const real = screen.getByRole("heading", { name: "Critical safety follow-up" }).closest("li")!;
+    expect(within(real).queryByText("Staging test content")).toBeNull();
+  });
+
   test("supports portfolio centre prioritisation and a two-column-ready semantic list", async () => {
     clientMocks.getDailySuccess.mockResolvedValue(response({
       activePerspective: { kind: "portfolio", label: "Area Manager portfolio" },
