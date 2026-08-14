@@ -13,7 +13,7 @@
 
 **Both ceremonies are soundly built. No finding says the design is wrong.**
 
-R-1 was a real defect that would have bitten a production operator; R-2 was a coverage gap. Both are closed, as are the three hardening findings R-3, R-4 and R-5. **R-6 is the only finding still open**, and it asks for a decision rather than a change.
+R-1 was a real defect that would have bitten a production operator; R-2 was a coverage gap. **All six actionable findings are now closed.** R-7 is an observation about how to read the existing tests, not work.
 
 The findings below are written as they stood at `bd22bf9`, with resolutions appended. That order is deliberate: what the review found is as much a part of the record as what remains.
 
@@ -93,6 +93,12 @@ All eleven current codes were checked — every adjacent pair is decided by a le
 
 `1112691796 / 20260814` for the load, `1112691796 / 20260815` for the ceremony. Each excludes itself; neither excludes the other. Cross-tool safety rests entirely on `SERIALIZABLE` plus the population assertions, which does appear to hold. The near-identical constants read like they were meant to be one lock, and an SSI serialization failure is a worse operator message than a clean refusal. Confirm the difference is deliberate.
 
+**RESOLVED** on `fix/operator-ceremony-hardening`. It was not deliberate: neither constant carried a comment, and the two low keys are the dates the two tools were written — each author took the day's date. The shared key now lives in `foundation/operations/reviewed-operator-lock.ts` with its rationale, and both tools take it, so the second waits for the first and proceeds against the state the first actually left behind. In production these two are a sequence, and a sequence should not interleave with itself.
+
+A third tool, `local-first-administrator-bootstrap.ts`, shares the same high key with its own low key and is deliberately **not** unified: it runs only in local development, which the D5 ceremony can never reach, so those two cannot collide — and it is one of the local-only guard files this work does not touch. A unit test pins that separation rather than leaving it to look like an oversight.
+
+Asserted structurally, because it cannot be asserted behaviourally without a test that deliberately blocks: `pg_advisory_xact_lock` waits rather than failing, so a test that held the lock and then invoked a tool would hang the suite rather than fail it.
+
 ### R-7 — Some structural tests assert source text, not behaviour. *(Informational.)*
 
 `organisation-load.unit.test.ts:116` proves that `assertEnvironmentGate(...)` appears *earlier in the file* than `centreSuccessDB.begin()`. That is textual order, not execution order. These are useful tripwires and the behavioural coverage does exist elsewhere, but they should not be counted as proof of ordering when tallying what the gate has been shown to do.
@@ -129,13 +135,13 @@ The ceremony rehearses rather than applies, deliberately: a dry run exercises th
 
 **`foundation/authentication/first-administrator-ceremony.unit.test.ts`** — the "no service module imports the ceremony" guard pinned an exact one-entry allow-list of importers, which the new test broke. The allow-list was widened by one test file and **strengthened**: it now also asserts that every importer is a `.test.ts` file, so admitting a future importer cannot quietly admit something on a request path.
 
-**Gates after the changes:** `typecheck` ✅ · `test:unit` **370/370** ✅ (367 at `bd22bf9`) · `test:integration` **251/251** ✅ (248 at `bd22bf9`) · `git diff --check` ✅.
+**Gates after the changes:** `typecheck` ✅ · `test:unit` **373/373** ✅ (367 at `bd22bf9`) · `test:integration` **251/251** ✅ (248 at `bd22bf9`) · `git diff --check` ✅.
 
 ---
 
 ## 6. Conditions before either ceremony is run
 
 1. ~~Resolve R-1.~~ Done — see R-1. It was the only finding that produced a confusing failure during the real operation.
-2. ~~R-3, R-4 and R-5.~~ Done — see each. **R-6 remains open**, and it needs a decision rather than a change: confirm whether the two tools taking different advisory locks is deliberate. R-7 is an observation about how to read the existing tests, not work.
+2. ~~R-3, R-4, R-5 and R-6.~~ Done — see each. R-6 turned out not to be deliberate: neither lock constant carried a comment, and the two low keys were simply the dates the tools were written.
 3. Neither tool has ever run against a deployed environment. Their staging and production paths are proven by integration tests that simulate those environments — which is proper engineering, and is not the same as having run.
 4. This review does not grant production-release authority, which the Product Owner has not delegated.

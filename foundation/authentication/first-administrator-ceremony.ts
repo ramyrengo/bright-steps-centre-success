@@ -9,6 +9,10 @@ import {
   REVIEWED_APPLY_ENVIRONMENT_NAMES,
   REVIEWED_CONFIRMATION_ENVIRONMENT_NAMES,
 } from "../operations/reviewed-environment-gate";
+import {
+  REVIEWED_OPERATOR_LOCK_KEY_HIGH,
+  REVIEWED_OPERATOR_LOCK_KEY_LOW,
+} from "../operations/reviewed-operator-lock";
 import { canonicaliseEntraGuid } from "./entra-identifiers";
 import { microsoftEntraProviderKey } from "./external-identity";
 
@@ -43,9 +47,6 @@ import { microsoftEntraProviderKey } from "./external-identity";
  * environment. Nothing here widens them; this is a separate ceremony, as D5
  * requires.
  */
-
-const ADVISORY_LOCK_KEY_HIGH = 1112691796;
-const ADVISORY_LOCK_KEY_LOW = 20260815;
 
 const CEREMONY_VERSION = 1;
 
@@ -721,7 +722,7 @@ export async function runFirstAdministratorCeremony(
   try {
     await transaction.exec`SET TRANSACTION ISOLATION LEVEL SERIALIZABLE`;
     await transaction.exec`
-      SELECT pg_advisory_xact_lock(${ADVISORY_LOCK_KEY_HIGH}, ${ADVISORY_LOCK_KEY_LOW})
+      SELECT pg_advisory_xact_lock(${REVIEWED_OPERATOR_LOCK_KEY_HIGH}, ${REVIEWED_OPERATOR_LOCK_KEY_LOW})
     `;
 
     // effective_from is taken from the DATABASE, inside this transaction, and
