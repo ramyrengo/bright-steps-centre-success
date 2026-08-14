@@ -94,6 +94,18 @@ export interface DailySuccessItem {
     required: true;
     eligible: boolean;
   };
+  /**
+   * Present only on staging pilot content, and never `false`. A synthetic
+   * Centre Standard is already marked at its own surfaces: migration 021
+   * refuses a synthetic deployment carrying no visible notice, and the
+   * Standards screens cannot represent one without it. Daily Success is where
+   * that work is first read, and a card here carried no marker at all, so pilot
+   * content reaching a Director's real list was indistinguishable from real
+   * work. Modelled as an optional `true` rather than a boolean so that "real
+   * content" and "nobody said" are the same absence, and a marker that is
+   * present always means what it says.
+   */
+  synthetic?: true;
   cta: DailySuccessCta;
 }
 

@@ -678,8 +678,19 @@ describe.sequential("Milestone 4A Centre Standards vertical slice", () => {
       { principalId: DAILY_DIRECTOR, request: { centreId: CENTRES[0] } },
       dailyDependencies,
     );
-    expect(integratedDaily.response.sections.flatMap((section) => section.items))
+    const integratedItems = integratedDaily.response.sections.flatMap((section) => section.items);
+    expect(integratedItems)
       .toContainEqual(expect.objectContaining({ sourceId: openId, sourceType: "operational_check" }));
+    // The pilot is staging content, and this is the surface a Director reads it
+    // from first. The same occurrence that carries a synthetic notice on its own
+    // screen has to arrive here marked, or it sits in a real list looking like
+    // real work.
+    expect(integratedItems.find((item) => item.sourceId === openId)?.synthetic).toBe(true);
+    // And the marker is carried, not assumed: work from other sources in the
+    // same response says nothing about being synthetic.
+    for (const item of integratedItems.filter((candidate) => candidate.sourceType !== "operational_check")) {
+      expect(item.synthetic).toBeUndefined();
+    }
     // The sixteen are: the snapshot isolation statement; the principal's single
     // active organisation, which joins `principals` so the existence and
     // active-status check costs no separate round-trip; the authorisation

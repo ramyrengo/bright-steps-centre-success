@@ -3381,7 +3381,11 @@ textarea {
 /* Pilot content marked where it is read, not only where it was created. A
    Director's Daily Success list is real work; a staging occurrence sitting in
    it has to say so on the card itself. */
-.daily-occurrence__synthetic {
+/* One treatment for the compact staging marker, wherever it is read. A Daily
+   Success card and an occurrence card carry the same fact and must not look
+   like different degrees of it. */
+.daily-occurrence__synthetic,
+.daily-card__synthetic {
   margin: 0;
   font-size: var(--type-label);
   font-weight: 700;

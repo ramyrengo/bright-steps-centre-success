@@ -79,6 +79,10 @@ function DailyItemCard({ item }: Readonly<{ item: daily_success.DailySuccessItem
       </div>
       <h3>{item.headline}</h3>
       {item.centreName ? <p className="daily-card__centre">{item.centreName}</p> : null}
+      {/* Pilot content is marked where it is read, not only where it was
+          created. Without this a synthetic Centre Standard sits in a real list
+          looking exactly like real work. */}
+      {item.synthetic ? <p className="daily-card__synthetic">Staging test content</p> : null}
       <p>{item.summary}</p>
       <dl className="daily-card__why">
         <div><dt>Why</dt><dd>{item.whyShown.label}</dd></div>
