@@ -2,7 +2,14 @@ import { randomUUID } from "node:crypto";
 import type { EnvironmentMeta } from "encore.dev";
 import { describe, expect, test } from "vitest";
 import { centreSuccessDB } from "../db";
-import { CANONICAL_ROLE_BUNDLES } from "../authorization/roles";
+import {
+  runFirstAdministratorCeremony,
+  type FirstAdministratorCeremonyInput,
+} from "../authentication/first-administrator-ceremony";
+import {
+  CANONICAL_ROLE_BUNDLES,
+  canonicalRoleBundle,
+} from "../authorization/roles";
 import {
   BRIGHT_STEPS_ORGANISATION_ID,
   BRIGHT_STEPS_ORGANISATION_NAME,
@@ -726,6 +733,126 @@ describe("reviewed organisation reference load — the deployed environments", (
     expect(report.committed).toBe(true);
     expect(report.environment.confirmationRequired).toBe(true);
     expect(report.reachableSystemAdministrators).toBe(0);
+    expect(await referenceCounts()).toEqual(LOADED);
+  });
+});
+
+/**
+ * The seam between the two reviewed operator tools — the one place neither
+ * tool's own tests can reach, because each is otherwise proven against an
+ * organisation its own fixtures built.
+ *
+ * Production runs them in sequence: this load creates the organisation, then
+ * the ADR-0021 D5 ceremony creates the first administrator inside it. The two
+ * do not agree on what a canonical role has to look like. This load checks that
+ * each canonical role KEY is present. The ceremony additionally checks the
+ * definition's name, description, version and template linkage, and the exact
+ * capability set on BOTH `role_capabilities` and
+ * `canonical_role_template_capabilities`. The ceremony is strictly stricter, so
+ * a load that reports success can still be followed by a ceremony that refuses
+ * `canonical_role_unavailable` — with the organisation already committed, and
+ * the ceremony refusing to run a second time to repair it.
+ *
+ * That the stricter check bites is proven where it belongs, in
+ * `first-administrator-ceremony.test.ts`. What is proven here is the other
+ * half: that the roles THIS load actually leaves behind pass it.
+ *
+ * The ceremony rehearses rather than applies, deliberately. A dry run is a real
+ * rehearsal — the canonical-role check, every insert, `SET CONSTRAINTS ALL
+ * IMMEDIATE`, the exactly-one count and the reachability guard all run against
+ * the committed organisation before the transaction rolls back — and it covers
+ * the whole of the disagreement above. Applying would write a membership and an
+ * append-only bootstrap audit event into the shared test organisation, and
+ * `system_audit_events` refuses DELETE, so no later test could undo it.
+ */
+describe("the chain from the loaded organisation to the first administrator", () => {
+  const CEREMONY_TENANT_ID = "22222222-2222-4222-8222-222222222222";
+  const SYSTEM_ADMINISTRATOR = canonicalRoleBundle("system_administrator");
+
+  /**
+   * `now` is pinned into the past rather than left to the real clock.
+   *
+   * The ceremony stamps `effective_from` from the APPLICATION clock, before it
+   * opens its transaction. Migration 017's reachability function then compares
+   * that stamp against the DATABASE clock — `now()`, fixed at BEGIN. Those are
+   * two different clocks with no margin between them, so a database even a
+   * millisecond behind the application makes the ceremony refuse
+   * `exactly_one_violated`. On the machine this was written on the skew was
+   * −2 ms, and that was enough: the first run of this test failed on it.
+   *
+   * Pinning a past instant keeps these two tests about the CHAIN rather than
+   * about clock skew. The sensitivity itself is a live finding against the
+   * ceremony, pinned as its own test below; nothing here fixes it.
+   */
+  function rehearseCeremony(
+    overrides: Partial<FirstAdministratorCeremonyInput> = {},
+    now: () => Date = () => new Date(Date.now() - 60_000),
+  ) {
+    return runFirstAdministratorCeremony(
+      {
+        declaredEnvironment: "staging",
+        organisationId: BRIGHT_STEPS_ORGANISATION_ID,
+        tenantId: CEREMONY_TENANT_ID,
+        oid: randomUUID(),
+        displayName: "Operator-supplied administrator name",
+        reason: "Rehearsal over the organisation this load committed.",
+        apply: false,
+        ...overrides,
+      },
+      { environment: STAGING, configuredTenantId: CEREMONY_TENANT_ID, now },
+    );
+  }
+
+  test("the roles this load leaves behind satisfy the ceremony's stricter check", async () => {
+    // Resolving at all is the assertion: every one of the ceremony's refusals
+    // throws, so a returned report means the loaded organisation was accepted.
+    const report = await rehearseCeremony();
+
+    expect(report.organisationId).toBe(BRIGHT_STEPS_ORGANISATION_ID);
+    expect(report.organisationName).toBe(BRIGHT_STEPS_ORGANISATION_NAME);
+    expect(report.roleKey).toBe(SYSTEM_ADMINISTRATOR.key);
+    expect(report.roleVersion).toBe(SYSTEM_ADMINISTRATOR.version);
+    expect([...report.capabilities]).toEqual(
+      [...SYSTEM_ADMINISTRATOR.capabilities].sort(),
+    );
+    // Migration 017 reachability, evaluated after the deferred guard was forced:
+    // the administrator this ceremony would create is genuinely able to act.
+    expect(report.reachableSystemAdministrators).toBe(1);
+  });
+
+  test("the rehearsal leaves the loaded organisation exactly as it found it", async () => {
+    const before = await referenceCounts();
+
+    const report = await rehearseCeremony();
+    expect(report.mode).toBe("dry_run");
+    expect(report.committed).toBe(false);
+    expect(await referenceCounts()).toEqual(before);
+
+    // Nobody survived the rollback. Had a membership persisted, this load would
+    // stand down with organisation_already_populated instead of reporting a
+    // fully loaded, empty organisation.
+    const after = await load();
+    expect(after.counts).toEqual({
+      create: 0,
+      unchanged: EXPECTED_CREATES,
+      conflict: 0,
+    });
+    expect(after.reachableSystemAdministrators).toBe(0);
+  });
+
+  test("an effective_from later than the database clock makes the ceremony refuse", async () => {
+    // The mechanism behind the skew sensitivity described above, pinned
+    // deterministically instead of left to whatever the container clock is
+    // doing. Migration 017 reaches an administrator only while
+    // `effective_from <= now()` holds on the membership, the assignment AND the
+    // scope, so a stamp the database considers to be in the future reaches
+    // nobody. The ceremony then rolls back rather than committing an
+    // administrator who cannot act — correct, and the reason a production run
+    // can refuse for no better reason than two clocks disagreeing.
+    await expect(
+      rehearseCeremony({}, () => new Date(Date.now() + 60_000)),
+    ).rejects.toMatchObject({ code: "exactly_one_violated" });
+
     expect(await referenceCounts()).toEqual(LOADED);
   });
 });

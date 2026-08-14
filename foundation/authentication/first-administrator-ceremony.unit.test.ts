@@ -74,11 +74,20 @@ describe("first-administrator ceremony — no API surface", () => {
     };
     walk(`${repositoryRoot}foundation`);
 
-    // Only its own integration test imports it. Nothing in a request path does,
-    // so it cannot reach an Encore endpoint or the generated client.
+    // Only integration tests import it: its own, and the one that proves the
+    // organisation reference load hands off to it. Nothing in a request path
+    // does, so it cannot reach an Encore endpoint or the generated client.
     expect(importers.sort()).toEqual([
       "foundation/authentication/first-administrator-ceremony.test.ts",
+      "foundation/organisation-reference/organisation-reference.integration.test.ts",
     ]);
+
+    // The list above is exact so that a new importer has to be added
+    // deliberately. This states the property that list exists to protect, so
+    // that adding one cannot quietly admit something on a request path.
+    for (const importer of importers) {
+      expect(importer).toMatch(/\.test\.ts$/);
+    }
   });
 
   test("the committed generated client carries no trace of the ceremony", () => {
