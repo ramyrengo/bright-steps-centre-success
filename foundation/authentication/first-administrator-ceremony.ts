@@ -282,7 +282,7 @@ interface AssignmentRow {
  */
 function assertEnvironmentGate(
   input: FirstAdministratorCeremonyInput,
-  environment: Pick<EnvironmentMeta, "cloud" | "name" | "type">,
+  environment: Pick<EnvironmentMeta, "name" | "type">,
   apply: boolean,
 ): void {
   const refusal = evaluateReviewedEnvironmentGate(
@@ -553,7 +553,18 @@ async function loadCanonicalSystemAdministratorRole(
     ["definition", definitionCapabilities],
     ["template", templateCapabilities],
   ] as const) {
-    const codes = rows.map(({ capability_code }) => capability_code);
+    // Sorted HERE, by the same comparator that ordered
+    // SYSTEM_ADMINISTRATOR_CAPABILITIES, rather than relying on the ORDER BY
+    // above to agree with it. Those are two different sorts: JavaScript orders
+    // by UTF-16 code unit, while Postgres orders by the database's collation,
+    // and glibc's en_US.UTF-8 ignores `.` and `_` at the primary level where C
+    // does not. The eleven current codes happen to sort identically either way —
+    // every adjacent pair is decided by a letter before punctuation matters — so
+    // this was correct but only by luck. Add a code like `system_health.read`
+    // beside `system.health.read` and the two orders diverge, and a correct role
+    // starts failing this check in production. The comparison is a set
+    // comparison; it should not depend on a collation at all.
+    const codes = rows.map(({ capability_code }) => capability_code).sort();
     if (
       codes.length !== SYSTEM_ADMINISTRATOR_CAPABILITIES.length ||
       codes.some(
@@ -958,7 +969,18 @@ export async function runFirstAdministratorCeremony(
     };
   } catch (error) {
     if (!committed) {
-      await transaction.rollback();
+      // The rollback must not be able to replace the error being handled. If
+      // commit() itself threw, `committed` is still false and this runs against
+      // a transaction that may already be unusable — so a throwing rollback
+      // would surface a connection-level message in place of the refusal the
+      // operator actually needs to read. On a ceremony that refuses to run
+      // twice, the first error is the one that explains what happened.
+      try {
+        await transaction.rollback();
+      } catch {
+        // Deliberately swallowed. A rollback that fails here has nothing to
+        // tell the operator that `error` does not already tell them better.
+      }
     }
     throw error;
   }

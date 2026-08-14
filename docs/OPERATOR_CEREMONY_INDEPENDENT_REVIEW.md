@@ -13,7 +13,7 @@
 
 **Both ceremonies are soundly built. No finding says the design is wrong.**
 
-One finding was a real defect that would have bitten a production operator (R-1) and one was a coverage gap (R-2). Both have since been closed — R-2 by this review, R-1 by the fix recorded under it. The rest are hardening.
+R-1 was a real defect that would have bitten a production operator; R-2 was a coverage gap. Both are closed, as are the three hardening findings R-3, R-4 and R-5. **R-6 is the only finding still open**, and it asks for a decision rather than a change.
 
 The findings below are written as they stood at `bd22bf9`, with resolutions appended. That order is deliberate: what the review found is as much a part of the record as what remains.
 
@@ -73,15 +73,21 @@ The specific hazard: the load checks canonical roles by **presence of key**, whi
 
 Defensible — the ceremony never admits `local`, so it has nothing to prove about cloud — but an unused field in the signature of the system's most security-critical helper invites a reader to believe a fifth lock exists. Either drop it from the `Pick` or make the check real.
 
+**RESOLVED** on `fix/operator-ceremony-hardening`, by dropping it. Making the check real is not available to the gate: its two tools want opposite things from `cloud` — the ceremony never admits `local`, while the load is a supported local development tool and must. Proving that an environment calling itself `local` really is local therefore stays the tool's job, and the load already does it by calling the untouched `assertLocalDevelopmentEnvironment`, which does read `cloud`. The parameter is now `Pick<EnvironmentMeta, "name" | "type">` on both the shared gate and the ceremony's wrapper, so the gate *cannot* read `cloud` — a stronger guarantee than a test, and the reason no test asserts it.
+
 ### R-4 — The capability comparison couples a JavaScript sort to a Postgres collation. *(Low. Fails closed.)*
 
 `SYSTEM_ADMINISTRATOR_CAPABILITIES` is sorted by JavaScript (UTF-16 code units) and compared index-wise against rows returned by `ORDER BY capability_code` (database collation). Those disagree on punctuation: glibc `en_US.UTF-8` ignores `.` and `_` at the primary level; `C` does not.
 
 All eleven current codes were checked — every adjacent pair is decided by a letter before punctuation matters, so **this is correct today**. But a future code such as `system_health.read` beside `system.health.read` would make a correct role refuse, in production, in the check that gates the ceremony. Compare as sets, or pin `COLLATE "C"`.
 
+**RESOLVED** on `fix/operator-ceremony-hardening`, as a set comparison. The rows are now sorted in JavaScript by the same comparator that ordered the constant, so the check no longer depends on the query's `ORDER BY` agreeing with it, and no longer depends on a collation at all. `COLLATE "C"` was the alternative and is weaker: it pins the dependency rather than removing it. A structural guard covers it, because on a `C`-collation test database nothing behavioural would fail first.
+
 ### R-5 — Rollback inside `catch` can mask the error the operator needs. *(Low. Both tools.)*
 
 `organisation-load.ts:820` and `first-administrator-ceremony.ts:937`: if `commit()` throws, `committed` remains false, `rollback()` runs, and if that also throws its error replaces the commit failure. Wrap the rollback and rethrow the original.
+
+**RESOLVED** on `fix/operator-ceremony-hardening`. Both rollbacks are wrapped and their failures deliberately swallowed, so the original error always propagates. A failed rollback here means the transaction was already unusable, which the error being handled says better — and on a ceremony that will not run twice, the first error is the one that explains what happened.
 
 ### R-6 — The two tools take different advisory locks. *(Informational.)*
 
@@ -123,13 +129,13 @@ The ceremony rehearses rather than applies, deliberately: a dry run exercises th
 
 **`foundation/authentication/first-administrator-ceremony.unit.test.ts`** — the "no service module imports the ceremony" guard pinned an exact one-entry allow-list of importers, which the new test broke. The allow-list was widened by one test file and **strengthened**: it now also asserts that every importer is a `.test.ts` file, so admitting a future importer cannot quietly admit something on a request path.
 
-**Gates after the change:** `typecheck` ✅ · `test:unit` **368/368** ✅ (367 before) · `test:integration` **251/251** ✅ (248 before) · `git diff --check` ✅.
+**Gates after the changes:** `typecheck` ✅ · `test:unit` **370/370** ✅ (367 at `bd22bf9`) · `test:integration` **251/251** ✅ (248 at `bd22bf9`) · `git diff --check` ✅.
 
 ---
 
 ## 6. Conditions before either ceremony is run
 
 1. ~~Resolve R-1.~~ Done — see R-1. It was the only finding that produced a confusing failure during the real operation.
-2. R-3, R-4 and R-5 are hardening and remain open. R-6 needs a decision, not necessarily a change.
+2. ~~R-3, R-4 and R-5.~~ Done — see each. **R-6 remains open**, and it needs a decision rather than a change: confirm whether the two tools taking different advisory locks is deliberate. R-7 is an observation about how to read the existing tests, not work.
 3. Neither tool has ever run against a deployed environment. Their staging and production paths are proven by integration tests that simulate those environments — which is proper engineering, and is not the same as having run.
 4. This review does not grant production-release authority, which the Product Owner has not delegated.

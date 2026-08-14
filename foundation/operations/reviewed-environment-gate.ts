@@ -121,10 +121,21 @@ export function environmentRequiresConfirmation(
  * should see the tool they invoked, not a shared helper. Every caller must
  * evaluate this BEFORE opening a transaction: a refused environment must not be
  * able to open one that could commit.
+ *
+ * It takes `name` and `type` only. It used to accept `cloud` as well and never
+ * read it, which invited a reader to believe there was a fifth lock here; the
+ * parameter now states exactly what the gate consults.
+ *
+ * The gate cannot usefully assert `cloud`, because its two tools want opposite
+ * things from it: the ceremony never admits `local` at all, while the
+ * organisation reference load is a supported local development tool and must.
+ * Proving that an environment calling itself `local` really is local is
+ * therefore the TOOL's job, not the gate's, and the load does it by calling the
+ * untouched `assertLocalDevelopmentEnvironment` — which does read `cloud`.
  */
 export function evaluateReviewedEnvironmentGate(
   request: ReviewedEnvironmentGateRequest,
-  environment: Pick<EnvironmentMeta, "cloud" | "name" | "type">,
+  environment: Pick<EnvironmentMeta, "name" | "type">,
   policy: ReviewedEnvironmentGatePolicy,
 ): ReviewedEnvironmentGateRefusal | null {
   const declared = request.declaredEnvironment.trim();

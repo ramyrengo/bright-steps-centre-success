@@ -819,7 +819,17 @@ export async function loadBrightStepsOrganisationReference(
     };
   } catch (error) {
     if (!committed) {
-      await transaction.rollback();
+      // The rollback must not be able to replace the error being handled. If
+      // commit() itself threw, `committed` is still false and this runs against
+      // a transaction that may already be unusable — so a throwing rollback
+      // would surface a connection-level message in place of the refusal the
+      // operator actually needs to read. The original error always wins.
+      try {
+        await transaction.rollback();
+      } catch {
+        // Deliberately swallowed. A rollback that fails here has nothing to
+        // tell the operator that `error` does not already tell them better.
+      }
     }
     throw error;
   }

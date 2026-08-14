@@ -181,6 +181,45 @@ describe("first-administrator ceremony — no API surface", () => {
     expect(ceremonySource).not.toContain("Date.now(");
     expect(ceremonySource).not.toMatch(/\bnow\?:\s*\(\)\s*=>\s*Date/);
   });
+
+  /**
+   * Also a property no behavioural test can protect. The capability check is a
+   * SET comparison against a JavaScript-sorted constant. Leaning on the query's
+   * `ORDER BY` instead would make it depend on the database's collation —
+   * glibc's `en_US.UTF-8` ignores `.` and `_` at the primary level where `C`
+   * does not — so a future code such as `system_health.read` beside
+   * `system.health.read` would make a correct role refuse
+   * `canonical_role_unavailable` in production. On a `C`-collation test
+   * database, nothing would fail first.
+   */
+  test("the capability comparison sorts in JavaScript, not in the database", () => {
+    expect(normalise(ceremonySource)).toContain(
+      "const codes = rows.map(({ capability_code }) => capability_code).sort();",
+    );
+    expect(normalise(ceremonySource)).toContain(
+      "const SYSTEM_ADMINISTRATOR_CAPABILITIES = [ ...SYSTEM_ADMINISTRATOR_ROLE.capabilities, ].sort();",
+    );
+  });
+
+  /**
+   * The gate reads `name` and `type`. It cannot read `cloud`, because its
+   * parameter type no longer carries it — which is a stronger guarantee than a
+   * test, and the reason there is no assertion about it here.
+   *
+   * What this pins is the consequence: proving that an environment calling
+   * itself `local` really is local stays the tool's own job. The ceremony never
+   * admits local at all; the organisation reference load does, and does it by
+   * calling the untouched guard rather than by trusting the name.
+   */
+  test("the ceremony never admits local, so it asserts nothing about cloud", () => {
+    expect(ceremonySource).not.toContain("assertLocalDevelopmentEnvironment");
+    expect(normalise(ceremonySource)).toContain(
+      "export const CEREMONY_APPLY_ENVIRONMENT_NAMES = REVIEWED_APPLY_ENVIRONMENT_NAMES;",
+    );
+    expect(normalise(gateSource)).toContain(
+      "environment: Pick<EnvironmentMeta, \"name\" | \"type\">,",
+    );
+  });
 });
 
 describe("the local-only guards are intact — ADR-0021 D5", () => {
