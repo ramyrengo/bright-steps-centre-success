@@ -1,30 +1,174 @@
 import { describe, expect, test } from "vitest";
-import { FOUNDATION_CAPABILITIES as capability, type FoundationCapability } from "../authorization/capabilities";
-import { deriveWorkspaceLinks } from "./workspace-links";
+import { FOUNDATION_CAPABILITIES, type FoundationCapability } from "../authorization/capabilities";
+import {
+  deriveWorkspaceLinks,
+  WORKSPACE_LINK_CENTRE_CAPABILITIES,
+  type WorkspaceLinkAuthorisation,
+} from "./workspace-links";
 
-const CENTRE_ID = "00000000-0000-4000-8000-000000000001";
+/**
+ * Link derivation is pure, so the whole decision surface is testable without a
+ * database. These assertions cover the Budgets destination specifically: a link
+ * must appear for exactly the principals whose capability the budget read
+ * endpoints themselves check, and for nobody else.
+ */
 
-function centreCapabilities(
-  values: Array<[FoundationCapability, ReadonlySet<string>]>,
-) {
+const CENTRE = "11111111-1111-4111-8111-111111111111";
+
+function authorisation(
+  centre: Partial<Record<FoundationCapability, readonly string[]>> = {},
+  organisation: readonly FoundationCapability[] = [],
+): WorkspaceLinkAuthorisation {
   return {
-    centreIdsByCapability: new Map(values),
-    organisationCapabilities: new Set<FoundationCapability>(),
+    centreIdsByCapability: new Map(
+      Object.entries(centre).map(([capability, centreIds]) => [
+        capability as FoundationCapability,
+        new Set(centreIds ?? []),
+      ]),
+    ),
+    organisationCapabilities: new Set(organisation),
   };
 }
 
-describe("authorised workspace link derivation", () => {
-  test.each([capability.operationalCheckRead, capability.operationalCheckComplete])(
-    "offers Centre Standards for scoped %s authority",
-    (granted) => {
-      expect(deriveWorkspaceLinks(centreCapabilities([[granted, new Set([CENTRE_ID])]])))
-        .toContainEqual({ label: "Centre Standards", route: "/standards" });
-    },
-  );
+function routes(input: WorkspaceLinkAuthorisation): string[] {
+  return deriveWorkspaceLinks(input).map((link) => link.route);
+}
 
-  test("does not infer Centre Standards access from unrelated centre authority", () => {
-    expect(deriveWorkspaceLinks(centreCapabilities([
-      [capability.centreRead, new Set([CENTRE_ID])],
-    ]))).not.toContainEqual({ label: "Centre Standards", route: "/standards" });
+describe("Budgets workspace link", () => {
+  test("appears for a principal holding budget position read on a centre", () => {
+    const links = deriveWorkspaceLinks(
+      authorisation({ [FOUNDATION_CAPABILITIES.budgetPositionRead]: [CENTRE] }),
+    );
+    expect(links).toEqual([{ label: "Budgets", route: "/budgets" }]);
+  });
+
+  test("is withheld from a principal without that capability", () => {
+    expect(routes(authorisation())).not.toContain("/budgets");
+    // Holding every other workspace capability still does not produce it.
+    expect(
+      routes(
+        authorisation(
+          {
+            [FOUNDATION_CAPABILITIES.correctiveActionRead]: [CENTRE],
+            [FOUNDATION_CAPABILITIES.quarterlyAuditRead]: [CENTRE],
+            [FOUNDATION_CAPABILITIES.correctiveActionRemediate]: [CENTRE],
+            [FOUNDATION_CAPABILITIES.quarterlyAuditConduct]: [CENTRE],
+          },
+          [
+            FOUNDATION_CAPABILITIES.complianceOversightRead,
+            FOUNDATION_CAPABILITIES.invitationRead,
+            FOUNDATION_CAPABILITIES.principalRead,
+          ],
+        ),
+      ),
+    ).not.toContain("/budgets");
+  });
+
+  /**
+   * An empty authorised set is the shape a principal takes when the capability
+   * was evaluated against every centre and allowed on none. It must read as no
+   * access, not as a present-but-empty key.
+   */
+  test("is withheld when the capability resolves to no centre at all", () => {
+    expect(
+      routes(authorisation({ [FOUNDATION_CAPABILITIES.budgetPositionRead]: [] })),
+    ).not.toContain("/budgets");
+  });
+
+  /**
+   * PERMISSIONS.md is explicit that the pre-existing synthetic Finance marker
+   * does not authorise a budget module, and migration 026 introduced
+   * `budget.position.read` precisely so the two stay separable.
+   */
+  test("is not conferred by the synthetic budget summary capability", () => {
+    expect(
+      routes(
+        authorisation(
+          { [FOUNDATION_CAPABILITIES.budgetSummaryRead]: [CENTRE] },
+          [FOUNDATION_CAPABILITIES.budgetSummaryRead],
+        ),
+      ),
+    ).not.toContain("/budgets");
+  });
+
+  /**
+   * A capability the caller never evaluates can never gate a link, so the
+   * derivation and the list its callers iterate have to name the same one.
+   */
+  test("is derived from a capability the callers actually evaluate", () => {
+    expect(WORKSPACE_LINK_CENTRE_CAPABILITIES).toContain(
+      FOUNDATION_CAPABILITIES.budgetPositionRead,
+    );
+  });
+});
+
+describe("existing workspace links are unchanged", () => {
+  test("keeps every previous destination and its order for a fully capable principal", () => {
+    expect(
+      routes(
+        authorisation(
+          {
+            [FOUNDATION_CAPABILITIES.correctiveActionRead]: [CENTRE],
+            [FOUNDATION_CAPABILITIES.quarterlyAuditRead]: [CENTRE],
+            [FOUNDATION_CAPABILITIES.correctiveActionRemediate]: [CENTRE],
+            [FOUNDATION_CAPABILITIES.quarterlyAuditConduct]: [CENTRE],
+            [FOUNDATION_CAPABILITIES.budgetPositionRead]: [CENTRE],
+          },
+          [
+            FOUNDATION_CAPABILITIES.complianceOversightRead,
+            FOUNDATION_CAPABILITIES.invitationRead,
+            FOUNDATION_CAPABILITIES.principalRead,
+          ],
+        ),
+      ),
+    ).toEqual(["/quality", "/centre", "/area-manager", "/budgets", "/compliance", "/admin/people"]);
+  });
+
+  test("still gates each previous destination on its own capability", () => {
+    expect(routes(authorisation({ [FOUNDATION_CAPABILITIES.quarterlyAuditRead]: [CENTRE] })))
+      .toEqual(["/quality"]);
+    expect(
+      routes(authorisation({ [FOUNDATION_CAPABILITIES.correctiveActionRemediate]: [CENTRE] })),
+    ).toEqual(["/centre"]);
+    expect(routes(authorisation({}, [FOUNDATION_CAPABILITIES.complianceOversightRead])))
+      .toEqual(["/quality", "/compliance"]);
+    expect(
+      routes(
+        authorisation({}, [
+          FOUNDATION_CAPABILITIES.invitationRead,
+          FOUNDATION_CAPABILITIES.principalRead,
+        ]),
+      ),
+    ).toEqual(["/admin/people"]);
+  });
+
+  test("gives a principal holding nothing no destination at all", () => {
+    expect(deriveWorkspaceLinks(authorisation())).toEqual([]);
+  });
+});
+
+describe("Centre Standards workspace link", () => {
+  // Carried over from the form builder integration. Either operational-check
+  // capability is enough to reach the destination: a reader and a completer
+  // both need to find their own work, and the route resolves the surface
+  // server-side from current capability.
+  test.each([
+    FOUNDATION_CAPABILITIES.operationalCheckRead,
+    FOUNDATION_CAPABILITIES.operationalCheckComplete,
+  ])("appears for scoped %s authority", (granted) => {
+    expect(deriveWorkspaceLinks(authorisation({ [granted]: [CENTRE] })))
+      .toContainEqual({ label: "Centre Standards", route: "/standards" });
+  });
+
+  test("is not inferred from unrelated centre authority", () => {
+    expect(deriveWorkspaceLinks(authorisation({
+      [FOUNDATION_CAPABILITIES.centreRead]: [CENTRE],
+    }))).not.toContainEqual({ label: "Centre Standards", route: "/standards" });
+  });
+
+  test("is withheld when the capability resolves to no centre at all", () => {
+    expect(routes(authorisation({
+      [FOUNDATION_CAPABILITIES.operationalCheckComplete]: [],
+    }))).not.toContain("/standards");
   });
 });

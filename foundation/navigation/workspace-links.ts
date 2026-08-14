@@ -28,6 +28,7 @@ export const WORKSPACE_LINK_CENTRE_CAPABILITIES = [
   FOUNDATION_CAPABILITIES.quarterlyAuditConduct,
   FOUNDATION_CAPABILITIES.operationalCheckRead,
   FOUNDATION_CAPABILITIES.operationalCheckComplete,
+  FOUNDATION_CAPABILITIES.budgetPositionRead,
 ] as const;
 
 /** Organisation-scoped capabilities a caller must evaluate before deriving links. */
@@ -66,6 +67,15 @@ export function deriveWorkspaceLinks(
     holdsAnyCentre(authorisation, FOUNDATION_CAPABILITIES.operationalCheckComplete)
   ) {
     links.push({ label: "Centre Standards", route: "/standards" });
+  }
+
+  // The capability that guards the budget read endpoints themselves, so the
+  // link and the destination can never disagree about who may see budget
+  // content. `budget.summary.read` is the older synthetic Finance marker and
+  // deliberately confers nothing here. No canonical System Administrator bundle
+  // holds `budget.position.read`, so technical administration produces no link.
+  if (holdsAnyCentre(authorisation, FOUNDATION_CAPABILITIES.budgetPositionRead)) {
+    links.push({ label: "Budgets", route: "/budgets" });
   }
   if (authorisation.organisationCapabilities.has(FOUNDATION_CAPABILITIES.complianceOversightRead)) {
     links.push({ label: "Compliance oversight", route: "/compliance" });

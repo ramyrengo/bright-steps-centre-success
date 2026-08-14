@@ -41,14 +41,31 @@ describe("operational template builder migrations", () => {
   });
 
   test("grants the operational template bundle to Area Manager v3 only", () => {
-    const capability = readFileSync(
+    // Centre Budgets claims `area_manager` version 3 in migration 026, which is
+    // released and immutable. 024 therefore only registers the capability codes
+    // and 030 folds them into the version 026 created. The bundle still reaches
+    // Area Manager version 3 and still reaches nothing else.
+    const registration = readFileSync(
       new URL("../migrations/024_operational_template_capabilities.up.sql", import.meta.url),
       "utf8",
     );
+    const grant = readFileSync(
+      new URL(
+        "../migrations/030_operational_template_bundle_reconciliation.up.sql",
+        import.meta.url,
+      ),
+      "utf8",
+    );
     for (const code of ["template.read", "template.create", "template.publish", "template.assign"]) {
-      expect(capability).toContain(`('${code}'`);
-      expect(capability).toContain(`('area_manager', 3, '${code}')`);
+      expect(registration).toContain(`('${code}'`);
+      expect(grant).toContain(`('area_manager', 3, '${code}')`);
     }
-    expect(capability).not.toMatch(/system_administrator',\s*\d+,\s*'template\./u);
+    for (const migration of [registration, grant]) {
+      expect(migration).not.toMatch(/system_administrator',\s*\d+,\s*'template\./u);
+    }
+    // The reconciliation only holds while 024 claims no canonical version of its
+    // own. Reinstating that insert would collide with 026 all over again.
+    expect(registration).not.toContain("INSERT INTO canonical_role_templates");
+    expect(grant).not.toContain("INSERT INTO canonical_role_templates");
   });
 });

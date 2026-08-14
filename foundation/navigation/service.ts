@@ -41,12 +41,8 @@ export class NavigationError extends Error {
   }
 }
 
-interface PrincipalRow {
-  id: string;
-  status: "pending" | "active" | "suspended" | "revoked";
-}
-
-interface OrganisationRow {
+interface PrincipalOrganisationRow {
+  principal_id: string;
   id: string;
 }
 
@@ -95,15 +91,21 @@ export async function buildAuthorisedNavigation(
   const decisionAt = dependencies.now();
   try {
     await executor.exec`SET TRANSACTION ISOLATION LEVEL REPEATABLE READ READ ONLY`;
-    const principal = await executor.queryRow<PrincipalRow>`
-      SELECT id, status FROM principals WHERE id = ${input.principalId}
-    `;
-    if (!principal || principal.status !== "active") throw new NavigationError("access_denied");
-    const organisations = await executor.queryAll<OrganisationRow>`
-      SELECT DISTINCT organisation.id
-      FROM organisation_memberships AS membership
+    // The principal's existence and active status are enforced by joining
+    // `principals` here rather than by reading that row separately: the
+    // authorisation context loader reads the identical row moments later inside
+    // this same `REPEATABLE READ` snapshot, where it is guaranteed unchanged, so
+    // a standalone lookup would only be a second trip for an answer already
+    // coming. A missing principal, an inactive one, and a principal without
+    // exactly one active organisation all still fail closed as `access_denied`.
+    const organisations = await executor.queryAll<PrincipalOrganisationRow>`
+      SELECT DISTINCT principal.id AS principal_id, organisation.id
+      FROM principals AS principal
+      JOIN organisation_memberships AS membership
+        ON membership.principal_id = principal.id
       JOIN organisations AS organisation ON organisation.id = membership.organisation_id
-      WHERE membership.principal_id = ${principal.id}
+      WHERE principal.id = ${input.principalId}
+        AND principal.status = 'active'
         AND membership.status = 'active'
         AND membership.effective_from <= ${decisionAt}
         AND (membership.effective_to IS NULL OR membership.effective_to > ${decisionAt})
@@ -114,7 +116,7 @@ export async function buildAuthorisedNavigation(
     const organisationId = organisations[0].id;
 
     const context = await loadPrincipalAuthorisationContextFromSnapshot(executor, {
-      principalId: principal.id,
+      principalId: organisations[0].principal_id,
       activeOrganisationId: organisationId,
       at: decisionAt,
     });

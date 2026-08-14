@@ -10,6 +10,8 @@ export const FOUNDATION_CAPABILITIES = {
   systemConfigure: "system.configure",
   systemHealthRead: "system.health.read",
   budgetSummaryRead: "budget.summary.read",
+  budgetPositionRead: "budget.position.read",
+  budgetActualEnter: "budget.actual.enter",
   quarterlyAuditRead: "quarterly_audit.read",
   quarterlyAuditConduct: "quarterly_audit.conduct",
   quarterlyAuditFinalise: "quarterly_audit.finalise",

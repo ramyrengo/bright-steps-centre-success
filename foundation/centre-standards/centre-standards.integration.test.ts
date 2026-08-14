@@ -680,7 +680,21 @@ describe.sequential("Milestone 4A Centre Standards vertical slice", () => {
     );
     expect(integratedDaily.response.sections.flatMap((section) => section.items))
       .toContainEqual(expect.objectContaining({ sourceId: openId, sourceType: "operational_check" }));
-    expect(integratedDaily.diagnostics.queryCount).toBe(17);
+    // The sixteen are: the snapshot isolation statement; the principal's single
+    // active organisation, which joins `principals` so the existence and
+    // active-status check costs no separate round-trip; the authorisation
+    // context loader's four (principal, organisation, membership, role
+    // assignments); one set-wise centre authorisation facts load; then the three
+    // savepointed sources this centre perspective runs — corrective actions,
+    // quarterly reviews and operational checks — each costing its SAVEPOINT, its
+    // one set-wise query and its RELEASE. A seventeenth is a regression.
+    //
+    // This was seventeen until `perf(foundation): fold principal check into
+    // organisation resolution` removed the standalone `principals` lookup that
+    // ran immediately before the authorisation context re-read the identical row
+    // in the same snapshot. One query fewer for the same projection: the
+    // operational check items asserted just above are still all present.
+    expect(integratedDaily.diagnostics.queryCount).toBe(16);
 
     const actionResult = await CorrectiveActionDailySource.collect({
       ...baseInput,
