@@ -1,7 +1,10 @@
 import { APIError } from "encore.dev/api";
 import { getAuthData } from "~encore/auth";
 import { FOUNDATION_CAPABILITIES, type FoundationCapability } from "../authorization/capabilities";
-import { authoriseCentreFromDatabase } from "../authorization/database-authoriser";
+import {
+  authoriseCentreFromDatabase,
+  authoriseCentresFromDatabase,
+} from "../authorization/database-authoriser";
 import { authorise } from "../authorization/policy";
 import type { CentreSuccessAuthData } from "../authentication/auth-handler";
 import {
@@ -89,28 +92,35 @@ export async function canRemediateCentre(
   return decision.allowed;
 }
 
+/**
+ * Keeps only the rows whose centre the principal may see under `capability`.
+ *
+ * Every candidate is decided from one repeatable-read snapshot rather than one
+ * per row. The previous shape opened a snapshot per candidate and re-read the
+ * same principal context and hierarchy inside each, so the cost of a portfolio
+ * list grew linearly with the portfolio. This is the batching Milestone 2B
+ * recorded as required before broad multi-centre rollout.
+ *
+ * Behaviour is unchanged: one decision time for the whole collection, allow
+ * decisions only, and rows the reader may not see are dropped silently rather
+ * than reported as denied — a caller cannot tell absence from refusal.
+ */
 export async function filterCentreResourcesByCapability<T extends { centreId: string }>(
   principal: Pick<BusinessPrincipal, "principalId" | "organisationId">,
   resources: readonly T[],
   capability: FoundationCapability,
   at?: Date,
 ): Promise<T[]> {
+  if (resources.length === 0) return [];
   const decisionAt = at ?? new Date();
-  const decisions = await Promise.all(
-    resources.map(async (resource) => ({
-      resource,
-      decision: await authoriseCentreFromDatabase({
-        principalId: principal.principalId,
-        activeOrganisationId: principal.organisationId,
-        centreId: resource.centreId,
-        capability,
-        at: decisionAt,
-      }),
-    })),
-  );
-  return decisions
-    .filter(({ decision }) => decision.allowed)
-    .map(({ resource }) => resource);
+  const allowed = await authoriseCentresFromDatabase({
+    principalId: principal.principalId,
+    activeOrganisationId: principal.organisationId,
+    centreIds: resources.map((resource) => resource.centreId),
+    capability,
+    at: decisionAt,
+  });
+  return resources.filter((resource) => allowed.has(resource.centreId));
 }
 
 export function toQuarterlyReviewApiError(error: unknown): never {
