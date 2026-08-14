@@ -256,6 +256,51 @@ covers a real page unload and nothing else, so it is not sufficient on its own.
 The confirmation resolves navigation by rendering a real link rather than
 pushing through a router, which keeps the shell free of router coupling.
 
+## Template & Form Builder primitives
+
+Two answer primitives were added for the Area Manager Template & Form Builder,
+alongside `AnswerControl` in `design-system.tsx`. The builder has no private
+component library either.
+
+| Primitive | Use |
+| --- | --- |
+| `MultiAnswerControl` | "Choose any that apply". Native checkboxes, same 56px target. |
+| `EntryControl` | A typed answer: text, paragraph, number or date. |
+
+`MultiAnswerControl` is a sibling of `AnswerControl` rather than a mode of it,
+because the two answer different questions — "which one" and "which of these" —
+and merging them would produce one component whose value is sometimes a string
+and sometimes an array. Its mark is square where the radio's is round, so
+"exactly one" and "any that apply" are distinguishable without reading the
+legend and without relying on colour.
+
+`EntryControl` holds the 56px minimum too. The preview is the real educator
+control at the real size, and a text box half the height of the radio beside it
+would make the preview a lie about the screen it is previewing.
+
+### Ordering is buttons, not drag and drop
+
+Sections and questions reorder with Move up / Move down, each carrying the name
+of what it moves ("Move question 2 in Outdoor area up") and each move announced
+in a live region. A drag surface needs a parallel keyboard mechanism, a live
+region and pointer-cancel handling before it is usable at all, and an Area
+Manager reordering a fifteen-question form on a phone is better served by a
+target they can hit than a gesture they have to hold.
+
+### Immutability is carried by the type, not by the screen
+
+A published version's contract shape has no draft body and no `canEdit`, so
+there is nothing for an edit control to bind to. The rule is enforced once, in
+`template-builder-contract.ts`, rather than by every surface remembering to
+check a lifecycle field first.
+
+### A preview is not a completion
+
+The phone preview reuses `CheckProgress`, `AnswerControl` and the answer
+targets, but never `CompletionState`. It ends on its own screen saying nothing
+was recorded and no centre was contacted. Borrowing the completion destination
+would tell an Area Manager a check happened that did not.
+
 ## Consistency across the four surfaces
 
 Observations from reviewing Daily Success, Quality & Performance, Centre

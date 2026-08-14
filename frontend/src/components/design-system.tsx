@@ -1,7 +1,7 @@
 "use client";
 
 import Link from "next/link";
-import { useEffect, useId, useRef, type ReactNode } from "react";
+import { useCallback, useEffect, useId, useRef, type ReactNode } from "react";
 
 /**
  * Bright Steps Centre Success design-system primitives.
@@ -475,6 +475,178 @@ export function AnswerControl({
         ))}
       </div>
     </fieldset>
+  );
+}
+
+/**
+ * A question where any number of options may be chosen.
+ *
+ * The sibling of `AnswerControl`, built on native checkboxes for the same
+ * reason: the accessible checked state, the group semantics and forced-colors
+ * support come from the platform, and the visually hidden input keeps them
+ * while the styled label supplies the 56px one-handed target.
+ *
+ * It is a separate component rather than a mode of `AnswerControl` because the
+ * two answer *different* questions — "which one" and "which of these" — and
+ * collapsing them would mean one component whose value is sometimes a string
+ * and sometimes an array.
+ */
+export function MultiAnswerControl({
+  legend,
+  name,
+  options,
+  values,
+  onChange,
+  disabled = false,
+  instructions,
+  takeFocus = false,
+}: Readonly<{
+  legend: string;
+  name: string;
+  options: readonly { value: string; label: string; description?: string }[];
+  values: readonly string[];
+  onChange: (next: string[]) => void;
+  disabled?: boolean;
+  instructions?: string;
+  takeFocus?: boolean;
+}>) {
+  const instructionsId = useId();
+  const group = useRef<HTMLFieldSetElement>(null);
+
+  useEffect(() => {
+    if (takeFocus) group.current?.focus();
+  }, [takeFocus]);
+
+  return (
+    <fieldset
+      className="answer-control"
+      ref={group}
+      {...(takeFocus ? { tabIndex: -1 } : {})}
+      {...(instructions ? { "aria-describedby": instructionsId } : {})}
+    >
+      <legend className="answer-control__legend">{legend}</legend>
+      {instructions ? (
+        <p className="answer-control__instructions" id={instructionsId}>
+          {instructions}
+        </p>
+      ) : null}
+      <div className="answer-control__options">
+        {options.map((option) => {
+          const checked = values.includes(option.value);
+          return (
+            <label className="answer-option answer-option--multi" key={option.value}>
+              <input
+                type="checkbox"
+                name={name}
+                value={option.value}
+                checked={checked}
+                disabled={disabled}
+                onChange={() =>
+                  onChange(
+                    checked
+                      ? values.filter((value) => value !== option.value)
+                      : [...values, option.value],
+                  )
+                }
+              />
+              <span className="answer-option__mark" aria-hidden="true" />
+              <span className="answer-option__body">
+                <span className="answer-option__label">{option.label}</span>
+                {option.description ? (
+                  <span className="answer-option__description">{option.description}</span>
+                ) : null}
+              </span>
+            </label>
+          );
+        })}
+      </div>
+    </fieldset>
+  );
+}
+
+/**
+ * A question answered by typing or picking rather than by choosing an option:
+ * written text, a number, a date.
+ *
+ * The label is a real `<label>` tied to one control, so the question wording is
+ * the accessible name and tapping it focuses the field. `suffix` carries a unit
+ * without putting it inside the value.
+ */
+export function EntryControl({
+  label,
+  name,
+  entry,
+  value,
+  onChange,
+  disabled = false,
+  instructions,
+  suffix,
+  takeFocus = false,
+}: Readonly<{
+  label: string;
+  name: string;
+  entry: "text" | "paragraph" | "number" | "date";
+  value: string;
+  onChange: (next: string) => void;
+  disabled?: boolean;
+  instructions?: string;
+  /** A unit shown beside a number, e.g. "children". Never part of the value. */
+  suffix?: string;
+  takeFocus?: boolean;
+}>) {
+  const instructionsId = useId();
+  const control = useRef<HTMLInputElement | HTMLTextAreaElement | null>(null);
+  // A callback ref rather than an object ref: the same variable has to hold
+  // either an input or a textarea depending on `entry`, and this is the one
+  // form that types cleanly for both without a cast.
+  const attach = useCallback((node: HTMLInputElement | HTMLTextAreaElement | null) => {
+    control.current = node;
+  }, []);
+
+  useEffect(() => {
+    if (takeFocus) control.current?.focus();
+  }, [takeFocus]);
+
+  const described = instructions ? { "aria-describedby": instructionsId } : {};
+
+  return (
+    <div className="entry-control">
+      <label className="entry-control__label" htmlFor={name}>
+        {label}
+      </label>
+      {instructions ? (
+        <p className="entry-control__instructions" id={instructionsId}>
+          {instructions}
+        </p>
+      ) : null}
+      <div className="entry-control__field">
+        {entry === "paragraph" ? (
+          <textarea
+            id={name}
+            name={name}
+            ref={attach}
+            rows={4}
+            value={value}
+            disabled={disabled}
+            onChange={(event) => onChange(event.target.value)}
+            {...described}
+          />
+        ) : (
+          <input
+            id={name}
+            name={name}
+            ref={attach}
+            type={entry === "number" ? "number" : entry === "date" ? "date" : "text"}
+            {...(entry === "number" ? { inputMode: "decimal" as const } : {})}
+            value={value}
+            disabled={disabled}
+            onChange={(event) => onChange(event.target.value)}
+            {...described}
+          />
+        )}
+        {suffix ? <span className="entry-control__suffix">{suffix}</span> : null}
+      </div>
+    </div>
   );
 }
 

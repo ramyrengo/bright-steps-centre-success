@@ -119,10 +119,12 @@ export namespace foundation {
             this.acknowledgeQuarterlyAudit = this.acknowledgeQuarterlyAudit.bind(this)
             this.addPersonAssignment = this.addPersonAssignment.bind(this)
             this.approveInvitation = this.approveInvitation.bind(this)
+            this.assignOperationalTemplateRoute = this.assignOperationalTemplateRoute.bind(this)
             this.cancelInvitationEndpoint = this.cancelInvitationEndpoint.bind(this)
             this.completeEvidenceUpload = this.completeEvidenceUpload.bind(this)
             this.completeStandardsOccurrence = this.completeStandardsOccurrence.bind(this)
             this.createInvitation = this.createInvitation.bind(this)
+            this.createOperationalTemplate = this.createOperationalTemplate.bind(this)
             this.finaliseQuarterlyAudit = this.finaliseQuarterlyAudit.bind(this)
             this.getAuditPreparation = this.getAuditPreparation.bind(this)
             this.getAuthorisedNavigationEndpoint = this.getAuthorisedNavigationEndpoint.bind(this)
@@ -133,6 +135,7 @@ export namespace foundation {
             this.getDailySuccess = this.getDailySuccess.bind(this)
             this.getEvidenceAccess = this.getEvidenceAccess.bind(this)
             this.getInvitation = this.getInvitation.bind(this)
+            this.getOperationalTemplateVersionRoute = this.getOperationalTemplateVersionRoute.bind(this)
             this.getPeopleOptions = this.getPeopleOptions.bind(this)
             this.getPerson = this.getPerson.bind(this)
             this.getPersonAccess = this.getPersonAccess.bind(this)
@@ -144,14 +147,18 @@ export namespace foundation {
             this.listAssignedAuditCentres = this.listAssignedAuditCentres.bind(this)
             this.listCorrectiveActionVerificationQueue = this.listCorrectiveActionVerificationQueue.bind(this)
             this.listMyCorrectiveActions = this.listMyCorrectiveActions.bind(this)
+            this.listOperationalTemplateLibrary = this.listOperationalTemplateLibrary.bind(this)
             this.listPeople = this.listPeople.bind(this)
             this.markQuarterlyAuditReady = this.markQuarterlyAuditReady.bind(this)
             this.me = this.me.bind(this)
+            this.previewOperationalTemplateDraftRoute = this.previewOperationalTemplateDraftRoute.bind(this)
+            this.publishOperationalTemplateRoute = this.publishOperationalTemplateRoute.bind(this)
             this.reactivatePerson = this.reactivatePerson.bind(this)
             this.removePersonAssignment = this.removePersonAssignment.bind(this)
             this.replacePersonAssignmentScope = this.replacePersonAssignmentScope.bind(this)
             this.requestEvidenceUpload = this.requestEvidenceUpload.bind(this)
             this.resendInvitation = this.resendInvitation.bind(this)
+            this.retireOperationalTemplateRoute = this.retireOperationalTemplateRoute.bind(this)
             this.returnCorrectiveAction = this.returnCorrectiveAction.bind(this)
             this.revokePerson = this.revokePerson.bind(this)
             this.saveQuarterlyAuditResponse = this.saveQuarterlyAuditResponse.bind(this)
@@ -160,6 +167,7 @@ export namespace foundation {
             this.startQuarterlyAudit = this.startQuarterlyAudit.bind(this)
             this.submitCorrectiveActionEvidence = this.submitCorrectiveActionEvidence.bind(this)
             this.suspendPerson = this.suspendPerson.bind(this)
+            this.updateOperationalTemplateDraftRoute = this.updateOperationalTemplateDraftRoute.bind(this)
             this.verifyAndCloseCorrectiveAction = this.verifyAndCloseCorrectiveAction.bind(this)
         }
 
@@ -187,6 +195,12 @@ export namespace foundation {
             return await resp.json() as people_access.InvitationSummary
         }
 
+        public async assignOperationalTemplateRoute(templateId: string, params: operational_templates.AssignOperationalTemplateRequest): Promise<operational_templates.AssignOperationalTemplateResponse> {
+            // Now make the actual call to the API
+            const resp = await this.baseClient.callTypedAPI("POST", `/standards/templates/${encodeURIComponent(templateId)}/assignments`, JSON.stringify(params))
+            return await resp.json() as operational_templates.AssignOperationalTemplateResponse
+        }
+
         public async cancelInvitationEndpoint(invitationId: string, params: people_access.VersionedInvitationRequest): Promise<people_access.InvitationSummary> {
             // Now make the actual call to the API
             const resp = await this.baseClient.callTypedAPI("POST", `/admin/people/invitations/${encodeURIComponent(invitationId)}/cancel`, JSON.stringify(params))
@@ -209,6 +223,12 @@ export namespace foundation {
             // Now make the actual call to the API
             const resp = await this.baseClient.callTypedAPI("POST", `/admin/people/invitations`, JSON.stringify(params))
             return await resp.json() as people_access.InvitationSummary
+        }
+
+        public async createOperationalTemplate(params: operational_templates.CreateOperationalTemplateRequest): Promise<operational_templates.OperationalTemplateDraft> {
+            // Now make the actual call to the API
+            const resp = await this.baseClient.callTypedAPI("POST", `/standards/templates`, JSON.stringify(params))
+            return await resp.json() as operational_templates.OperationalTemplateDraft
         }
 
         public async finaliseQuarterlyAudit(auditId: string, params: quarterly_reviews.AuditTransitionRequest): Promise<quarterly_reviews.FinaliseQuarterlyAuditResponse> {
@@ -299,6 +319,12 @@ export namespace foundation {
             return await resp.json() as people_access.InvitationSummary
         }
 
+        public async getOperationalTemplateVersionRoute(templateId: string, versionId: string): Promise<operational_templates.OperationalTemplateVersion> {
+            // Now make the actual call to the API
+            const resp = await this.baseClient.callTypedAPI("GET", `/standards/templates/${encodeURIComponent(templateId)}/versions/${encodeURIComponent(versionId)}`)
+            return await resp.json() as operational_templates.OperationalTemplateVersion
+        }
+
         public async getPeopleOptions(): Promise<people_access.PeopleAccessOptionsResponse> {
             // Now make the actual call to the API
             const resp = await this.baseClient.callTypedAPI("GET", `/admin/people/options`)
@@ -377,6 +403,17 @@ export namespace foundation {
             return await resp.json() as quarterly_reviews.ListCorrectiveActionsResponse
         }
 
+        public async listOperationalTemplateLibrary(params: operational_templates.ListOperationalTemplatesRequest): Promise<operational_templates.ListOperationalTemplatesResponse> {
+            // Convert our params into the objects we need for the request
+            const query = makeRecord<string, string | string[]>({
+                centreId: params.centreId,
+            })
+
+            // Now make the actual call to the API
+            const resp = await this.baseClient.callTypedAPI("GET", `/standards/templates`, undefined, {query})
+            return await resp.json() as operational_templates.ListOperationalTemplatesResponse
+        }
+
         public async listPeople(): Promise<people_access.PeopleListResponse> {
             // Now make the actual call to the API
             const resp = await this.baseClient.callTypedAPI("GET", `/admin/people`)
@@ -397,6 +434,18 @@ export namespace foundation {
             // Now make the actual call to the API
             const resp = await this.baseClient.callTypedAPI("GET", `/foundation/me`)
             return await resp.json() as FoundationMeResponse
+        }
+
+        public async previewOperationalTemplateDraftRoute(templateId: string): Promise<operational_templates.OperationalTemplatePreview> {
+            // Now make the actual call to the API
+            const resp = await this.baseClient.callTypedAPI("GET", `/standards/templates/${encodeURIComponent(templateId)}/preview`)
+            return await resp.json() as operational_templates.OperationalTemplatePreview
+        }
+
+        public async publishOperationalTemplateRoute(templateId: string, params: operational_templates.PublishOperationalTemplateRequest): Promise<operational_templates.OperationalTemplateVersion> {
+            // Now make the actual call to the API
+            const resp = await this.baseClient.callTypedAPI("POST", `/standards/templates/${encodeURIComponent(templateId)}/publish`, JSON.stringify(params))
+            return await resp.json() as operational_templates.OperationalTemplateVersion
         }
 
         public async reactivatePerson(principalId: string, params: people_access.PrincipalLifecycleRequest): Promise<people_access.PrincipalLifecycleResponse> {
@@ -427,6 +476,12 @@ export namespace foundation {
             // Now make the actual call to the API
             const resp = await this.baseClient.callTypedAPI("POST", `/admin/people/invitations/${encodeURIComponent(invitationId)}/resend`, JSON.stringify(params))
             return await resp.json() as people_access.InvitationSummary
+        }
+
+        public async retireOperationalTemplateRoute(templateId: string, params: operational_templates.RetireOperationalTemplateRequest): Promise<operational_templates.RetireOperationalTemplateResponse> {
+            // Now make the actual call to the API
+            const resp = await this.baseClient.callTypedAPI("POST", `/standards/templates/${encodeURIComponent(templateId)}/retire`, JSON.stringify(params))
+            return await resp.json() as operational_templates.RetireOperationalTemplateResponse
         }
 
         public async returnCorrectiveAction(actionId: string, params: quarterly_reviews.ReturnCorrectiveActionRequest): Promise<quarterly_reviews.ActionTransitionResponse> {
@@ -475,6 +530,12 @@ export namespace foundation {
             // Now make the actual call to the API
             const resp = await this.baseClient.callTypedAPI("POST", `/admin/people/${encodeURIComponent(principalId)}/suspend`, JSON.stringify(params))
             return await resp.json() as people_access.PrincipalLifecycleResponse
+        }
+
+        public async updateOperationalTemplateDraftRoute(templateId: string, params: operational_templates.UpdateOperationalTemplateDraftRequest): Promise<operational_templates.OperationalTemplateDraft> {
+            // Now make the actual call to the API
+            const resp = await this.baseClient.callTypedAPI("PUT", `/standards/templates/${encodeURIComponent(templateId)}/draft`, JSON.stringify(params))
+            return await resp.json() as operational_templates.OperationalTemplateDraft
         }
 
         public async verifyAndCloseCorrectiveAction(actionId: string, params: quarterly_reviews.VerifyCorrectiveActionRequest): Promise<quarterly_reviews.ActionTransitionResponse> {
@@ -1072,6 +1133,227 @@ export namespace navigation {
     export interface WorkspaceLink {
         label: string
         route: string
+    }
+}
+
+export namespace operational_templates {
+    export interface AssignOperationalTemplateRequest {
+        versionId: string
+        target: {
+            kind: "CENTRES"
+            centreIds: string[]
+        } | {
+            kind: "PORTFOLIO"
+        }
+        schedule: {
+            frequency: "DAILY"
+            opensLocalTime: string
+            dueLocalTime: string
+            effectiveFrom: string
+        }
+    }
+
+    export interface AssignOperationalTemplateResponse {
+        assignmentId: string
+        templateId: string
+        versionId: string
+        targetKind: "CENTRES" | "PORTFOLIO"
+        frequency: "DAILY"
+        centreCount: number
+        deployments: {
+            centreId: string
+            deploymentId: string
+            scheduleRevisionId: string
+            centreTimezone: string
+        }[]
+    }
+
+    export interface CreateOperationalTemplateRequest {
+        title: string
+        instructions: string
+        metadata?: OperationalTemplateMetadata
+        sections: OperationalSectionInput[]
+    }
+
+    export interface ListOperationalTemplatesRequest {
+        /**
+         * When absent, assignment context is filtered to the current authorised portfolio.
+         */
+        centreId?: string
+    }
+
+    export interface ListOperationalTemplatesResponse {
+        templates: OperationalTemplateSummary[]
+        assignmentFilter: {
+            kind: "PORTFOLIO"
+        } | {
+            kind: "CENTRE"
+            centreId: string
+        }
+    }
+
+    export interface OperationalChoiceOption {
+        value: string
+        label: string
+    }
+
+    export type OperationalQuestionInput = {
+        id?: string
+        label: string
+        instructions?: string
+        order: number
+        required: boolean
+        type: "short_text" | "long_text"
+        minLength?: number
+        maxLength?: number
+    } | {
+        id?: string
+        label: string
+        instructions?: string
+        order: number
+        required: boolean
+        type: "single_choice"
+        options: OperationalChoiceOption[]
+    } | {
+        id?: string
+        label: string
+        instructions?: string
+        order: number
+        required: boolean
+        type: "multiple_choice"
+        options: OperationalChoiceOption[]
+        minSelections?: number
+        maxSelections?: number
+    } | {
+        id?: string
+        label: string
+        instructions?: string
+        order: number
+        required: boolean
+        type: "numeric"
+        minimum?: number
+        maximum?: number
+    } | {
+        id?: string
+        label: string
+        instructions?: string
+        order: number
+        required: boolean
+        type: "time"
+        earliest?: string
+        latest?: string
+    }
+
+    export type OperationalQuestionType = "short_text" | "long_text" | "single_choice" | "multiple_choice" | "numeric" | "time"
+
+    export interface OperationalSectionInput {
+        id?: string
+        title: string
+        instructions?: string
+        order: number
+        questions: OperationalQuestionInput[]
+    }
+
+    export interface OperationalTemplateDraft {
+        templateId: string
+        lifecycle: OperationalTemplateLifecycle
+        title: string
+        instructions: string
+        metadata: OperationalTemplateMetadata
+        authorId: string
+        lockVersion: number
+        updatedAt: string
+        sections: OperationalTemplateSection[]
+    }
+
+    export type OperationalTemplateLifecycle = "DRAFT" | "PUBLISHED" | "RETIRED"
+
+    export type OperationalTemplateMetadata = { [key: string]: string | number | boolean | null }
+
+    export interface OperationalTemplatePreview {
+        device: "PHONE"
+        source: "DRAFT" | "PUBLISHED"
+        template: OperationalTemplateDraft | OperationalTemplateVersion
+    }
+
+    export interface OperationalTemplateQuestion {
+        id: string
+        label: string
+        instructions?: string
+        order: number
+        required: boolean
+        type: OperationalQuestionType
+        options?: OperationalChoiceOption[]
+        minLength?: number
+        maxLength?: number
+        minSelections?: number
+        maxSelections?: number
+        minimum?: number
+        maximum?: number
+        earliest?: string
+        latest?: string
+    }
+
+    export interface OperationalTemplateSection {
+        id: string
+        title: string
+        instructions?: string
+        order: number
+        questions: OperationalTemplateQuestion[]
+    }
+
+    export interface OperationalTemplateSummary {
+        templateId: string
+        title: string
+        lifecycle: OperationalTemplateLifecycle
+        authorId?: string
+        lockVersion: number
+        latestPublishedVersion?: {
+            versionId: string
+            versionNumber: number
+            publishedAt: string
+            authorId: string
+        }
+        assignedCentres: {
+            centreId: string
+            centreName: string
+        }[]
+    }
+
+    export interface OperationalTemplateVersion {
+        templateId: string
+        versionId: string
+        versionNumber: number
+        lifecycle: "PUBLISHED" | "RETIRED"
+        title: string
+        instructions: string
+        metadata: OperationalTemplateMetadata
+        sourceKind: "BSA_INTERNAL"
+        authorId: string
+        publishedAt: string
+        sections: OperationalTemplateSection[]
+    }
+
+    export interface PublishOperationalTemplateRequest {
+        lockVersion: number
+    }
+
+    export interface RetireOperationalTemplateRequest {
+        lockVersion: number
+    }
+
+    export interface RetireOperationalTemplateResponse {
+        templateId: string
+        lifecycle: "RETIRED"
+        lockVersion: number
+    }
+
+    export interface UpdateOperationalTemplateDraftRequest {
+        lockVersion: number
+        title: string
+        instructions: string
+        metadata?: OperationalTemplateMetadata
+        sections: OperationalSectionInput[]
     }
 }
 

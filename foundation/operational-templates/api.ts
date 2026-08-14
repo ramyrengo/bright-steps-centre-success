@@ -233,7 +233,8 @@ export const publishOperationalTemplateRoute = api(
 
 export const retireOperationalTemplateRoute = api(
   { expose: true, auth: true, method: "POST", path: "/standards/templates/:templateId/retire" },
-  (request: RetireOperationalTemplateRequest) => retireOperationalTemplateEndpoint(request),
+  (request: RetireOperationalTemplateRequest): Promise<RetireOperationalTemplateResponse> =>
+    retireOperationalTemplateEndpoint(request),
 );
 
 export const getOperationalTemplateVersionRoute = api(
