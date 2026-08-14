@@ -566,7 +566,7 @@ export function MultiAnswerControl({
 
 /**
  * A question answered by typing or picking rather than by choosing an option:
- * written text, a number, a date.
+ * written text, a number, a date, a time of day.
  *
  * The label is a real `<label>` tied to one control, so the question wording is
  * the accessible name and tapping it focuses the field. `suffix` carries a unit
@@ -585,7 +585,7 @@ export function EntryControl({
 }: Readonly<{
   label: string;
   name: string;
-  entry: "text" | "paragraph" | "number" | "date";
+  entry: "text" | "paragraph" | "number" | "date" | "time";
   value: string;
   onChange: (next: string) => void;
   disabled?: boolean;
@@ -636,7 +636,15 @@ export function EntryControl({
             id={name}
             name={name}
             ref={attach}
-            type={entry === "number" ? "number" : entry === "date" ? "date" : "text"}
+            type={
+              entry === "number"
+                ? "number"
+                : entry === "date"
+                  ? "date"
+                  : entry === "time"
+                    ? "time"
+                    : "text"
+            }
             {...(entry === "number" ? { inputMode: "decimal" as const } : {})}
             value={value}
             disabled={disabled}

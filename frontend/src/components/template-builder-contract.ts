@@ -1,29 +1,36 @@
 /**
- * The minimum frontend-facing interface the Area Manager Template & Form
- * Builder needs.
+ * The view models the Area Manager Template & Form Builder renders, and the
+ * gateway interface its surfaces are written against.
  *
- * This file is a UX-lane placeholder, not a backend contract. It follows the
- * convention `centre-standards-contract.ts` established: describe the smallest
- * shape the experience requires, in presentation terms, so the surfaces can be
- * built and tested before the backend lane exists — and so wiring later is a
- * prop mapping rather than a redesign. No endpoint is invented here; nothing in
- * this file calls the generated client, and the default gateway refuses
- * honestly rather than fabricating a template.
+ * This file used to be a UX-lane placeholder describing a transport that did
+ * not exist. The transport is real now: `template-builder-gateway.ts` adapts
+ * these view models onto the generated Encore client, and the backend request
+ * and response shapes are imported from that client rather than restated here.
+ * What stays in this file is only what is genuinely presentational — the shapes
+ * the surfaces render, the wording they render it in, and the helpers that turn
+ * one into the other.
  *
  * Three rules from ADR-0020 are carried by the *types*, so the states that must
  * never occur are unrepresentable rather than merely untested:
  *
  * - A published version is immutable. `PublishedVersion` and `RetiredVersion`
- *   carry no editing authority and no draft payload, so no surface can offer an
- *   edit control on one by accident.
- * - Choices belong only to choice questions. A text, number, date or yes/no
+ *   carry no editing authority, no draft payload and no lock token, so no
+ *   surface can offer an edit control on one by accident.
+ * - Choices belong only to choice questions. A text, number, time or yes/no
  *   question has nowhere to put a `choices` array.
  * - The portfolio is resolved from backend authority. `PORTFOLIO` assignment
  *   carries no centre list at all, so the browser cannot supply one and cannot
  *   be read as having supplied one.
  *
+ * A fourth rule is now carried the same way: an editable draft always holds the
+ * `lockVersion` the backend gave it, so every command that changes a draft has
+ * the optimistic-concurrency token in hand and two Area Managers editing one
+ * draft cannot silently overwrite each other.
+ *
  * Absence is never zero, per the design system: a library that could not be
- * fully established says so and never renders an all-clear.
+ * fully established says so and never renders an all-clear, and a fact the
+ * backend does not serve is left absent rather than filled with a plausible
+ * default.
  */
 
 /* ------------------------------------------------------------------ *
@@ -31,12 +38,18 @@
  * ------------------------------------------------------------------ */
 
 /**
- * The six question types ADR-0020 authorises for the initial slice.
+ * The six question types the builder can author.
  *
- * These are presentation discriminators chosen by this lane. They are never
+ * These are presentation discriminators chosen by this lane and are never
  * rendered: every surface reads its wording from `QUESTION_TYPE_LABEL`, so no
- * internal token reaches a reader. If the backend names them differently, the
- * adapter maps them and nothing else changes.
+ * internal token reaches a reader. Each one maps onto exactly one backend
+ * question type — see `template-builder-gateway.ts` — which is why the set is
+ * this set: the builder must not offer an author a question the backend cannot
+ * store.
+ *
+ * `YES_NO` is the one piece of sugar. It is stored as a two-option choice
+ * question, which is what it has always been on screen; the mapping is
+ * deterministic in both directions.
  */
 export type QuestionType =
   | "YES_NO"
@@ -44,7 +57,7 @@ export type QuestionType =
   | "MULTI_SELECT"
   | "TEXT"
   | "NUMBER"
-  | "DATE";
+  | "TIME";
 
 export const QUESTION_TYPE_LABEL: Record<QuestionType, string> = {
   YES_NO: "Yes or no",
@@ -52,7 +65,7 @@ export const QUESTION_TYPE_LABEL: Record<QuestionType, string> = {
   MULTI_SELECT: "Choose any that apply",
   TEXT: "Written answer",
   NUMBER: "Number",
-  DATE: "Date",
+  TIME: "Time of day",
 };
 
 /** A one-line description of what the person answering will see. */
@@ -61,8 +74,8 @@ export const QUESTION_TYPE_HINT: Record<QuestionType, string> = {
   SINGLE_SELECT: "A list of options; exactly one can be chosen.",
   MULTI_SELECT: "A list of options; any number can be chosen.",
   TEXT: "A box to write in.",
-  NUMBER: "A number entry, with an optional unit.",
-  DATE: "A date picker.",
+  NUMBER: "A number entry.",
+  TIME: "A time of day, such as 9:00am.",
 };
 
 /** One offered option on a choice question. */
@@ -76,7 +89,7 @@ export interface DraftChoice {
  * What varies between question types.
  *
  * A discriminated union rather than one wide record with optional fields: it is
- * what makes "a date question with three choices" impossible to construct, so
+ * what makes "a time question with three choices" impossible to construct, so
  * neither the editor nor the preview has to defend against it.
  */
 export type QuestionShape =
@@ -84,8 +97,8 @@ export type QuestionShape =
   | { type: "SINGLE_SELECT"; choices: DraftChoice[] }
   | { type: "MULTI_SELECT"; choices: DraftChoice[] }
   | { type: "TEXT"; multiline: boolean }
-  | { type: "NUMBER"; unitLabel?: string }
-  | { type: "DATE" };
+  | { type: "NUMBER" }
+  | { type: "TIME" };
 
 export type ChoiceQuestionShape = Extract<
   QuestionShape,
@@ -114,16 +127,20 @@ export interface DraftSection {
 }
 
 /**
- * The editable body of a draft version.
+ * The editable body of a draft.
  *
  * The editor holds one of these in memory and saves it whole, which is why the
  * gateway needs a single save command rather than a per-question mutation for
  * every control on the screen.
+ *
+ * `purpose` is not optional. The backend requires a template to say what it is
+ * for before it will store one at all, so offering the field as optional would
+ * be offering a draft that cannot be saved.
  */
 export interface TemplateDraft {
   name: string;
   /** What this template is for, in the Area Manager's own words. */
-  purpose?: string;
+  purpose: string;
   sections: DraftSection[];
 }
 
@@ -152,41 +169,62 @@ export function lifecycleTone(
   }
 }
 
-/** Identity shared by every version shape. */
-export interface VersionIdentity {
-  /** Opaque route identifier. Passed back untouched, never displayed. */
-  versionId: string;
-  /** Presentation-ready, e.g. "Version 3". Composed by the backend so the
-   *  browser never has to guess how versions are numbered. */
-  versionLabel: string;
-}
-
 /**
- * A draft carries its editable body and the authority to change it. Authority
- * comes from the backend and is never inferred from the lifecycle state or from
- * a role name.
+ * A draft carries its editable body, the authority to change it, and the lock
+ * token every command that changes it must send back.
+ *
+ * A draft is not a version and has no version identifier: it has never been
+ * published, so there is nothing permanent to identify. Every backend command
+ * that touches it is keyed on the template instead, which is what `templateId`
+ * on the workspace is for.
+ *
+ * Authority comes from the backend and is never inferred from the lifecycle
+ * state or from a role name.
  */
 export interface DraftVersionState {
   lifecycle: "DRAFT";
+  /** Presentation-ready, e.g. "Draft". */
+  versionLabel: string;
   draft: TemplateDraft;
+  /**
+   * Optimistic concurrency. Sent back on save, publish and retire so a second
+   * Area Manager's changes are refused rather than silently overwritten.
+   * Required, so an editable draft without one cannot be constructed.
+   */
+  lockVersion: number;
   canEdit: boolean;
   canPublish: boolean;
   /** Presentation-ready, e.g. "Saved 2:14pm". Absent before the first save. */
   lastSavedLocalTime?: string;
 }
 
+/** Identity shared by every published or retired version. */
+export interface VersionIdentity {
+  /** Opaque route identifier. Passed back untouched, never displayed. */
+  versionId: string;
+  /** Presentation-ready, e.g. "Version 3", composed from the version number
+   *  the backend assigned. */
+  versionLabel: string;
+}
+
 /**
- * A published version is immutable, so it has no `draft` and no `canEdit`.
- * Its content is a read-only rendering of what was published.
+ * A published version is immutable, so it has no `draft`, no `canEdit` and no
+ * lock token. Its content is a read-only rendering of what was published.
+ *
+ * `assignment`, `schedule` and `publishedBy` are optional because the backend
+ * does not serve them for every version. Where a fact is not established the
+ * surface says so rather than printing a plausible one — a schedule invented in
+ * the browser would be telling an Area Manager when a centre is asked.
  */
 export interface PublishedVersionState {
   lifecycle: "PUBLISHED";
   content: TemplateDraft;
   /** Presentation-ready, e.g. "13 Aug 2026, 2:20pm". */
   publishedLocalTime: string;
-  publishedBy: string;
-  assignment: AssignmentSummary;
-  schedule: ScheduleSummary;
+  /** Present only where the backend named the person. */
+  publishedBy?: string;
+  assignment?: AssignmentSummary;
+  schedule?: ScheduleSummary;
   /** Whether this principal may start a new draft from this version. */
   canCreateDraft: boolean;
   canRetire: boolean;
@@ -197,28 +235,49 @@ export interface RetiredVersionState {
   lifecycle: "RETIRED";
   content: TemplateDraft;
   publishedLocalTime: string;
-  publishedBy: string;
-  retiredLocalTime: string;
-  retiredBy: string;
-  assignment: AssignmentSummary;
-  schedule: ScheduleSummary;
+  publishedBy?: string;
+  retiredLocalTime?: string;
+  retiredBy?: string;
+  assignment?: AssignmentSummary;
+  schedule?: ScheduleSummary;
   canCreateDraft: boolean;
 }
 
-export type TemplateVersion = VersionIdentity &
-  (DraftVersionState | PublishedVersionState | RetiredVersionState);
+export type TemplateVersion =
+  | DraftVersionState
+  | (VersionIdentity & (PublishedVersionState | RetiredVersionState));
 
-/** One row of version history. Published and retired rows are permanent. */
-export interface VersionHistoryEntry {
-  versionId: string;
-  versionLabel: string;
-  lifecycle: TemplateLifecycle;
-  /** Presentation-ready. What happened and when, e.g. "Published 13 Aug 2026". */
-  eventLabel: string;
-  eventBy: string;
-  /** True for the version currently in operational use. */
-  current: boolean;
-}
+/**
+ * One row of version history.
+ *
+ * The open draft and a permanent version are different things, so they are
+ * different members: only a published or retired row has a version identifier
+ * to open, and only it can be the one in use. A draft row cannot be mistaken
+ * for a version that a centre was ever asked.
+ */
+export type VersionHistoryEntry =
+  | {
+      state: "DRAFT";
+      /** Presentation-ready, e.g. "Draft". */
+      label: string;
+      /** Presentation-ready. What happened and when, e.g. "Last changed 2:14pm". */
+      eventLabel: string;
+      /** Present only where the backend named the person. */
+      eventBy?: string;
+    }
+  | {
+      state: "PUBLISHED" | "RETIRED";
+      versionId: string;
+      versionLabel: string;
+      /** Presentation-ready, e.g. "Published 13 Aug 2026". */
+      eventLabel: string;
+      eventBy?: string;
+      /** True for the version currently in operational use. */
+      current: boolean;
+    };
+
+/** Which version of a template a surface is showing. */
+export type OpenVersion = { kind: "DRAFT" } | { kind: "VERSION"; versionId: string };
 
 /* ------------------------------------------------------------------ *
  * Assignment
@@ -241,17 +300,19 @@ export type AssignmentSelection =
 export interface AssignableCentre {
   centreId: string;
   centreName: string;
-  /** Presentation-ready time-zone wording, e.g. "Brisbane time". The browser
-   *  has no authoritative centre time zone and must not derive one. */
-  timeZoneLabel: string;
+  /** Presentation-ready time-zone wording, e.g. "Brisbane time". Present only
+   *  where the backend supplied one; the browser has no authoritative centre
+   *  time zone and must not derive one. */
+  timeZoneLabel?: string;
 }
 
 /**
  * What the assignment picker may offer.
  *
- * `portfolioCentreCount` is present only where the backend actually resolved
- * the portfolio. Where it is absent the picker says the size is not confirmed
- * rather than printing a `0` that would claim an empty portfolio.
+ * `portfolioCentreCount` is present only where the backend resolved the whole
+ * portfolio. Where any authorised centre could not be resolved it is absent, so
+ * the picker says the size is not confirmed rather than printing a number that
+ * is really a floor.
  */
 export interface AssignmentOptions {
   centres: AssignableCentre[];
@@ -274,9 +335,9 @@ export type AssignmentSummary =
  * The recurrences ADR-0020 authorises.
  *
  * The read side accepts all five so a published version always renders
- * correctly. The write side — `ScheduleSelection` below — is narrowed to daily
- * for this cycle, which is the coordinator's instruction and a strict subset of
- * the ADR. Widening it later is a change to one union, not to the surfaces.
+ * correctly. The write side — `ScheduleSelection` below — is daily only, which
+ * is not a UI simplification but the whole of what the backend will accept:
+ * `validateDailySchedule` refuses anything else outright.
  */
 export type Recurrence = "DAILY" | "WEEKLY" | "MONTHLY" | "QUARTERLY" | "AD_HOC";
 
@@ -288,11 +349,22 @@ export const RECURRENCE_LABEL: Record<Recurrence, string> = {
   AD_HOC: "When requested",
 };
 
-/** What this cycle's builder can produce. */
+/**
+ * What the builder can produce.
+ *
+ * All four fields are required because the backend requires all four. It also
+ * enforces that the check opens before it is due, and that the first day is a
+ * real date — `scheduleProblems` states both while the Area Manager can still
+ * fix them, and the backend re-decides both.
+ */
 export interface ScheduleSelection {
   recurrence: "DAILY";
   /** 24-hour `HH:MM`, applied in each assigned centre's own local time. */
-  dueTime: string;
+  opensLocalTime: string;
+  /** 24-hour `HH:MM`, applied in each assigned centre's own local time. */
+  dueLocalTime: string;
+  /** `YYYY-MM-DD`. The first day the check runs. */
+  effectiveFrom: string;
 }
 
 /** How a schedule reads once it is published and immutable. */
@@ -300,6 +372,8 @@ export interface ScheduleSummary {
   recurrence: Recurrence;
   /** Presentation-ready, e.g. "9:00am". */
   dueLocalTime: string;
+  /** Presentation-ready, e.g. "6:00am". Present where the backend has one. */
+  opensLocalTime?: string;
   /** Presentation-ready wording for how the time is applied across centres. */
   timeZoneNote: string;
 }
@@ -314,8 +388,10 @@ export interface TemplateSummary {
   purpose?: string;
   lifecycle: TemplateLifecycle;
   versionLabel: string;
-  questionCount: number;
-  /** Presentation-ready one-liner, e.g. "Draft started 2:14pm" or
+  /** Absent where the library listing does not carry a question count. A card
+   *  omits the count rather than printing a zero it did not establish. */
+  questionCount?: number;
+  /** Presentation-ready one-liner, e.g. "Not published yet" or
    *  "Published 13 Aug 2026". */
   stateLabel: string;
   /** Present on a published or retired template only. */
@@ -347,6 +423,10 @@ export interface TemplateWorkspace {
   /** The version this route opens on: the open draft where one exists,
    *  otherwise the version currently in use. */
   version: TemplateVersion;
+  /** The template's optimistic-concurrency token, for commands that act on the
+   *  template rather than on the version being read. Absent where the backend
+   *  gave none. */
+  lockVersion?: number;
   /** Newest first. Published and retired entries are permanent. */
   history: VersionHistoryEntry[];
 }
@@ -357,21 +437,29 @@ export interface TemplateWorkspace {
 
 export interface SaveDraftResult {
   lastSavedLocalTime: string;
+  /** The token the *next* command must send. Threading this back is what keeps
+   *  a second save from being refused as stale immediately after the first. */
+  lockVersion: number;
 }
 
 /**
  * The result of publishing.
  *
- * `ALREADY_PUBLISHED` is success-shaped for the same reason
- * `ALREADY_COMPLETED` is on the completion path: the most likely real failure
- * is a request that committed and whose response was lost, and telling an Area
- * Manager they failed after the version went live would be wrong — worse here,
- * because the obvious recovery is to press publish again.
+ * Publishing and assigning are two backend commands. `PUBLISHED` means both
+ * succeeded; `PUBLISHED_NOT_ASSIGNED` means the version is live and permanent
+ * but has nowhere to run yet. That distinction is the point: telling an Area
+ * Manager the publish failed when the version went live would be wrong, and the
+ * obvious recovery — press publish again — would then be refused.
+ *
+ * `ALREADY_PUBLISHED` is success-shaped for the same reason `ALREADY_COMPLETED`
+ * is on the completion path: the most likely real failure is a request that
+ * committed and whose response was lost. It is only produced where the gateway
+ * actually established that a new version exists, never guessed at.
  *
  * `REFUSED` is a reader-safe refusal decided by the backend — insufficient
- * authority, a centre outside scope, an empty template. It is a result rather
- * than an exception so the wording reaching the reader is the backend's, and a
- * refusal is never presented as an outage.
+ * authority, a centre outside scope, an empty template, a draft someone else
+ * has changed. It is a result rather than an exception so the wording reaching
+ * the reader is the backend's, and a refusal is never presented as an outage.
  */
 export type PublishResult =
   | {
@@ -383,21 +471,37 @@ export type PublishResult =
       schedule: ScheduleSummary;
     }
   | {
+      outcome: "PUBLISHED_NOT_ASSIGNED";
+      versionId: string;
+      versionLabel: string;
+      publishedLocalTime: string;
+      /** The backend's own wording for why the assignment did not happen. */
+      reason: string;
+    }
+  | {
       outcome: "ALREADY_PUBLISHED";
       versionId: string;
       versionLabel: string;
       publishedLocalTime: string;
-      publishedByRequester: boolean;
     }
+  | { outcome: "REFUSED"; reason: string };
+
+/** Setting where and when an already-published version runs. */
+export type AssignResult =
+  | { outcome: "ASSIGNED"; assignment: AssignmentSummary; schedule: ScheduleSummary }
   | { outcome: "REFUSED"; reason: string };
 
 export interface CreateDraftResult {
   templateId: string;
-  versionId: string;
 }
 
+export type CreateTemplateResult =
+  | { outcome: "CREATED"; templateId: string }
+  | { outcome: "REFUSED"; reason: string };
+
 export interface RetireResult {
-  retiredLocalTime: string;
+  /** The token the next command on this template must send. */
+  lockVersion: number;
 }
 
 /* ------------------------------------------------------------------ *
@@ -407,26 +511,48 @@ export interface RetireResult {
 /**
  * Everything the builder experience needs, and nothing else.
  *
+ * Every command is keyed on `templateId`, because every backend route is.
+ * Every command that changes a draft carries `lockVersion`, because every
+ * backend command that changes a draft requires one.
+ *
  * Saving is one whole-draft command rather than a mutation per control. That is
- * deliberate: a granular API would be this lane guessing at a backend shape, and
- * a draft is small, single-writer and only meaningful as a whole.
+ * not a guess about the backend any more: the update route replaces the whole
+ * draft body in one transaction, so a granular API would be several round trips
+ * onto the same write.
  */
 export interface TemplateBuilderGateway {
   loadLibrary(): Promise<TemplateLibrary>;
-  createTemplate(input: { name: string }): Promise<CreateDraftResult>;
+  createTemplate(input: { name: string; purpose: string }): Promise<CreateTemplateResult>;
   loadTemplate(templateId: string): Promise<TemplateWorkspace>;
-  loadVersion(versionId: string): Promise<TemplateWorkspace>;
-  saveDraft(input: { versionId: string; draft: TemplateDraft }): Promise<SaveDraftResult>;
+  loadVersion(input: { templateId: string; versionId: string }): Promise<TemplateWorkspace>;
+  saveDraft(input: {
+    templateId: string;
+    lockVersion: number;
+    draft: TemplateDraft;
+  }): Promise<SaveDraftResult>;
   loadAssignmentOptions(): Promise<AssignmentOptions>;
+  /**
+   * Publishes the draft the backend currently holds, then assigns it. The
+   * caller must have saved first: the backend publishes what is stored, not
+   * what is on screen.
+   */
   publishVersion(input: {
-    versionId: string;
+    templateId: string;
+    lockVersion: number;
     assignment: AssignmentSelection;
     schedule: ScheduleSelection;
   }): Promise<PublishResult>;
+  /** Retrying only the assignment, after a version published without one. */
+  assignPublishedVersion(input: {
+    templateId: string;
+    versionId: string;
+    assignment: AssignmentSelection;
+    schedule: ScheduleSelection;
+  }): Promise<AssignResult>;
   /** Starts a new editable draft from a published or retired version. The
    *  source version is never modified. */
-  createDraftFrom(input: { versionId: string }): Promise<CreateDraftResult>;
-  retireVersion(input: { versionId: string }): Promise<RetireResult>;
+  createDraftFrom(input: { templateId: string; versionId: string }): Promise<CreateDraftResult>;
+  retireTemplate(input: { templateId: string; lockVersion: number }): Promise<RetireResult>;
 }
 
 /** Distinguishes a recoverable failure from a refusal. A refusal is a result. */
@@ -438,12 +564,12 @@ export class TemplateBuilderUnavailableError extends Error {
 }
 
 /**
- * The default gateway until the backend lane lands.
+ * A gateway that refuses every operation.
  *
- * It refuses honestly rather than inventing data, so the routes are wired and
- * reviewable without a fabricated template, assignment or schedule existing
- * anywhere. No generated-client method is called, because none exists for this
- * slice yet and this lane does not invent endpoints.
+ * This is no longer the default transport — `createTemplateBuilderGateway` is —
+ * but the pattern is kept for genuine unavailability: a surface handed this
+ * refuses honestly rather than inventing a template, and every error path in
+ * the builder is exercised against it.
  */
 export const backendNotAvailableGateway: TemplateBuilderGateway = {
   loadLibrary: () => Promise.reject(new TemplateBuilderUnavailableError()),
@@ -453,8 +579,9 @@ export const backendNotAvailableGateway: TemplateBuilderGateway = {
   saveDraft: () => Promise.reject(new TemplateBuilderUnavailableError()),
   loadAssignmentOptions: () => Promise.reject(new TemplateBuilderUnavailableError()),
   publishVersion: () => Promise.reject(new TemplateBuilderUnavailableError()),
+  assignPublishedVersion: () => Promise.reject(new TemplateBuilderUnavailableError()),
   createDraftFrom: () => Promise.reject(new TemplateBuilderUnavailableError()),
-  retireVersion: () => Promise.reject(new TemplateBuilderUnavailableError()),
+  retireTemplate: () => Promise.reject(new TemplateBuilderUnavailableError()),
 };
 
 /* ------------------------------------------------------------------ *
@@ -462,6 +589,17 @@ export const backendNotAvailableGateway: TemplateBuilderGateway = {
  * ------------------------------------------------------------------ */
 
 export const TEMPLATE_ROOT = "/standards/templates";
+
+/**
+ * What the publish step opens on, and what the preview shows a draft.
+ *
+ * One pair of constants rather than one per surface: the preview's whole claim
+ * is that it shows what the person answering will see, and a preview showing a
+ * different default time from the one publish opens on would quietly make that
+ * claim false.
+ */
+export const DEFAULT_OPENS_TIME = "06:00";
+export const DEFAULT_DUE_TIME = "09:00";
 
 export function templateRoute(templateId: string): string {
   return `${TEMPLATE_ROOT}/${templateId}`;
@@ -502,6 +640,54 @@ export function dueTimeLabel(dueTime: string): string {
   return `${display}:${minutes}${suffix}`;
 }
 
+const MONTHS = [
+  "Jan",
+  "Feb",
+  "Mar",
+  "Apr",
+  "May",
+  "Jun",
+  "Jul",
+  "Aug",
+  "Sep",
+  "Oct",
+  "Nov",
+  "Dec",
+] as const;
+
+/**
+ * A backend timestamp as a reader sees it, in the reader's own local time.
+ *
+ * Hand-composed from the local calendar fields rather than left to a locale
+ * formatter: the same string has to be readable in a test, in a screenshot and
+ * on a phone, and a formatter that quietly inserts a narrow no-break space or
+ * reorders the parts by host locale makes that untrue.
+ *
+ * Returns `undefined` for anything unparseable, so a bad timestamp is an absent
+ * fact rather than the words "Invalid Date" on an audit surface.
+ */
+export function timestampLabel(iso: string): string | undefined {
+  const at = new Date(iso);
+  if (Number.isNaN(at.getTime())) return undefined;
+  const minutes = `${at.getMinutes()}`.padStart(2, "0");
+  const time = dueTimeLabel(`${`${at.getHours()}`.padStart(2, "0")}:${minutes}`);
+  return `${at.getDate()} ${MONTHS[at.getMonth()]} ${at.getFullYear()}, ${time}`;
+}
+
+/** The date part only, e.g. "13 Aug 2026". */
+export function dateLabel(iso: string): string | undefined {
+  const at = new Date(iso);
+  if (Number.isNaN(at.getTime())) return undefined;
+  return `${at.getDate()} ${MONTHS[at.getMonth()]} ${at.getFullYear()}`;
+}
+
+/** Today in the reader's own local calendar, as `YYYY-MM-DD`. */
+export function localToday(now: Date = new Date()): string {
+  const month = `${now.getMonth() + 1}`.padStart(2, "0");
+  const day = `${now.getDate()}`.padStart(2, "0");
+  return `${now.getFullYear()}-${month}-${day}`;
+}
+
 /**
  * Why a draft cannot be published yet, in the order a reader would fix them.
  *
@@ -512,6 +698,7 @@ export function dueTimeLabel(dueTime: string): string {
 export function draftReadinessProblems(draft: TemplateDraft): string[] {
   const problems: string[] = [];
   if (!draft.name.trim()) problems.push("Give the template a name.");
+  if (!draft.purpose.trim()) problems.push("Say what this template is for.");
   if (draft.sections.length === 0) problems.push("Add at least one section.");
 
   if (draft.sections.some((section) => !section.title.trim())) {
@@ -549,6 +736,29 @@ export function draftReadinessProblems(draft: TemplateDraft): string[] {
   return problems;
 }
 
+/**
+ * Why a schedule cannot be published yet.
+ *
+ * The same two rules the backend enforces, stated before the round trip rather
+ * than after it. Both are real operational facts, not formatting: a check that
+ * is due before it opens can never be completed on time.
+ */
+export function scheduleProblems(schedule: ScheduleSelection): string[] {
+  const problems: string[] = [];
+  const time = /^(?:[01]\d|2[0-3]):[0-5]\d$/;
+  if (!time.test(schedule.opensLocalTime) || !time.test(schedule.dueLocalTime)) {
+    problems.push("Choose a time the check opens and a time it is due.");
+  } else if (schedule.opensLocalTime >= schedule.dueLocalTime) {
+    problems.push("The time it is due has to be after the time it opens.");
+  }
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(schedule.effectiveFrom)) {
+    problems.push("Choose the first day it runs.");
+  } else if (Number.isNaN(new Date(`${schedule.effectiveFrom}T00:00:00.000Z`).getTime())) {
+    problems.push("Choose the first day it runs.");
+  }
+  return problems;
+}
+
 /** Describes a selection before it is published, for the confirmation copy. */
 export function describeAssignment(
   selection: AssignmentSelection,
@@ -565,7 +775,7 @@ export function describeAssignment(
     .map((id) => options.centres.find((centre) => centre.centreId === id)?.centreName)
     .filter((name): name is string => Boolean(name));
   if (names.length === 0) return "No centre chosen yet";
-  if (names.length === 1) return names[0];
+  if (names.length === 1) return names[0]!;
   if (names.length === 2) return `${names[0]} and ${names[1]}`;
   return `${names[0]}, ${names[1]} and ${names.length - 2} more`;
 }

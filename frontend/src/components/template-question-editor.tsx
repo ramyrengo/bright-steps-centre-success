@@ -28,7 +28,7 @@ export const QUESTION_TYPES: readonly QuestionType[] = [
   "MULTI_SELECT",
   "TEXT",
   "NUMBER",
-  "DATE",
+  "TIME",
 ];
 
 /**
@@ -56,8 +56,8 @@ export function questionWithType(question: DraftQuestion, type: QuestionType): D
   switch (type) {
     case "YES_NO":
       return { ...base, type: "YES_NO" };
-    case "DATE":
-      return { ...base, type: "DATE" };
+    case "TIME":
+      return { ...base, type: "TIME" };
     case "TEXT":
       return { ...base, type: "TEXT", multiline: false };
     case "NUMBER":
@@ -319,23 +319,10 @@ export function QuestionEditor({
             </label>
           ) : null}
 
-          {question.type === "NUMBER" ? (
-            <label className="builder-field">
-              <span className="builder-field__label">Unit (optional)</span>
-              <input
-                type="text"
-                value={question.unitLabel ?? ""}
-                placeholder="e.g. children, degrees"
-                onChange={(event) => {
-                  // Cleared means cleared. Spreading `{}` for the empty case
-                  // would leave the previous unit in place and silently label
-                  // the answer with a unit the author had just deleted.
-                  const unitLabel = event.target.value;
-                  onChange({ ...question, unitLabel: unitLabel || undefined });
-                }}
-              />
-            </label>
-          ) : null}
+          {/* A number question carried a unit here. The backend stores no unit
+              on a question, so the field was offering an author something that
+              would vanish the next time they opened the draft. Where a unit
+              matters it belongs in the guidance below, which is stored. */}
 
           {isChoiceQuestion(question) ? (
             <ChoiceEditor
@@ -389,7 +376,6 @@ export function QuestionRecord({
       ) : null}
       <p className="question-record__meta">
         {QUESTION_TYPE_LABEL[question.type]}
-        {question.type === "NUMBER" && question.unitLabel ? ` (${question.unitLabel})` : ""}
         {" · "}
         {question.required ? "Must be answered" : "Optional"}
       </p>

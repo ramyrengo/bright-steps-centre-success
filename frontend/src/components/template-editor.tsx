@@ -25,7 +25,6 @@ import { PublishDialog } from "./template-assignment";
 import {
   LIFECYCLE_LABEL,
   TEMPLATE_ROOT,
-  backendNotAvailableGateway,
   canEditVersion,
   countQuestions,
   draftReadinessProblems,
@@ -34,12 +33,17 @@ import {
   versionContent,
   type DraftQuestion,
   type DraftSection,
+  type OpenVersion,
   type TemplateBuilderGateway,
   type TemplateDraft,
   type TemplateVersion,
   type TemplateWorkspace,
   type VersionHistoryEntry,
 } from "./template-builder-contract";
+import {
+  TemplateBuilderRefusedError,
+  useTemplateBuilderGateway,
+} from "./template-builder-gateway";
 
 /**
  * The template editor.
@@ -205,15 +209,16 @@ export function DraftEditor({
               onChange={(event) => onDraftChange({ ...draft, name: event.target.value })}
             />
           </label>
+          {/* Not optional. A template with no stated purpose is refused by the
+              backend on every save, so an optional field here would be one an
+              author could fill in nothing and then lose their work to. */}
           <label className="builder-field">
-            <span className="builder-field__label">What it is for (optional)</span>
+            <span className="builder-field__label">What it is for</span>
             <input
               type="text"
-              value={draft.purpose ?? ""}
+              value={draft.purpose}
               placeholder="One line, in your own words"
-              onChange={(event) =>
-                onDraftChange({ ...draft, purpose: event.target.value || undefined })
-              }
+              onChange={(event) => onDraftChange({ ...draft, purpose: event.target.value })}
             />
           </label>
         </div>
@@ -304,31 +309,47 @@ export function VersionRecord({ version }: Readonly<{ version: TemplateVersion }
       {version.lifecycle === "DRAFT" ? null : (
         <Section title="Where it runs" headingLevel={2}>
           <dl className="builder-facts">
-            <div>
-              <dt>Centres</dt>
-              <dd>{version.assignment.description}</dd>
-            </div>
-            <div>
-              <dt>Schedule</dt>
-              <dd>
-                {version.schedule.dueLocalTime} · {version.schedule.timeZoneNote}
-              </dd>
-            </div>
+            {version.assignment ? (
+              <div>
+                <dt>Centres</dt>
+                <dd>{version.assignment.description}</dd>
+              </div>
+            ) : null}
+            {version.schedule ? (
+              <div>
+                <dt>Schedule</dt>
+                <dd>
+                  {version.schedule.dueLocalTime} · {version.schedule.timeZoneNote}
+                </dd>
+              </div>
+            ) : null}
             <div>
               <dt>Published</dt>
               <dd>
-                {version.publishedLocalTime} by {version.publishedBy}
+                {version.publishedLocalTime}
+                {version.publishedBy ? ` by ${version.publishedBy}` : ""}
               </dd>
             </div>
-            {version.lifecycle === "RETIRED" ? (
+            {version.lifecycle === "RETIRED" && version.retiredLocalTime ? (
               <div>
                 <dt>Retired</dt>
                 <dd>
-                  {version.retiredLocalTime} by {version.retiredBy}
+                  {version.retiredLocalTime}
+                  {version.retiredBy ? ` by ${version.retiredBy}` : ""}
                 </dd>
               </div>
             ) : null}
           </dl>
+          {/* Absence is not zero. Nothing here reports where or when a past
+              version runs, so the record says it could not confirm it rather
+              than leaving a reader to infer that it runs nowhere. */}
+          {!version.assignment && !version.schedule ? (
+            <p className="builder-facts__unknown">
+              This screen can&apos;t confirm which centres this version runs in, or when it
+              is due. That is not the same as it running nowhere — your template library
+              lists the centres each template runs in.
+            </p>
+          ) : null}
         </Section>
       )}
 
@@ -372,13 +393,16 @@ export function VersionRecord({ version }: Readonly<{ version: TemplateVersion }
  */
 export function VersionHistory({
   history,
-  currentVersionId,
+  open,
   onOpen,
 }: Readonly<{
   history: readonly VersionHistoryEntry[];
-  currentVersionId: string;
-  onOpen?: (versionId: string) => void;
+  /** Which entry the reader is currently looking at. */
+  open: OpenVersion;
+  onOpen?: (next: OpenVersion) => void;
 }>) {
+  const versions = history.filter((entry) => entry.state !== "DRAFT").length;
+
   if (history.length === 0) {
     return (
       <Section title="Version history" headingLevel={2}>
@@ -394,43 +418,73 @@ export function VersionHistory({
     <Section
       title="Version history"
       description="Published versions are permanent. A new draft never changes an old one."
-      count={`${history.length} version${history.length === 1 ? "" : "s"}`}
+      count={
+        versions === 0
+          ? "Nothing published yet"
+          : `${versions} version${versions === 1 ? "" : "s"}`
+      }
       headingLevel={2}
     >
       <ol className="version-history" role="list">
-        {history.map((entry) => (
-          <li
-            className="version-history__row"
-            key={entry.versionId}
-            data-lifecycle={entry.lifecycle}
-            {...(entry.versionId === currentVersionId ? { "aria-current": "true" } : {})}
-          >
-            <div className="version-history__primary">
-              <span className="version-history__label">{entry.versionLabel}</span>
-              <StatusBadge tone={lifecycleTone(entry.lifecycle)}>
-                {LIFECYCLE_LABEL[entry.lifecycle]}
-              </StatusBadge>
-              {entry.current ? (
-                <span className="version-history__current">In use</span>
+        {history.map((entry) => {
+          // The open draft and a permanent version are different rows and
+          // cannot be confused for one another: only a version has an
+          // identifier, and only a version can be the one in use.
+          const here =
+            entry.state === "DRAFT"
+              ? open.kind === "DRAFT"
+              : open.kind === "VERSION" && open.versionId === entry.versionId;
+          const lifecycle = entry.state;
+          return (
+            <li
+              className="version-history__row"
+              key={entry.state === "DRAFT" ? "draft" : entry.versionId}
+              data-lifecycle={lifecycle}
+              {...(here ? { "aria-current": "true" } : {})}
+            >
+              <div className="version-history__primary">
+                <span className="version-history__label">
+                  {entry.state === "DRAFT" ? entry.label : entry.versionLabel}
+                </span>
+                <StatusBadge tone={lifecycleTone(lifecycle)}>
+                  {LIFECYCLE_LABEL[lifecycle]}
+                </StatusBadge>
+                {entry.state !== "DRAFT" && entry.current ? (
+                  <span className="version-history__current">In use</span>
+                ) : null}
+              </div>
+              <p className="version-history__event">
+                {entry.eventLabel}
+                {entry.eventBy ? ` by ${entry.eventBy}` : ""}
+              </p>
+              {here ? (
+                <span className="version-history__here">
+                  {entry.state === "DRAFT"
+                    ? "You are editing this draft"
+                    : "You are viewing this version"}
+                </span>
+              ) : onOpen ? (
+                <button
+                  className="button button--secondary"
+                  type="button"
+                  onClick={() =>
+                    onOpen(
+                      entry.state === "DRAFT"
+                        ? { kind: "DRAFT" }
+                        : { kind: "VERSION", versionId: entry.versionId },
+                    )
+                  }
+                >
+                  Open
+                  <span className="visually-hidden">
+                    {" "}
+                    {entry.state === "DRAFT" ? entry.label : entry.versionLabel}
+                  </span>
+                </button>
               ) : null}
-            </div>
-            <p className="version-history__event">
-              {entry.eventLabel} by {entry.eventBy}
-            </p>
-            {entry.versionId === currentVersionId ? (
-              <span className="version-history__here">You are viewing this version</span>
-            ) : onOpen ? (
-              <button
-                className="button button--secondary"
-                type="button"
-                onClick={() => onOpen(entry.versionId)}
-              >
-                Open
-                <span className="visually-hidden"> {entry.versionLabel}</span>
-              </button>
-            ) : null}
-          </li>
-        ))}
+            </li>
+          );
+        })}
       </ol>
     </Section>
   );
@@ -444,32 +498,45 @@ type SavePhase =
   | { kind: "idle" }
   | { kind: "saving" }
   | { kind: "saved"; at: string }
-  | { kind: "error" };
+  | { kind: "error"; reason?: string };
 
 export function TemplateEditorScreen({
   workspace,
   gateway,
-  onOpenVersion,
+  onOpen,
   onPreview,
 }: Readonly<{
   workspace: TemplateWorkspace;
   gateway: TemplateBuilderGateway;
-  onOpenVersion: (versionId: string) => void;
+  onOpen: (next: OpenVersion) => void;
   onPreview: (templateId: string) => void;
 }>) {
   const { version } = workspace;
 
   // The editable draft itself, or null. A boolean would not narrow the union,
-  // and narrowing is the whole point: `editing.canPublish` only exists on a
-  // draft, so an immutable version cannot reach a publish control by accident.
+  // and narrowing is the whole point: `editing.canPublish` and
+  // `editing.lockVersion` only exist on a draft, so an immutable version can
+  // reach neither a publish control nor a write command by accident.
   const editing = version.lifecycle === "DRAFT" && version.canEdit ? version : null;
 
   const [draft, setDraft] = useState<TemplateDraft>(() => versionContent(version));
+  /**
+   * The optimistic-concurrency token this screen holds.
+   *
+   * Seeded from whatever the backend last said and replaced by the token every
+   * successful save hands back, so the next save and the publish both carry the
+   * current one. If this were dropped or defaulted, a second Area Manager's
+   * changes would be overwritten with no error anywhere.
+   */
+  const [lockVersion, setLockVersion] = useState<number | undefined>(() =>
+    version.lifecycle === "DRAFT" ? version.lockVersion : workspace.lockVersion,
+  );
   const [dirty, setDirty] = useState(false);
   const [save, setSave] = useState<SavePhase>({ kind: "idle" });
   const [publishing, setPublishing] = useState(false);
   const [newDraft, setNewDraft] = useState<"idle" | "working" | "error">("idle");
   const saving = useRef(false);
+  const openDraftExists = workspace.history.some((entry) => entry.state === "DRAFT");
 
   // A draft with answers typed into it is unsaved work the shell's own leave
   // paths would otherwise discard silently.
@@ -492,21 +559,34 @@ export function TemplateEditorScreen({
   }, []);
 
   const persist = useCallback(async (): Promise<boolean> => {
-    if (saving.current) return false;
+    if (saving.current || lockVersion === undefined) return false;
     saving.current = true;
     setSave({ kind: "saving" });
     try {
-      const result = await gateway.saveDraft({ versionId: version.versionId, draft });
+      const result = await gateway.saveDraft({
+        templateId: workspace.templateId,
+        lockVersion,
+        draft,
+      });
       setSave({ kind: "saved", at: result.lastSavedLocalTime });
+      // The token moves on with every write. Holding the old one would get the
+      // very next save refused as stale.
+      setLockVersion(result.lockVersion);
       setDirty(false);
       return true;
-    } catch {
-      setSave({ kind: "error" });
+    } catch (error) {
+      setSave({
+        kind: "error",
+        // A refusal — a stale draft, a blank question the backend will not
+        // store — is shown in the backend's own words. Anything else is an
+        // outage and gets the standing wording.
+        ...(error instanceof TemplateBuilderRefusedError ? { reason: error.message } : {}),
+      });
       return false;
     } finally {
       saving.current = false;
     }
-  }, [draft, gateway, version.versionId]);
+  }, [draft, gateway, lockVersion, workspace.templateId]);
 
   const preview = useCallback(async () => {
     // The preview reads what is saved, so unsaved work is saved first rather
@@ -515,16 +595,28 @@ export function TemplateEditorScreen({
     onPreview(workspace.templateId);
   }, [dirty, onPreview, persist, workspace.templateId]);
 
+  const startPublishing = useCallback(async () => {
+    // Publishing takes the draft the backend holds, not the one on this
+    // screen. Without this, an Area Manager who edited and pressed Publish
+    // would publish the version they had before their last change — and it
+    // would be immutable.
+    if (dirty && !(await persist())) return;
+    setPublishing(true);
+  }, [dirty, persist]);
+
   const startNewDraft = useCallback(async () => {
-    if (newDraft === "working") return;
+    if (newDraft === "working" || version.lifecycle === "DRAFT") return;
     setNewDraft("working");
     try {
-      const result = await gateway.createDraftFrom({ versionId: version.versionId });
-      onOpenVersion(result.versionId);
+      await gateway.createDraftFrom({
+        templateId: workspace.templateId,
+        versionId: version.versionId,
+      });
+      onOpen({ kind: "DRAFT" });
     } catch {
       setNewDraft("error");
     }
-  }, [gateway, newDraft, onOpenVersion, version.versionId]);
+  }, [gateway, newDraft, onOpen, version, workspace.templateId]);
 
   const problems = draftReadinessProblems(draft);
 
@@ -580,7 +672,11 @@ export function TemplateEditorScreen({
           {save.kind === "error" ? (
             <ErrorState
               title="Your draft couldn't be saved"
-              message="Your changes are still on this screen. Nothing has been published. It's safe to try again."
+              message={
+                save.reason
+                  ? `${save.reason} Your changes are still on this screen. Nothing has been published.`
+                  : "Your changes are still on this screen. Nothing has been published. It's safe to try again."
+              }
               onRetry={() => void persist()}
             />
           ) : null}
@@ -614,8 +710,13 @@ export function TemplateEditorScreen({
             <button
               className="button button--accent"
               type="button"
-              onClick={() => setPublishing(true)}
-              disabled={problems.length > 0 || !editing.canPublish}
+              onClick={() => void startPublishing()}
+              disabled={
+                problems.length > 0 ||
+                !editing.canPublish ||
+                save.kind === "saving" ||
+                lockVersion === undefined
+              }
             >
               Publish
             </button>
@@ -635,7 +736,19 @@ export function TemplateEditorScreen({
             >
               Preview on a phone
             </Link>
-            {version.lifecycle !== "DRAFT" && version.canCreateDraft ? (
+            {/* One template holds one open draft at a time. Where one is
+                already open the way to change this template is that draft, so
+                the record offers it rather than a "new draft" the backend
+                would refuse. */}
+            {version.lifecycle !== "DRAFT" && openDraftExists ? (
+              <button
+                className="button button--accent"
+                type="button"
+                onClick={() => onOpen({ kind: "DRAFT" })}
+              >
+                Open the draft
+              </button>
+            ) : version.lifecycle !== "DRAFT" && version.canCreateDraft ? (
               <button
                 className="button button--accent"
                 type="button"
@@ -659,21 +772,25 @@ export function TemplateEditorScreen({
 
       <VersionHistory
         history={workspace.history}
-        currentVersionId={version.versionId}
-        onOpen={onOpenVersion}
+        open={
+          version.lifecycle === "DRAFT"
+            ? { kind: "DRAFT" }
+            : { kind: "VERSION", versionId: version.versionId }
+        }
+        onOpen={onOpen}
       />
 
-      {publishing && editing ? (
+      {publishing && editing && lockVersion !== undefined ? (
         <PublishDialog
           gateway={gateway}
-          versionId={editing.versionId}
           templateId={workspace.templateId}
+          lockVersion={lockVersion}
           questionCount={countQuestions(draft)}
           onDismiss={() => setPublishing(false)}
           onPublished={(versionId) => {
             setPublishing(false);
             setDirty(false);
-            onOpenVersion(versionId);
+            onOpen({ kind: "VERSION", versionId });
           }}
         />
       ) : null}
@@ -698,20 +815,29 @@ export function TemplateEditorSkeleton() {
 
 export function TemplateEditor({
   templateId,
-  gateway = backendNotAvailableGateway,
+  gateway,
 }: Readonly<{ templateId: string; gateway?: TemplateBuilderGateway }>) {
   const router = useRouter();
+  // The real transport unless a caller supplies one. The hook runs
+  // unconditionally, as it must, and building a gateway touches no endpoint.
+  const liveGateway = useTemplateBuilderGateway();
+  const active = gateway ?? liveGateway;
   const [workspace, setWorkspace] = useState<TemplateWorkspace>();
   const [state, setState] = useState<"loading" | "ready" | "error">("loading");
   const [attempt, setAttempt] = useState(0);
-  const [openVersionId, setOpenVersionId] = useState<string>();
+  /** Which version this route is showing. The draft is the default. */
+  const [open, setOpen] = useState<OpenVersion>({ kind: "DRAFT" });
   const [announcement, setAnnouncement] = useState("Opening your template.");
 
   useEffect(() => {
     let current = true;
-    const load = openVersionId
-      ? gateway.loadVersion(openVersionId)
-      : gateway.loadTemplate(templateId);
+    // Every route is keyed on the template. Opening a version needs both, and
+    // the draft needs only the template — which is exactly what the backend
+    // accepts.
+    const load =
+      open.kind === "VERSION"
+        ? active.loadVersion({ templateId, versionId: open.versionId })
+        : active.loadTemplate(templateId);
     void load.then(
       (value) => {
         if (!current) return;
@@ -732,7 +858,7 @@ export function TemplateEditor({
     return () => {
       current = false;
     };
-  }, [attempt, gateway, openVersionId, templateId]);
+  }, [active, attempt, open, templateId]);
 
   useEffect(() => {
     if (state === "loading") return;
@@ -761,13 +887,13 @@ export function TemplateEditor({
         // opening a different version has to be a remount. Without the key the
         // seed would be ignored and an Area Manager opening version 2 from
         // history would be editing version 3's text under version 2's heading.
-        key={workspace.version.versionId}
+        key={open.kind === "VERSION" ? open.versionId : "DRAFT"}
         workspace={workspace}
-        gateway={gateway}
-        onOpenVersion={(versionId) => {
+        gateway={active}
+        onOpen={(next) => {
           setState("loading");
           setAnnouncement("Opening your template.");
-          setOpenVersionId(versionId);
+          setOpen(next);
         }}
         onPreview={(id) => router.push(templatePreviewRoute(id))}
       />

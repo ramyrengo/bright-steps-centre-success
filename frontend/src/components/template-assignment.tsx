@@ -37,6 +37,17 @@ import {
  */
 
 const DEFAULT_DUE_TIME = "09:00";
+const DEFAULT_OPENS_TIME = "06:00";
+
+/** The first day the check runs, defaulting to today in the author's own date. */
+function todayLocalDate(): string {
+  const now = new Date();
+  return [
+    now.getFullYear(),
+    String(now.getMonth() + 1).padStart(2, "0"),
+    String(now.getDate()).padStart(2, "0"),
+  ].join("-");
+}
 
 /** The centre picker. One centre and several centres are the same control. */
 export function CentrePicker({
@@ -101,14 +112,16 @@ type PublishPhase =
 
 export function PublishDialog({
   gateway,
-  versionId,
+  lockVersion,
   templateId,
   questionCount,
   onDismiss,
   onPublished,
 }: Readonly<{
   gateway: TemplateBuilderGateway;
-  versionId: string;
+  /** Concurrency token from the loaded draft. Publishing is keyed on the
+   *  template and this token, never on a version that does not exist yet. */
+  lockVersion: number;
   templateId: string;
   questionCount: number;
   onDismiss: () => void;
@@ -156,9 +169,16 @@ export function PublishDialog({
     inFlight.current = true;
     setPhase({ kind: "publishing" });
 
-    const schedule: ScheduleSelection = { recurrence: "DAILY", dueTime };
+    // Times are wall-clock and applied in each centre's own zone by the
+    // backend, which stays authoritative for what they mean.
+    const schedule: ScheduleSelection = {
+      recurrence: "DAILY",
+      opensLocalTime: DEFAULT_OPENS_TIME,
+      dueLocalTime: dueTime,
+      effectiveFrom: todayLocalDate(),
+    };
 
-    void gateway.publishVersion({ versionId, assignment: selection, schedule }).then(
+    void gateway.publishVersion({ templateId, lockVersion, assignment: selection, schedule }).then(
       (result: PublishResult) => {
         if (result.outcome === "PUBLISHED") {
           // Deliberately not released: a published version is immutable and the
@@ -177,12 +197,8 @@ export function PublishDialog({
             kind: "published",
             versionId: result.versionId,
             title: "Already published",
-            message: result.publishedByRequester
-              ? `You published ${result.versionLabel} at ${result.publishedLocalTime}. It was not published twice.`
-              : `${result.versionLabel} was already published at ${result.publishedLocalTime}.`,
-            ...(result.publishedByRequester
-              ? {}
-              : { detail: "The settings on this screen were not applied." }),
+            message: `${result.versionLabel} was already published at ${result.publishedLocalTime}. It was not published twice.`,
+            detail: "The settings on this screen were not applied.",
           });
           return;
         }
@@ -199,7 +215,7 @@ export function PublishDialog({
         setPhase({ kind: "failed" });
       },
     );
-  }, [dueTime, gateway, ready, selection, versionId]);
+  }, [dueTime, gateway, lockVersion, ready, selection, templateId]);
 
   if (phase.kind === "published") {
     return (

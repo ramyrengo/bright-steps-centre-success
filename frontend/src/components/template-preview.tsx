@@ -14,9 +14,9 @@ import {
   PageHeader,
 } from "./design-system";
 import {
+  DEFAULT_DUE_TIME,
   QUESTION_TYPE_LABEL,
   TEMPLATE_ROOT,
-  backendNotAvailableGateway,
   countQuestions,
   dueTimeLabel,
   templateRoute,
@@ -25,6 +25,7 @@ import {
   type TemplateBuilderGateway,
   type TemplateWorkspace,
 } from "./template-builder-contract";
+import { useTemplateBuilderGateway } from "./template-builder-gateway";
 
 /**
  * The phone preview.
@@ -149,15 +150,14 @@ export function PreviewQuestion({
           onChange={onChange}
           takeFocus={takeFocus}
           {...(guidance ? { instructions: guidance } : {})}
-          {...(question.unitLabel ? { suffix: question.unitLabel } : {})}
         />
       );
-    case "DATE":
+    case "TIME":
       return (
         <EntryControl
           label={legend}
           name={question.questionId}
-          entry="date"
+          entry="time"
           value={typeof value === "string" ? value : ""}
           onChange={onChange}
           takeFocus={takeFocus}
@@ -302,14 +302,15 @@ export function TemplatePreviewScreen({
     [content],
   );
 
-  // A published or retired version has a real schedule; a draft does not have
-  // one yet, so the preview shows the default the publish step opens on and
-  // says where it came from rather than inventing a deadline.
+  // A draft has no schedule yet, and this backend does not report the schedule
+  // of a version that already has one. Either way the preview shows the default
+  // the publish step opens on and says where the time came from, rather than
+  // presenting a deadline it did not establish.
   const schedule =
     workspace.version.lifecycle === "DRAFT" ? undefined : workspace.version.schedule;
   const dueLabel = schedule
     ? `Due by ${schedule.dueLocalTime}`
-    : `Due by ${dueTimeLabel("09:00")}`;
+    : `Due by ${dueTimeLabel(DEFAULT_DUE_TIME)}`;
 
   const types = [...new Set(questions.map((question) => question.type))];
 
@@ -343,7 +344,9 @@ export function TemplatePreviewScreen({
       <Notice title="Preview only.">
         {schedule
           ? `The due time shown is this version's published schedule, ${schedule.timeZoneNote}.`
-          : "The due time shown is the default the publish step opens on. You choose the real one when you publish."}
+          : workspace.version.lifecycle === "DRAFT"
+            ? "The due time shown is the default the publish step opens on. You choose the real one when you publish."
+            : "The due time shown is the default the publish step opens on. This screen cannot confirm the time this version actually runs at."}
       </Notice>
 
       <PhoneFrame label={`Phone preview of ${workspace.templateName}`}>
@@ -359,8 +362,12 @@ export function TemplatePreviewScreen({
 
 export function TemplatePreview({
   templateId,
-  gateway = backendNotAvailableGateway,
+  gateway,
 }: Readonly<{ templateId: string; gateway?: TemplateBuilderGateway }>) {
+  // The real transport unless a caller supplies one. The hook runs
+  // unconditionally, as it must, and building a gateway touches no endpoint.
+  const liveGateway = useTemplateBuilderGateway();
+  const active = gateway ?? liveGateway;
   const [workspace, setWorkspace] = useState<TemplateWorkspace>();
   const [state, setState] = useState<"loading" | "ready" | "error">("loading");
   const [attempt, setAttempt] = useState(0);
@@ -368,7 +375,7 @@ export function TemplatePreview({
 
   useEffect(() => {
     let current = true;
-    void gateway.loadTemplate(templateId).then(
+    void active.loadTemplate(templateId).then(
       (value) => {
         if (!current) return;
         setWorkspace(value);
@@ -384,7 +391,7 @@ export function TemplatePreview({
     return () => {
       current = false;
     };
-  }, [attempt, gateway, templateId]);
+  }, [active, attempt, templateId]);
 
   useEffect(() => {
     if (state === "loading") return;

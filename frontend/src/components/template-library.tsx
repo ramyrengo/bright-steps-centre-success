@@ -17,7 +17,6 @@ import {
 import {
   LIFECYCLE_LABEL,
   TEMPLATE_ROOT,
-  backendNotAvailableGateway,
   lifecycleTone,
   templateRoute,
   type TemplateBuilderGateway,
@@ -25,6 +24,7 @@ import {
   type TemplateLifecycle,
   type TemplateSummary,
 } from "./template-builder-contract";
+import { useTemplateBuilderGateway } from "./template-builder-gateway";
 
 /**
  * The Area Manager template library.
@@ -59,8 +59,15 @@ export function TemplateCard({ template }: Readonly<{ template: TemplateSummary 
       </div>
       {template.purpose ? <p className="template-card__purpose">{template.purpose}</p> : null}
       <p className="template-card__meta">
-        {template.versionLabel} · {template.questionCount} question
-        {template.questionCount === 1 ? "" : "s"} · {template.stateLabel}
+        {template.versionLabel}
+        {/* A count the listing did not carry is left out. Printing "0
+            questions" for a template that has some would be a claim about its
+            content that this screen never established. */}
+        {template.questionCount === undefined
+          ? ""
+          : ` · ${template.questionCount} question${template.questionCount === 1 ? "" : "s"}`}
+        {" · "}
+        {template.stateLabel}
       </p>
       {template.assignmentDescription || template.scheduleDescription ? (
         <dl className="template-card__facts">
@@ -92,26 +99,52 @@ export function TemplateCard({ template }: Readonly<{ template: TemplateSummary 
 /**
  * The new-template dialog.
  *
- * A template is created with a name and nothing else. Everything that carries
- * operational consequence — questions, assignment, schedule — is decided in the
- * editor, where it can be previewed before it is published.
+ * A template is created with a name and what it is for, and nothing else. Both
+ * are asked for because the backend stores neither as optional: a template with
+ * no stated purpose is refused outright, so offering the field as optional here
+ * would be offering a draft that cannot be created. Everything that carries
+ * operational consequence — questions, assignment, schedule — is still decided
+ * in the editor, where it can be previewed before it is published.
  */
 export function NewTemplateDialog({
   onDismiss,
   onCreate,
 }: Readonly<{
   onDismiss: () => void;
-  onCreate: (name: string) => Promise<void>;
+  onCreate: (input: { name: string; purpose: string }) => Promise<void>;
 }>) {
   const [name, setName] = useState("");
-  const [phase, setPhase] = useState<"editing" | "creating" | "error">("editing");
-  const ready = name.trim().length > 0;
+  const [purpose, setPurpose] = useState("");
+  const [phase, setPhase] = useState<
+    { kind: "editing" } | { kind: "creating" } | { kind: "refused"; reason: string } | { kind: "error" }
+  >({ kind: "editing" });
+  const ready = name.trim().length > 0 && purpose.trim().length > 0;
+  const creating = phase.kind === "creating";
 
   const submit = useCallback(() => {
-    if (!ready || phase === "creating") return;
-    setPhase("creating");
-    void onCreate(name.trim()).catch(() => setPhase("error"));
-  }, [name, onCreate, phase, ready]);
+    if (!ready || creating) return;
+    setPhase({ kind: "creating" });
+    void onCreate({ name: name.trim(), purpose: purpose.trim() }).catch(
+      (error: unknown) => {
+        // A refusal carries the backend's own wording and is not an outage:
+        // "you are not set up to start a template" and "the service is down"
+        // lead a reader to completely different next steps.
+        const reason = error instanceof Error ? error.message.trim() : "";
+        setPhase(
+          error instanceof TemplateCreationRefused && reason
+            ? { kind: "refused", reason }
+            : { kind: "error" },
+        );
+      },
+    );
+  }, [creating, name, onCreate, purpose, ready]);
+
+  const submitOnEnter = (event: { key: string; preventDefault: () => void }) => {
+    if (event.key === "Enter") {
+      event.preventDefault();
+      submit();
+    }
+  };
 
   return (
     <Dialog
@@ -127,9 +160,9 @@ export function NewTemplateDialog({
             className="button button--accent"
             type="button"
             onClick={submit}
-            disabled={!ready || phase === "creating"}
+            disabled={!ready || creating}
           >
-            {phase === "creating" ? "Starting…" : "Start draft"}
+            {creating ? "Starting…" : "Start draft"}
           </button>
         </>
       }
@@ -141,18 +174,29 @@ export function NewTemplateDialog({
           type="text"
           value={name}
           onChange={(event) => setName(event.target.value)}
-          onKeyDown={(event) => {
-            if (event.key === "Enter") {
-              event.preventDefault();
-              submit();
-            }
-          }}
+          onKeyDown={submitOnEnter}
+        />
+      </label>
+      <label>
+        What it is for
+        <input
+          type="text"
+          value={purpose}
+          placeholder="One line, in your own words"
+          onChange={(event) => setPurpose(event.target.value)}
+          onKeyDown={submitOnEnter}
         />
       </label>
       <p className="template-dialog__hint">
         It starts as a draft. Nothing runs in a centre until you publish it.
       </p>
-      {phase === "error" ? (
+      {phase.kind === "refused" ? (
+        <div className="workflow-dialog__error" role="alert">
+          <strong>This draft wasn&apos;t started</strong>
+          <p>{phase.reason}</p>
+        </div>
+      ) : null}
+      {phase.kind === "error" ? (
         <div className="workflow-dialog__error" role="alert">
           <strong>The draft couldn&apos;t be started</strong>
           <p>Nothing has been created. Please try again shortly.</p>
@@ -160,6 +204,17 @@ export function NewTemplateDialog({
       ) : null}
     </Dialog>
   );
+}
+
+/**
+ * A refusal on the create path, carried as an error because that is the one
+ * channel the dialog's submit already has.
+ */
+export class TemplateCreationRefused extends Error {
+  constructor(reason: string) {
+    super(reason);
+    this.name = "TemplateCreationRefused";
+  }
 }
 
 export function TemplateLibraryView({
@@ -286,7 +341,7 @@ export function TemplateListSkeleton() {
 }
 
 export function TemplateLibraryWorkspace({
-  gateway = backendNotAvailableGateway,
+  gateway,
   onCreated,
 }: Readonly<{
   gateway?: TemplateBuilderGateway;
@@ -295,6 +350,10 @@ export function TemplateLibraryWorkspace({
   onCreated?: (templateId: string) => void;
 }>) {
   const router = useRouter();
+  // The real transport unless a caller supplies one. The hook runs
+  // unconditionally, as it must, and building a gateway touches no endpoint.
+  const liveGateway = useTemplateBuilderGateway();
+  const active = gateway ?? liveGateway;
   const [library, setLibrary] = useState<TemplateLibrary>();
   const [state, setState] = useState<"loading" | "ready" | "error">("loading");
   const [attempt, setAttempt] = useState(0);
@@ -304,7 +363,7 @@ export function TemplateLibraryWorkspace({
 
   useEffect(() => {
     let current = true;
-    void gateway.loadLibrary().then(
+    void active.loadLibrary().then(
       (value) => {
         if (!current) return;
         setLibrary(value);
@@ -324,7 +383,7 @@ export function TemplateLibraryWorkspace({
     return () => {
       current = false;
     };
-  }, [attempt, gateway]);
+  }, [active, attempt]);
 
   const retry = useCallback(() => {
     setState("loading");
@@ -341,13 +400,19 @@ export function TemplateLibraryWorkspace({
   }, [library, state]);
 
   const create = useCallback(
-    async (name: string) => {
+    async (input: { name: string; purpose: string }) => {
       // A synchronous latch. Two clicks dispatched in one batch would each see
       // the pre-render state and create two templates.
       if (created.current) return;
       created.current = true;
       try {
-        const result = await gateway.createTemplate({ name });
+        const result = await active.createTemplate(input);
+        if (result.outcome === "REFUSED") {
+          // Nothing was created, so the latch is released and the dialog says
+          // why in the backend's own words rather than as an outage.
+          created.current = false;
+          throw new TemplateCreationRefused(result.reason);
+        }
         setDialogOpen(false);
         if (onCreated) onCreated(result.templateId);
         else router.push(templateRoute(result.templateId));
@@ -356,7 +421,7 @@ export function TemplateLibraryWorkspace({
         throw error;
       }
     },
-    [gateway, onCreated, router],
+    [active, onCreated, router],
   );
 
   let content;
