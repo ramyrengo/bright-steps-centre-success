@@ -4,14 +4,17 @@ import type { CentreSuccessAuthData } from "../authentication/auth-handler";
 import type {
   AssignOperationalTemplateRequest,
   AssignOperationalTemplateResponse,
+  CreateDraftFromVersionRequest,
   CreateOperationalTemplateRequest,
   ListOperationalTemplatesRequest,
   ListOperationalTemplatesResponse,
+  OperationalTemplateAssignmentOptions,
   OperationalTemplateDraft,
   OperationalTemplateIdRequest,
   OperationalTemplatePreview,
   OperationalTemplateVersion,
   OperationalTemplateVersionRequest,
+  OperationalTemplateWorkspace,
   PublishOperationalTemplateRequest,
   RetireOperationalTemplateRequest,
   RetireOperationalTemplateResponse,
@@ -20,7 +23,10 @@ import type {
 import {
   assignOperationalTemplate,
   createOperationalTemplateDraft,
+  createOperationalTemplateDraftFromVersion,
   getOperationalTemplateVersion,
+  getOperationalTemplateWorkspace,
+  listOperationalTemplateAssignmentOptions,
   listOperationalTemplates,
   previewOperationalTemplateDraft,
   publishOperationalTemplate,
@@ -39,6 +45,9 @@ export interface OperationalTemplateApiDependencies {
   previewDraft: typeof previewOperationalTemplateDraft;
   assign: typeof assignOperationalTemplate;
   retire: typeof retireOperationalTemplate;
+  getWorkspace: typeof getOperationalTemplateWorkspace;
+  assignmentOptions: typeof listOperationalTemplateAssignmentOptions;
+  createDraftFromVersion: typeof createOperationalTemplateDraftFromVersion;
 }
 
 const runtimeDependencies: OperationalTemplateApiDependencies = {
@@ -51,6 +60,9 @@ const runtimeDependencies: OperationalTemplateApiDependencies = {
   previewDraft: previewOperationalTemplateDraft,
   assign: assignOperationalTemplate,
   retire: retireOperationalTemplate,
+  getWorkspace: getOperationalTemplateWorkspace,
+  assignmentOptions: listOperationalTemplateAssignmentOptions,
+  createDraftFromVersion: createOperationalTemplateDraftFromVersion,
 };
 
 function requirePrincipalId(dependencies: OperationalTemplateApiDependencies): string {
@@ -201,6 +213,49 @@ export async function retireOperationalTemplateEndpoint(
   }
 }
 
+/** @internal Testable authenticated boundary. */
+export async function getOperationalTemplateWorkspaceEndpoint(
+  request: OperationalTemplateIdRequest,
+  dependencies: OperationalTemplateApiDependencies = runtimeDependencies,
+): Promise<OperationalTemplateWorkspace> {
+  try {
+    return await dependencies.getWorkspace({
+      principalId: requirePrincipalId(dependencies),
+      templateId: request.templateId,
+    });
+  } catch (error) {
+    return toApiError(error);
+  }
+}
+
+/** @internal Testable authenticated boundary. */
+export async function listOperationalTemplateAssignmentOptionsEndpoint(
+  dependencies: OperationalTemplateApiDependencies = runtimeDependencies,
+): Promise<OperationalTemplateAssignmentOptions> {
+  try {
+    return await dependencies.assignmentOptions({
+      principalId: requirePrincipalId(dependencies),
+    });
+  } catch (error) {
+    return toApiError(error);
+  }
+}
+
+/** @internal Testable authenticated boundary. */
+export async function createOperationalTemplateDraftFromVersionEndpoint(
+  request: CreateDraftFromVersionRequest,
+  dependencies: OperationalTemplateApiDependencies = runtimeDependencies,
+): Promise<OperationalTemplateDraft> {
+  try {
+    return await dependencies.createDraftFromVersion({
+      principalId: requirePrincipalId(dependencies),
+      request,
+    });
+  } catch (error) {
+    return toApiError(error);
+  }
+}
+
 export const createOperationalTemplate = api(
   { expose: true, auth: true, method: "POST", path: "/standards/templates" },
   (request: CreateOperationalTemplateRequest): Promise<OperationalTemplateDraft> =>
@@ -257,4 +312,32 @@ export const assignOperationalTemplateRoute = api(
   },
   (request: AssignOperationalTemplateRequest): Promise<AssignOperationalTemplateResponse> =>
     assignOperationalTemplateEndpoint(request),
+);
+
+export const getOperationalTemplateWorkspaceRoute = api(
+  { expose: true, auth: true, method: "GET", path: "/standards/templates/:templateId" },
+  (request: OperationalTemplateIdRequest): Promise<OperationalTemplateWorkspace> =>
+    getOperationalTemplateWorkspaceEndpoint(request),
+);
+
+/*
+ * Deliberately not nested under `/standards/templates/...`. A literal segment
+ * there would sit alongside `:templateId` and the routing would depend on
+ * precedence rather than on the path being unambiguous.
+ */
+export const listOperationalTemplateAssignmentOptionsRoute = api(
+  { expose: true, auth: true, method: "GET", path: "/standards/template-assignment-options" },
+  (): Promise<OperationalTemplateAssignmentOptions> =>
+    listOperationalTemplateAssignmentOptionsEndpoint(),
+);
+
+export const createOperationalTemplateDraftFromVersionRoute = api(
+  {
+    expose: true,
+    auth: true,
+    method: "POST",
+    path: "/standards/templates/:templateId/draft-from-version",
+  },
+  (request: CreateDraftFromVersionRequest): Promise<OperationalTemplateDraft> =>
+    createOperationalTemplateDraftFromVersionEndpoint(request),
 );

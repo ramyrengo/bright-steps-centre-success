@@ -125,6 +125,7 @@ export namespace foundation {
             this.completeStandardsOccurrence = this.completeStandardsOccurrence.bind(this)
             this.createInvitation = this.createInvitation.bind(this)
             this.createOperationalTemplate = this.createOperationalTemplate.bind(this)
+            this.createOperationalTemplateDraftFromVersionRoute = this.createOperationalTemplateDraftFromVersionRoute.bind(this)
             this.finaliseQuarterlyAudit = this.finaliseQuarterlyAudit.bind(this)
             this.getAuditPreparation = this.getAuditPreparation.bind(this)
             this.getAuthorisedNavigationEndpoint = this.getAuthorisedNavigationEndpoint.bind(this)
@@ -136,6 +137,7 @@ export namespace foundation {
             this.getEvidenceAccess = this.getEvidenceAccess.bind(this)
             this.getInvitation = this.getInvitation.bind(this)
             this.getOperationalTemplateVersionRoute = this.getOperationalTemplateVersionRoute.bind(this)
+            this.getOperationalTemplateWorkspaceRoute = this.getOperationalTemplateWorkspaceRoute.bind(this)
             this.getPeopleOptions = this.getPeopleOptions.bind(this)
             this.getPerson = this.getPerson.bind(this)
             this.getPersonAccess = this.getPersonAccess.bind(this)
@@ -147,6 +149,7 @@ export namespace foundation {
             this.listAssignedAuditCentres = this.listAssignedAuditCentres.bind(this)
             this.listCorrectiveActionVerificationQueue = this.listCorrectiveActionVerificationQueue.bind(this)
             this.listMyCorrectiveActions = this.listMyCorrectiveActions.bind(this)
+            this.listOperationalTemplateAssignmentOptionsRoute = this.listOperationalTemplateAssignmentOptionsRoute.bind(this)
             this.listOperationalTemplateLibrary = this.listOperationalTemplateLibrary.bind(this)
             this.listPeople = this.listPeople.bind(this)
             this.markQuarterlyAuditReady = this.markQuarterlyAuditReady.bind(this)
@@ -228,6 +231,12 @@ export namespace foundation {
         public async createOperationalTemplate(params: operational_templates.CreateOperationalTemplateRequest): Promise<operational_templates.OperationalTemplateDraft> {
             // Now make the actual call to the API
             const resp = await this.baseClient.callTypedAPI("POST", `/standards/templates`, JSON.stringify(params))
+            return await resp.json() as operational_templates.OperationalTemplateDraft
+        }
+
+        public async createOperationalTemplateDraftFromVersionRoute(templateId: string, params: operational_templates.CreateDraftFromVersionRequest): Promise<operational_templates.OperationalTemplateDraft> {
+            // Now make the actual call to the API
+            const resp = await this.baseClient.callTypedAPI("POST", `/standards/templates/${encodeURIComponent(templateId)}/draft-from-version`, JSON.stringify(params))
             return await resp.json() as operational_templates.OperationalTemplateDraft
         }
 
@@ -325,6 +334,12 @@ export namespace foundation {
             return await resp.json() as operational_templates.OperationalTemplateVersion
         }
 
+        public async getOperationalTemplateWorkspaceRoute(templateId: string): Promise<operational_templates.OperationalTemplateWorkspace> {
+            // Now make the actual call to the API
+            const resp = await this.baseClient.callTypedAPI("GET", `/standards/templates/${encodeURIComponent(templateId)}`)
+            return await resp.json() as operational_templates.OperationalTemplateWorkspace
+        }
+
         public async getPeopleOptions(): Promise<people_access.PeopleAccessOptionsResponse> {
             // Now make the actual call to the API
             const resp = await this.baseClient.callTypedAPI("GET", `/admin/people/options`)
@@ -401,6 +416,17 @@ export namespace foundation {
             // Now make the actual call to the API
             const resp = await this.baseClient.callTypedAPI("GET", `/corrective-actions/mine`)
             return await resp.json() as quarterly_reviews.ListCorrectiveActionsResponse
+        }
+
+        /**
+         * * Deliberately not nested under `/standards/templates/...`. A literal segment
+         * * there would sit alongside `:templateId` and the routing would depend on
+         * * precedence rather than on the path being unambiguous.
+         */
+        public async listOperationalTemplateAssignmentOptionsRoute(): Promise<operational_templates.OperationalTemplateAssignmentOptions> {
+            // Now make the actual call to the API
+            const resp = await this.baseClient.callTypedAPI("GET", `/standards/template-assignment-options`)
+            return await resp.json() as operational_templates.OperationalTemplateAssignmentOptions
         }
 
         public async listOperationalTemplateLibrary(params: operational_templates.ListOperationalTemplatesRequest): Promise<operational_templates.ListOperationalTemplatesResponse> {
@@ -1168,6 +1194,21 @@ export namespace operational_templates {
         }[]
     }
 
+    export interface AssignableCentre {
+        centreId: string
+        centreName: string
+    }
+
+    /**
+     * Starts a new editable draft from a published or retired version. The source
+     * version is never modified; publishing the resulting draft creates the next
+     * version. This is what makes an edit to a published template produce a new
+     * version rather than silently changing history.
+     */
+    export interface CreateDraftFromVersionRequest {
+        versionId: string
+    }
+
     export interface CreateOperationalTemplateRequest {
         title: string
         instructions: string
@@ -1254,6 +1295,19 @@ export namespace operational_templates {
         questions: OperationalQuestionInput[]
     }
 
+    /**
+     * The centres this principal may actually assign a template to. The browser is
+     * never the authority on assignment scope. `incompleteNotice` is present only
+     * when some authorised centre could not be resolved, so a short list is never
+     * mistaken for a complete one.
+     */
+    export interface OperationalTemplateAssignmentOptions {
+        centres: AssignableCentre[]
+        portfolioAvailable: boolean
+        portfolioCentreCount: number
+        incompleteNotice?: string
+    }
+
     export interface OperationalTemplateDraft {
         templateId: string
         lifecycle: OperationalTemplateLifecycle
@@ -1332,6 +1386,33 @@ export namespace operational_templates {
         authorId: string
         publishedAt: string
         sections: OperationalTemplateSection[]
+    }
+
+    /**
+     * One entry in a template's permanent version history.
+     */
+    export interface OperationalTemplateVersionSummary {
+        versionId: string
+        versionNumber: number
+        lifecycle: "PUBLISHED" | "RETIRED"
+        publishedAt: string
+        authorId: string
+    }
+
+    /**
+     * Everything the builder needs to open one template. `draft` is absent rather
+     * than null when no editable draft exists, so a published-only template cannot
+     * be mistaken for one with an empty draft.
+     */
+    export interface OperationalTemplateWorkspace {
+        templateId: string
+        title: string
+        lifecycle: OperationalTemplateLifecycle
+        draft?: OperationalTemplateDraft
+        /**
+         * Newest first. Published and retired entries are permanent.
+         */
+        versions: OperationalTemplateVersionSummary[]
     }
 
     export interface PublishOperationalTemplateRequest {

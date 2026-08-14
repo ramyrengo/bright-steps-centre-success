@@ -48,6 +48,19 @@ function dependencies(
     list: vi.fn(async () => ({ templates: [], assignmentFilter: { kind: "PORTFOLIO" as const } })),
     getVersion: vi.fn(async () => version),
     previewDraft: vi.fn(async () => draft),
+    getWorkspace: vi.fn(async () => ({
+      templateId: TEMPLATE,
+      title: draft.title,
+      lifecycle: "DRAFT" as const,
+      draft,
+      versions: [],
+    })),
+    assignmentOptions: vi.fn(async () => ({
+      centres: [],
+      portfolioAvailable: false,
+      portfolioCentreCount: 0,
+    })),
+    createDraftFromVersion: vi.fn(async () => draft),
     assign: vi.fn(async () => ({
       assignmentId: VERSION,
       templateId: TEMPLATE,

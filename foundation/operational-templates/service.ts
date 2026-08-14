@@ -14,17 +14,21 @@ import { inSerializableTransaction } from "../transactions";
 import type {
   AssignOperationalTemplateRequest,
   AssignOperationalTemplateResponse,
+  CreateDraftFromVersionRequest,
   CreateOperationalTemplateRequest,
   ListOperationalTemplatesRequest,
   ListOperationalTemplatesResponse,
   OperationalChoiceOption,
   OperationalQuestionInput,
+  OperationalTemplateAssignmentOptions,
   OperationalTemplateDraft,
   OperationalTemplateLifecycle,
   OperationalTemplateMetadata,
   OperationalTemplateQuestion,
   OperationalTemplateSection,
   OperationalTemplateVersion,
+  OperationalTemplateVersionSummary,
+  OperationalTemplateWorkspace,
   PublishOperationalTemplateRequest,
   RetireOperationalTemplateRequest,
   RetireOperationalTemplateResponse,
@@ -1166,6 +1170,221 @@ export async function assignOperationalTemplate(
       centreCount: deployments.length,
       deployments,
     };
+  });
+}
+
+/**
+ * Everything the builder needs to open one template: its open draft where one
+ * exists, and its permanent version history.
+ *
+ * The draft is omitted rather than nulled when none exists, so a
+ * published-only template cannot read as one with an empty draft.
+ */
+export async function getOperationalTemplateWorkspace(input: {
+  principalId: string;
+  templateId: string;
+}): Promise<OperationalTemplateWorkspace> {
+  const templateId = requireOperationalTemplateUuid(input.templateId, "template ID");
+  const transaction = await centreSuccessDB.begin();
+  const executor = asExecutor(transaction);
+  const decisionAt = new Date();
+  try {
+    await executor.exec`SET TRANSACTION ISOLATION LEVEL REPEATABLE READ READ ONLY`;
+    const principal = await loadPrincipal(executor, input.principalId, decisionAt);
+    requireAnyCentreCapability(principal, capability.templateRead, decisionAt);
+    const template = await executor.queryRow<{
+      title: string;
+      status: "active" | "inactive";
+    }>`
+      SELECT template.title, template.status
+      FROM audit_templates AS template
+      WHERE template.organisation_id = ${principal.organisationId}
+        AND template.id = ${templateId}
+        AND template.template_subtype = 'OPERATIONAL_STANDARD'
+    `;
+    if (!template) {
+      throw new OperationalTemplateError("not_found", "template is not available");
+    }
+    const versionRows = await executor.queryAll<{
+      version_id: string;
+      version_number: number;
+      status: string;
+      published_at: Date;
+      published_by_principal_id: string;
+    }>`
+      SELECT version.id AS version_id, version.version AS version_number,
+             version.status, version.published_at, version.published_by_principal_id
+      FROM audit_template_versions AS version
+      WHERE version.organisation_id = ${principal.organisationId}
+        AND version.audit_template_id = ${templateId}
+        AND version.template_subtype = 'OPERATIONAL_STANDARD'
+        AND version.source_classification = 'BSA_INTERNAL'
+        AND version.status IN ('active', 'superseded', 'retired')
+      ORDER BY version.version DESC, version.id
+    `;
+    const draftExists = await executor.queryRow<{ template_id: string }>`
+      SELECT draft.template_id
+      FROM operational_template_drafts AS draft
+      WHERE draft.organisation_id = ${principal.organisationId}
+        AND draft.template_id = ${templateId}
+    `;
+    const draft = draftExists
+      ? draftResponse(await loadDraftContent(executor, principal.organisationId, templateId))
+      : undefined;
+    await transaction.commit();
+    const versions: OperationalTemplateVersionSummary[] = versionRows.map((version) => ({
+      versionId: version.version_id,
+      versionNumber: version.version_number,
+      lifecycle: version.status === "retired" ? "RETIRED" : "PUBLISHED",
+      publishedAt: version.published_at.toISOString(),
+      authorId: version.published_by_principal_id,
+    }));
+    return {
+      templateId,
+      title: draft?.title ?? template.title,
+      lifecycle: template.status === "inactive"
+        ? "RETIRED"
+        : versions.length > 0 ? "PUBLISHED" : "DRAFT",
+      ...(draft ? { draft } : {}),
+      versions,
+    };
+  } catch (error) {
+    await transaction.rollback();
+    throw error;
+  }
+}
+
+/**
+ * The centres this principal may actually assign a template to.
+ *
+ * The browser is never the authority here; it renders what this returns. When
+ * an authorised centre cannot be resolved the notice is set, so a short list is
+ * never presented as a complete one.
+ */
+export async function listOperationalTemplateAssignmentOptions(input: {
+  principalId: string;
+}): Promise<OperationalTemplateAssignmentOptions> {
+  const transaction = await centreSuccessDB.begin();
+  const executor = asExecutor(transaction);
+  const decisionAt = new Date();
+  try {
+    await executor.exec`SET TRANSACTION ISOLATION LEVEL REPEATABLE READ READ ONLY`;
+    const principal = await loadPrincipal(executor, input.principalId, decisionAt);
+    const assignable = requireAnyCentreCapability(
+      principal,
+      capability.templateAssign,
+      decisionAt,
+    );
+    const incomplete = hasInvalidAuthorisedCentre(
+      principal,
+      capability.templateAssign,
+      decisionAt,
+    );
+    const centreIds = assignable.map((centre) => centre.id);
+    const named = await executor.queryAll<{ centre_id: string; centre_name: string }>`
+      SELECT centre.id AS centre_id, centre.name AS centre_name
+      FROM centres AS centre
+      WHERE centre.organisation_id = ${principal.organisationId}
+        AND centre.id = ANY(${centreIds}::uuid[])
+      ORDER BY centre.name, centre.id
+    `;
+    await transaction.commit();
+    return {
+      centres: named.map((centre) => ({
+        centreId: centre.centre_id,
+        centreName: centre.centre_name,
+      })),
+      portfolioAvailable: named.length > 0,
+      portfolioCentreCount: named.length,
+      ...(incomplete
+        ? {
+            incompleteNotice:
+              "Some centres you work in could not be confirmed, so this list may be incomplete.",
+          }
+        : {}),
+    };
+  } catch (error) {
+    await transaction.rollback();
+    throw error;
+  }
+}
+
+/**
+ * Starts a new editable draft from a published or retired version.
+ *
+ * The source version is never modified. This is what makes editing a published
+ * template produce the next version instead of silently rewriting history, and
+ * it is why historical occurrences stay pinned to the version that produced
+ * them.
+ */
+export async function createOperationalTemplateDraftFromVersion(
+  input: { principalId: string; request: CreateDraftFromVersionRequest },
+  dependencies: { now: () => Date } = { now: () => new Date() },
+): Promise<OperationalTemplateDraft> {
+  const templateId = requireOperationalTemplateUuid(input.request.templateId, "template ID");
+  const versionId = requireOperationalTemplateUuid(input.request.versionId, "version ID");
+  const decisionAt = dependencies.now();
+  return inSerializableTransaction(async (transaction) => {
+    const executor = asExecutor(transaction);
+    const principal = await loadPrincipal(executor, input.principalId, decisionAt);
+    requireAnyCentreCapability(principal, capability.templateCreate, decisionAt);
+    const source = await loadVersion(executor, principal.organisationId, templateId, versionId);
+    const existing = await executor.queryRow<{ template_id: string }>`
+      SELECT draft.template_id
+      FROM operational_template_drafts AS draft
+      WHERE draft.organisation_id = ${principal.organisationId}
+        AND draft.template_id = ${templateId}
+      FOR UPDATE
+    `;
+    if (existing) {
+      throw new OperationalTemplateError(
+        "invalid_state",
+        "this template already has an open draft",
+      );
+    }
+    await executor.exec`
+      INSERT INTO operational_template_drafts (
+        organisation_id, template_id, title, instructions, metadata,
+        created_by_principal_id, updated_by_principal_id, created_at, updated_at
+      ) VALUES (
+        ${principal.organisationId}, ${templateId}, ${source.title},
+        ${source.instructions}, ${source.metadata}, ${principal.principalId},
+        ${principal.principalId}, ${decisionAt}, ${decisionAt}
+      )
+    `;
+    await replaceDraftSections(executor, {
+      organisationId: principal.organisationId,
+      templateId,
+      sections: source.sections.map((section) => ({
+        title: section.title,
+        order: section.order,
+        ...(section.instructions ? { instructions: section.instructions } : {}),
+        questions: section.questions.map((question) => ({
+          label: question.label,
+          order: question.order,
+          ...(question.instructions ? { instructions: question.instructions } : {}),
+          required: question.required,
+          type: question.type,
+          ...(question.options ? { options: question.options } : {}),
+        })) as OperationalQuestionInput[],
+      })),
+    });
+    await recordAuditEventWithExecutor(executor, {
+      organisationId: principal.organisationId,
+      actorPrincipalId: principal.principalId,
+      action: "operational_template.draft_created_from_version",
+      resourceType: "operational_template",
+      resourceId: templateId,
+      scopeType: "organisation",
+      scopeId: principal.organisationId,
+      context: {
+        sourceVersionId: versionId,
+        sourceVersionNumber: source.versionNumber,
+        sectionCount: source.sections.length,
+      },
+      occurredAt: decisionAt,
+    });
+    return draftResponse(await loadDraftContent(executor, principal.organisationId, templateId));
   });
 }
 

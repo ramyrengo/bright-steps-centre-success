@@ -199,6 +199,58 @@ export interface AssignOperationalTemplateRequest
   };
 }
 
+/** One entry in a template's permanent version history. */
+export interface OperationalTemplateVersionSummary {
+  versionId: string;
+  versionNumber: number;
+  lifecycle: "PUBLISHED" | "RETIRED";
+  publishedAt: string;
+  authorId: string;
+}
+
+/**
+ * Everything the builder needs to open one template. `draft` is absent rather
+ * than null when no editable draft exists, so a published-only template cannot
+ * be mistaken for one with an empty draft.
+ */
+export interface OperationalTemplateWorkspace {
+  templateId: string;
+  title: string;
+  lifecycle: OperationalTemplateLifecycle;
+  draft?: OperationalTemplateDraft;
+  /** Newest first. Published and retired entries are permanent. */
+  versions: OperationalTemplateVersionSummary[];
+}
+
+export interface AssignableCentre {
+  centreId: string;
+  centreName: string;
+}
+
+/**
+ * The centres this principal may actually assign a template to. The browser is
+ * never the authority on assignment scope. `incompleteNotice` is present only
+ * when some authorised centre could not be resolved, so a short list is never
+ * mistaken for a complete one.
+ */
+export interface OperationalTemplateAssignmentOptions {
+  centres: AssignableCentre[];
+  portfolioAvailable: boolean;
+  portfolioCentreCount: number;
+  incompleteNotice?: string;
+}
+
+/**
+ * Starts a new editable draft from a published or retired version. The source
+ * version is never modified; publishing the resulting draft creates the next
+ * version. This is what makes an edit to a published template produce a new
+ * version rather than silently changing history.
+ */
+export interface CreateDraftFromVersionRequest
+  extends OperationalTemplateIdRequest {
+  versionId: string;
+}
+
 export interface AssignOperationalTemplateResponse {
   assignmentId: string;
   templateId: string;
