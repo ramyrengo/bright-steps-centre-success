@@ -4,6 +4,11 @@ import type { Transaction } from "encore.dev/storage/sqldb";
 import { recordAuditEventWithExecutor } from "../audit/events";
 import { canonicalRoleBundle } from "../authorization/roles";
 import { centreSuccessDB } from "../db";
+import {
+  evaluateReviewedEnvironmentGate,
+  REVIEWED_APPLY_ENVIRONMENT_NAMES,
+  REVIEWED_CONFIRMATION_ENVIRONMENT_NAMES,
+} from "../operations/reviewed-environment-gate";
 import { canonicaliseEntraGuid } from "./entra-identifiers";
 import { microsoftEntraProviderKey } from "./external-identity";
 
@@ -77,18 +82,17 @@ const SYSTEM_ADMINISTRATOR_CAPABILITIES = [
  * `local` is deliberately absent — it already has its own guarded bootstrap and
  * that guard is not being widened. Adding an environment here is a code change
  * that goes through review; it is not something an operator flag can do.
+ *
+ * The values now live in `operations/reviewed-environment-gate.ts` so that the
+ * organisation reference load applies the identical gate instead of a second
+ * copy of it. They are re-exported here unchanged: the list this ceremony may
+ * apply in is `["staging", "production"]`, exactly as before.
  */
-export const CEREMONY_APPLY_ENVIRONMENT_NAMES = ["staging", "production"] as const;
+export const CEREMONY_APPLY_ENVIRONMENT_NAMES = REVIEWED_APPLY_ENVIRONMENT_NAMES;
 
 /** Environments that additionally require the explicit confirmation flag. */
-export const CEREMONY_CONFIRMATION_ENVIRONMENT_NAMES = ["production"] as const;
-
-/**
- * Environment types that can never apply, whatever they are called. A preview
- * environment is `ephemeral` and a test run is `test`; neither may create a real
- * administrator even if somebody names it `staging`.
- */
-const REFUSED_APPLY_ENVIRONMENT_TYPES = ["ephemeral", "test"] as const;
+export const CEREMONY_CONFIRMATION_ENVIRONMENT_NAMES =
+  REVIEWED_CONFIRMATION_ENVIRONMENT_NAMES;
 
 const CANONICAL_UUID =
   /^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
@@ -271,67 +275,35 @@ interface AssignmentRow {
  * operator actually named. The real safety property is environment-independent
  * and enforced separately below: the ceremony refuses if the organisation holds
  * any principal at all.
+ *
+ * The four locks are implemented in `operations/reviewed-environment-gate.ts`,
+ * which was extracted from this function so the organisation reference load
+ * applies the same gate. The refusal codes, their order, and their detail text
+ * are unchanged; this function still throws this ceremony's own error type.
  */
 function assertEnvironmentGate(
   input: FirstAdministratorCeremonyInput,
   environment: Pick<EnvironmentMeta, "cloud" | "name" | "type">,
   apply: boolean,
 ): void {
-  const declared = input.declaredEnvironment.trim();
-  if (declared.length === 0) {
-    throw new FirstAdministratorCeremonyError(
-      "environment_not_declared",
-      "the target environment is explicit operator input and has no default",
-    );
-  }
+  const refusal = evaluateReviewedEnvironmentGate(
+    {
+      declaredEnvironment: input.declaredEnvironment,
+      apply,
+      confirmProduction: input.confirmProduction,
+    },
+    environment,
+    {
+      applyEnvironmentNames: CEREMONY_APPLY_ENVIRONMENT_NAMES,
+      confirmationEnvironmentNames: CEREMONY_CONFIRMATION_ENVIRONMENT_NAMES,
+      refusedTypeConsequence: "create a real administrator",
+      notPermittedNote:
+        "local development keeps its own separate guarded bootstrap",
+    },
+  );
 
-  if (declared !== environment.name) {
-    throw new FirstAdministratorCeremonyError(
-      "environment_mismatch",
-      `operator named ${JSON.stringify(declared)}; this deployment reports ${JSON.stringify(environment.name)}`,
-    );
-  }
-
-  const confirmationRequired = (
-    CEREMONY_CONFIRMATION_ENVIRONMENT_NAMES as readonly string[]
-  ).includes(declared);
-
-  if (input.confirmProduction === true && !confirmationRequired) {
-    throw new FirstAdministratorCeremonyError(
-      "confirmation_not_applicable",
-      `the production confirmation flag is refused in ${declared}`,
-    );
-  }
-
-  if (!apply) {
-    return;
-  }
-
-  if (
-    (REFUSED_APPLY_ENVIRONMENT_TYPES as readonly string[]).includes(
-      environment.type,
-    )
-  ) {
-    throw new FirstAdministratorCeremonyError(
-      "environment_type_not_permitted",
-      `environment type ${environment.type} can never create a real administrator`,
-    );
-  }
-
-  if (
-    !(CEREMONY_APPLY_ENVIRONMENT_NAMES as readonly string[]).includes(declared)
-  ) {
-    throw new FirstAdministratorCeremonyError(
-      "environment_not_permitted",
-      `only ${CEREMONY_APPLY_ENVIRONMENT_NAMES.join(" and ")} may apply; local development keeps its own separate guarded bootstrap`,
-    );
-  }
-
-  if (confirmationRequired && input.confirmProduction !== true) {
-    throw new FirstAdministratorCeremonyError(
-      "production_confirmation_required",
-      "applying in production requires the explicit confirmation flag",
-    );
+  if (refusal !== null) {
+    throw new FirstAdministratorCeremonyError(refusal.code, refusal.detail);
   }
 }
 

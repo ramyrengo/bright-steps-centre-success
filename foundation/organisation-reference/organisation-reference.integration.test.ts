@@ -1,4 +1,5 @@
 import { randomUUID } from "node:crypto";
+import type { EnvironmentMeta } from "encore.dev";
 import { describe, expect, test } from "vitest";
 import { centreSuccessDB } from "../db";
 import { CANONICAL_ROLE_BUNDLES } from "../authorization/roles";
@@ -12,20 +13,61 @@ import {
 import {
   formatOrganisationLoadReport,
   loadBrightStepsOrganisationReference,
+  ORGANISATION_LOAD_APPLY_ENVIRONMENT_NAMES,
   OrganisationLoadError,
+  type OrganisationLoadOptions,
+  type OrganisationLoadReport,
 } from "./organisation-load";
+
+type LoadEnvironment = Pick<EnvironmentMeta, "cloud" | "name" | "type">;
 
 const LOCAL_ENVIRONMENT = {
   cloud: "local",
   name: "local",
   type: "development",
-} as const;
+} as const satisfies LoadEnvironment;
+const STAGING = {
+  cloud: "encore",
+  name: "staging",
+  type: "development",
+} as const satisfies LoadEnvironment;
+const PRODUCTION = {
+  cloud: "gcp",
+  name: "production",
+  type: "production",
+} as const satisfies LoadEnvironment;
+const CLOUD_DEVELOPMENT = {
+  cloud: "encore",
+  name: "development",
+  type: "development",
+} as const satisfies LoadEnvironment;
+const PREVIEW = {
+  cloud: "encore",
+  name: "pr-42",
+  type: "ephemeral",
+} as const satisfies LoadEnvironment;
 
 /**
  * Supplied on every call because `organisations.default_timezone` has no
  * approved value and the tool deliberately refuses to guess one.
  */
 const OPERATOR_TIMEZONE = "Australia/Sydney";
+
+/**
+ * Local development remains the ordinary way to run this tool, so it is the
+ * default here. The one thing local gained is that the operator must still name
+ * the environment, exactly as they must in staging and production.
+ */
+function load(
+  overrides: Partial<OrganisationLoadOptions> = {},
+): Promise<OrganisationLoadReport> {
+  return loadBrightStepsOrganisationReference({
+    declaredEnvironment: "local",
+    organisationTimezone: OPERATOR_TIMEZONE,
+    environment: LOCAL_ENVIRONMENT,
+    ...overrides,
+  });
+}
 
 const EXPECTED_CREATES =
   1 + BRIGHT_STEPS_STATES.length + BRIGHT_STEPS_TRADING_CENTRES.length * 2;
@@ -91,38 +133,150 @@ const LOADED: ReferenceCounts = {
 
 describe("reviewed organisation reference load — refusals", () => {
   test("refuses without an operator-supplied organisation timezone", async () => {
-    await expect(
-      loadBrightStepsOrganisationReference({
-        organisationTimezone: "   ",
-        environment: LOCAL_ENVIRONMENT,
-      }),
-    ).rejects.toMatchObject({ code: "organisation_timezone_required" });
+    await expect(load({ organisationTimezone: "   " })).rejects.toMatchObject({
+      code: "organisation_timezone_required",
+    });
     expect(await referenceCounts()).toEqual(EMPTY);
   });
 
   test("refuses a timezone that is not a resolvable IANA zone", async () => {
-    await expect(
-      loadBrightStepsOrganisationReference({
-        organisationTimezone: "AEST",
-        environment: LOCAL_ENVIRONMENT,
-      }),
-    ).rejects.toMatchObject({ code: "organisation_timezone_invalid" });
+    await expect(load({ organisationTimezone: "AEST" })).rejects.toMatchObject({
+      code: "organisation_timezone_invalid",
+    });
+    expect(await referenceCounts()).toEqual(EMPTY);
+  });
+});
+
+/**
+ * The gate is the ADR-0021 D5 one, taken from the first-administrator ceremony
+ * rather than reinvented. It differs from the ceremony's in exactly one way:
+ * `local` is in this tool's allow-list, because unlike that ceremony this is a
+ * supported local development tool. Everything else — naming the environment,
+ * the closed list, the refused types, the production confirmation flag — is the
+ * same, and every refusal below happens before a transaction can open.
+ */
+describe("reviewed organisation reference load — environment gate", () => {
+  test("its allow-list is the reviewed deployed pair plus local", () => {
+    expect([...ORGANISATION_LOAD_APPLY_ENVIRONMENT_NAMES]).toEqual([
+      "local",
+      "staging",
+      "production",
+    ]);
+  });
+
+  test("refuses when the operator does not name the target environment", async () => {
+    for (const apply of [false, true]) {
+      await expect(
+        load({ declaredEnvironment: "   ", apply }),
+      ).rejects.toMatchObject({ code: "environment_not_declared" });
+    }
     expect(await referenceCounts()).toEqual(EMPTY);
   });
 
-  test("refuses to apply outside local development, before opening a transaction", async () => {
-    for (const environment of [
-      { cloud: "encore", name: "staging", type: "development" },
-      { cloud: "gcp", name: "production", type: "production" },
-      { cloud: "local", name: "local", type: "production" },
-      { cloud: "local", name: "preview-42", type: "development" },
-    ] as const) {
+  test("refuses when the declared environment is not the running one", async () => {
+    // The operator believes they are on staging; the deployment says otherwise.
+    await expect(
+      load({
+        declaredEnvironment: "staging",
+        apply: true,
+        environment: PRODUCTION,
+      }),
+    ).rejects.toMatchObject({ code: "environment_mismatch" });
+
+    await expect(
+      load({
+        declaredEnvironment: "production",
+        apply: true,
+        confirmProduction: true,
+        environment: STAGING,
+      }),
+    ).rejects.toMatchObject({ code: "environment_mismatch" });
+
+    // A rehearsal must prove something about the environment actually named,
+    // so the mismatch refusal holds for dry runs too.
+    await expect(
+      load({ declaredEnvironment: "local", environment: STAGING }),
+    ).rejects.toMatchObject({ code: "environment_mismatch" });
+    expect(await referenceCounts()).toEqual(EMPTY);
+  });
+
+  test("refuses to apply in an environment outside the closed allow-list", async () => {
+    for (const environment of [CLOUD_DEVELOPMENT, PREVIEW] as const) {
       await expect(
-        loadBrightStepsOrganisationReference({
-          organisationTimezone: OPERATOR_TIMEZONE,
+        load({
+          declaredEnvironment: environment.name,
           apply: true,
           environment,
         }),
+      ).rejects.toMatchObject({
+        code:
+          environment.type === "ephemeral"
+            ? "environment_type_not_permitted"
+            : "environment_not_permitted",
+      });
+    }
+    expect(await referenceCounts()).toEqual(EMPTY);
+  });
+
+  test("refuses to apply in an ephemeral or test environment whatever it is named", async () => {
+    for (const environment of [
+      { cloud: "encore", name: "staging", type: "ephemeral" },
+      { cloud: "encore", name: "local", type: "ephemeral" },
+      { cloud: "local", name: "production", type: "test" },
+      { cloud: "local", name: "local", type: "test" },
+    ] as const) {
+      await expect(
+        load({
+          declaredEnvironment: environment.name,
+          apply: true,
+          confirmProduction: environment.name === "production",
+          environment,
+        }),
+      ).rejects.toMatchObject({ code: "environment_type_not_permitted" });
+    }
+    expect(await referenceCounts()).toEqual(EMPTY);
+  });
+
+  test("refuses to apply in production without the explicit confirmation flag", async () => {
+    await expect(
+      load({
+        declaredEnvironment: "production",
+        apply: true,
+        environment: PRODUCTION,
+      }),
+    ).rejects.toMatchObject({ code: "production_confirmation_required" });
+    expect(await referenceCounts()).toEqual(EMPTY);
+  });
+
+  test("refuses the production confirmation flag anywhere but production", async () => {
+    // It must not become a habitual paste that is already on the command line
+    // when the operator finally points at production — including in local,
+    // where this tool is run most often.
+    for (const environment of [LOCAL_ENVIRONMENT, STAGING] as const) {
+      for (const apply of [false, true]) {
+        await expect(
+          load({
+            declaredEnvironment: environment.name,
+            apply,
+            confirmProduction: true,
+            environment,
+          }),
+        ).rejects.toMatchObject({ code: "confirmation_not_applicable" });
+      }
+    }
+    expect(await referenceCounts()).toEqual(EMPTY);
+  });
+
+  test("refuses an environment merely NAMED local that is not local development", async () => {
+    // The local guard in local-identity-linker.ts is called, not copied, so a
+    // cloud environment cannot claim the local slot in the allow-list.
+    for (const environment of [
+      { cloud: "gcp", name: "local", type: "production" },
+      { cloud: "encore", name: "local", type: "development" },
+      { cloud: "local", name: "local", type: "production" },
+    ] as const) {
+      await expect(
+        load({ declaredEnvironment: "local", apply: true, environment }),
       ).rejects.toMatchObject({ code: "local_environment_required" });
     }
     expect(await referenceCounts()).toEqual(EMPTY);
@@ -133,10 +287,7 @@ describe("reviewed organisation reference load — dry run", () => {
   test("reports every approved change and writes nothing", async () => {
     expect(await referenceCounts()).toEqual(EMPTY);
 
-    const report = await loadBrightStepsOrganisationReference({
-      organisationTimezone: OPERATOR_TIMEZONE,
-      environment: LOCAL_ENVIRONMENT,
-    });
+    const report = await load();
 
     expect(report.mode).toBe("dry_run");
     expect(report.committed).toBe(false);
@@ -156,15 +307,60 @@ describe("reviewed organisation reference load — dry run", () => {
     expect(await referenceCounts()).toEqual(EMPTY);
   });
 
+  test("forces the deferred People & Access guard, so the rehearsal is real", async () => {
+    // The ADR-0006 trigger inserts role_definitions and role_capabilities rows,
+    // which enqueue the DEFERRABLE INITIALLY DEFERRED last-administrator guard
+    // from migrations 017 and 018. Without SET CONSTRAINTS ALL IMMEDIATE that
+    // guard would fire only at COMMIT and never in a rolled-back dry run, so a
+    // dry run would rehearse strictly less than an apply does. The reported
+    // count is the guard's own reachability function, evaluated after it ran.
+    const report = await load();
+    expect(report.reachableSystemAdministrators).toBe(0);
+    expect(await referenceCounts()).toEqual(EMPTY);
+  });
+
+  test("the deferred guard really is pending until the constraints are forced", async () => {
+    // The evidence for the line above, rather than a claim about it. Creating an
+    // organisation fires the ADR-0006 trigger, which inserts role_definitions
+    // and role_capabilities; migration 017's BEFORE triggers enqueue the
+    // last-administrator validation, and migration 018 validates the queue with
+    // a CONSTRAINT TRIGGER that is DEFERRABLE INITIALLY DEFERRED. A queued row
+    // still sitting there is a check that has not run and, in a transaction that
+    // ends in ROLLBACK, never would.
+    const transaction = await centreSuccessDB.begin();
+    try {
+      await transaction.exec`
+        INSERT INTO organisations (id, name, status, default_timezone)
+        VALUES (${randomUUID()}, ${`Deferred guard probe ${randomUUID()}`},
+                'active', ${OPERATOR_TIMEZONE})
+      `;
+      const queued = await transaction.queryRow<{ pending: number }>`
+        SELECT count(*)::integer AS pending
+        FROM people_admin_guard_validation_queue
+        WHERE transaction_id = txid_current()
+      `;
+      expect(queued?.pending).toBeGreaterThan(0);
+
+      await transaction.exec`SET CONSTRAINTS ALL IMMEDIATE`;
+
+      // The deferred trigger has now run and cleared its own queue entry, which
+      // is what makes the dry run as strong a rehearsal as the apply.
+      const drained = await transaction.queryRow<{ pending: number }>`
+        SELECT count(*)::integer AS pending
+        FROM people_admin_guard_validation_queue
+        WHERE transaction_id = txid_current()
+      `;
+      expect(drained?.pending).toBe(0);
+    } finally {
+      await transaction.rollback();
+    }
+    expect(await referenceCounts()).toEqual(EMPTY);
+  });
+
   test("renders an operator-readable plan naming its unreviewed input and exclusions", async () => {
     // This text is the artefact a human approves before the real load, so it
     // has to keep saying the things that make approval meaningful.
-    const rendered = formatOrganisationLoadReport(
-      await loadBrightStepsOrganisationReference({
-        organisationTimezone: OPERATOR_TIMEZONE,
-        environment: LOCAL_ENVIRONMENT,
-      }),
-    );
+    const rendered = formatOrganisationLoadReport(await load());
     expect(rendered).toContain("DRY RUN — nothing was written");
     expect(rendered).toContain("plan: 30 create, 0 unchanged, 0 conflict");
     expect(rendered).toContain("(operator input, not approved dataset)");
@@ -175,26 +371,42 @@ describe("reviewed organisation reference load — dry run", () => {
     expect(rendered).toContain("Elizabeth North | Laverstock Rd");
     expect(rendered).toContain("ELIZABETH-NORTH-WOODFORD-RD → SA");
     expect(rendered).toContain("people: none.");
+    // The environment is on the artefact, so approval is approval of a plan for
+    // one named environment rather than of a plan in the abstract.
+    expect(rendered).toContain(
+      "environment            local (type development, cloud local)",
+    );
+    expect(rendered).toContain(
+      "declared by operator   local  (matched against appMeta)",
+    );
+    expect(rendered).toContain("reachable System Administrators after this load: 0");
     expect(await referenceCounts()).toEqual(EMPTY);
   });
 
-  test("is permitted outside local development because it cannot commit", async () => {
-    const report = await loadBrightStepsOrganisationReference({
-      organisationTimezone: OPERATOR_TIMEZONE,
-      environment: { cloud: "encore", name: "staging", type: "development" },
-    });
-    expect(report.committed).toBe(false);
-    expect(await referenceCounts()).toEqual(EMPTY);
+  test("is permitted in every environment, because it cannot commit", async () => {
+    for (const environment of [STAGING, PRODUCTION, PREVIEW] as const) {
+      const report = await load({
+        declaredEnvironment: environment.name,
+        environment,
+      });
+      expect(report.mode).toBe("dry_run");
+      expect(report.committed).toBe(false);
+      expect(report.environment).toEqual({
+        declared: environment.name,
+        name: environment.name,
+        type: environment.type,
+        cloud: environment.cloud,
+        confirmationRequired: environment.name === "production",
+      });
+      expect(await referenceCounts()).toEqual(EMPTY);
+    }
   });
 });
 
 describe("reviewed organisation reference load — apply", () => {
   test("creates the approved organisation, states, centres and placements", async () => {
-    const report = await loadBrightStepsOrganisationReference({
-      organisationTimezone: OPERATOR_TIMEZONE,
-      apply: true,
-      environment: LOCAL_ENVIRONMENT,
-    });
+    // Local development, exactly as before: no confirmation flag, no ceremony.
+    const report = await load({ apply: true });
 
     expect(report.mode).toBe("apply");
     expect(report.committed).toBe(true);
@@ -203,6 +415,7 @@ describe("reviewed organisation reference load — apply", () => {
       unchanged: 0,
       conflict: 0,
     });
+    expect(report.reachableSystemAdministrators).toBe(0);
     expect(await referenceCounts()).toEqual(LOADED);
 
     const organisation = await centreSuccessDB.queryRow<{
@@ -316,10 +529,16 @@ describe("reviewed organisation reference load — apply", () => {
     );
     for (const role of roles) expect(role.source_template_key).toBe(role.role_key);
 
-    // Structure only. People arrive through the invitation lifecycle.
+    // Structure only. People arrive through the invitation lifecycle, and the
+    // loaded organisation still has no administrator anybody could sign in as.
     const counts = await referenceCounts();
     expect(counts.memberships).toBe(0);
     expect(counts.assignments).toBe(0);
+
+    const reachable = await centreSuccessDB.queryRow<{ reachable: number }>`
+      SELECT reachable_system_administrator_count(${BRIGHT_STEPS_ORGANISATION_ID}) AS reachable
+    `;
+    expect(reachable?.reachable).toBe(0);
   });
 
   test("attributes every created row to the reviewed dataset and no person", async () => {
@@ -346,11 +565,7 @@ describe("reviewed organisation reference load — apply", () => {
 
   test("is idempotent: a second apply reports everything unchanged and writes nothing", async () => {
     const before = await referenceCounts();
-    const report = await loadBrightStepsOrganisationReference({
-      organisationTimezone: OPERATOR_TIMEZONE,
-      apply: true,
-      environment: LOCAL_ENVIRONMENT,
-    });
+    const report = await load({ apply: true });
     expect(report.counts).toEqual({
       create: 0,
       unchanged: EXPECTED_CREATES,
@@ -360,10 +575,7 @@ describe("reviewed organisation reference load — apply", () => {
   });
 
   test("a dry run over loaded data reports no outstanding change", async () => {
-    const report = await loadBrightStepsOrganisationReference({
-      organisationTimezone: OPERATOR_TIMEZONE,
-      environment: LOCAL_ENVIRONMENT,
-    });
+    const report = await load();
     expect(report.counts.create).toBe(0);
     expect(report.counts.conflict).toBe(0);
     expect(report.changes.every((change) => change.action === "unchanged")).toBe(true);
@@ -378,46 +590,57 @@ describe("reviewed organisation reference load — conflict and stand-down", () 
       WHERE organisation_id = ${BRIGHT_STEPS_ORGANISATION_ID} AND id = ${kwinana.id}
     `;
     try {
-      await expect(
-        loadBrightStepsOrganisationReference({
-          organisationTimezone: OPERATOR_TIMEZONE,
-          apply: true,
-          environment: LOCAL_ENVIRONMENT,
-        }),
-      ).rejects.toMatchObject({ code: "reference_data_conflict" });
+      await expect(load({ apply: true })).rejects.toMatchObject({
+        code: "reference_data_conflict",
+      });
 
       // The divergent value survives: the tool reports, it does not repair.
       const row = await centreSuccessDB.queryRow<{ timezone: string }>`
         SELECT timezone FROM centres WHERE id = ${kwinana.id}
       `;
       expect(row?.timezone).toBe("Australia/Sydney");
+
+      // And the refusal names the exact field-level difference, in staging and
+      // production as well as local: a reviewed environment gate does not make
+      // divergence something the tool may quietly fix.
+      await expect(
+        load({
+          declaredEnvironment: "staging",
+          apply: true,
+          environment: STAGING,
+        }),
+      ).rejects.toMatchObject({
+        code: "reference_data_conflict",
+        detail: expect.stringContaining(
+          'timezone: found "Australia/Sydney", approved "Australia/Perth"',
+        ),
+      });
+      const unrepaired = await centreSuccessDB.queryRow<{ timezone: string }>`
+        SELECT timezone FROM centres WHERE id = ${kwinana.id}
+      `;
+      expect(unrepaired?.timezone).toBe("Australia/Sydney");
     } finally {
       await centreSuccessDB.exec`
         UPDATE centres SET timezone = ${kwinana.timezone}
         WHERE organisation_id = ${BRIGHT_STEPS_ORGANISATION_ID} AND id = ${kwinana.id}
       `;
     }
-    const report = await loadBrightStepsOrganisationReference({
-      organisationTimezone: OPERATOR_TIMEZONE,
-      environment: LOCAL_ENVIRONMENT,
-    });
+    const report = await load();
     expect(report.counts.conflict).toBe(0);
   });
 
   test("refuses a timezone that disagrees with the loaded organisation", async () => {
     await expect(
-      loadBrightStepsOrganisationReference({
-        organisationTimezone: "Australia/Perth",
-        apply: true,
-        environment: LOCAL_ENVIRONMENT,
-      }),
+      load({ organisationTimezone: "Australia/Perth", apply: true }),
     ).rejects.toMatchObject({ code: "reference_data_conflict" });
   });
 
   test("stands down once the organisation has anybody in it", async () => {
     // Structural writes here bypass the normal authoriser only because there is
     // nobody to authorise them. The moment a membership exists, changes belong
-    // to the authorised People & Access and centre-management paths.
+    // to the authorised People & Access and centre-management paths. This is the
+    // safety property that does not depend on the environment at all, so it is
+    // asserted in every environment the tool can now reach.
     const principalId = randomUUID();
     const membershipId = randomUUID();
     await centreSuccessDB.exec`
@@ -430,26 +653,79 @@ describe("reviewed organisation reference load — conflict and stand-down", () 
               ${BRIGHT_STEPS_SEEDING_EFFECTIVE_FROM})
     `;
     try {
-      for (const apply of [false, true]) {
-        await expect(
-          loadBrightStepsOrganisationReference({
-            organisationTimezone: OPERATOR_TIMEZONE,
-            apply,
-            environment: LOCAL_ENVIRONMENT,
-          }),
-        ).rejects.toBeInstanceOf(OrganisationLoadError);
+      for (const environment of [
+        LOCAL_ENVIRONMENT,
+        STAGING,
+        PRODUCTION,
+      ] as const) {
+        for (const apply of [false, true]) {
+          await expect(
+            load({
+              declaredEnvironment: environment.name,
+              apply,
+              confirmProduction: apply && environment.name === "production",
+              environment,
+            }),
+          ).rejects.toMatchObject({ code: "organisation_already_populated" });
+        }
       }
-      await expect(
-        loadBrightStepsOrganisationReference({
-          organisationTimezone: OPERATOR_TIMEZONE,
-          environment: LOCAL_ENVIRONMENT,
-        }),
-      ).rejects.toMatchObject({ code: "organisation_already_populated" });
+      await expect(load()).rejects.toBeInstanceOf(OrganisationLoadError);
     } finally {
       await centreSuccessDB.exec`
         DELETE FROM organisation_memberships WHERE id = ${membershipId}
       `;
       await centreSuccessDB.exec`DELETE FROM principals WHERE id = ${principalId}`;
     }
+  });
+});
+
+/**
+ * The point of the change: there is now a reviewed path to create the Bright
+ * Steps organisation in the deployed environments, so the ADR-0021 D5
+ * first-administrator ceremony finally has something to target.
+ *
+ * These run last, against already-loaded data, so they commit no new row. What
+ * they prove is that a correctly declared staging or production apply passes the
+ * gate and reaches commit — the thing the old local-only assertion made
+ * impossible.
+ */
+describe("reviewed organisation reference load — the deployed environments", () => {
+  test("a correctly declared staging apply is permitted and commits", async () => {
+    const report = await load({
+      declaredEnvironment: "staging",
+      apply: true,
+      environment: STAGING,
+    });
+    expect(report.mode).toBe("apply");
+    expect(report.committed).toBe(true);
+    expect(report.environment.confirmationRequired).toBe(false);
+    expect(report.counts).toEqual({
+      create: 0,
+      unchanged: EXPECTED_CREATES,
+      conflict: 0,
+    });
+    expect(await referenceCounts()).toEqual(LOADED);
+  });
+
+  test("a production apply is permitted only with the confirmation flag", async () => {
+    await expect(
+      load({
+        declaredEnvironment: "production",
+        apply: true,
+        environment: PRODUCTION,
+      }),
+    ).rejects.toMatchObject({ code: "production_confirmation_required" });
+
+    const report = await load({
+      declaredEnvironment: "production",
+      apply: true,
+      confirmProduction: true,
+      environment: PRODUCTION,
+    });
+    expect(report.mode).toBe("apply");
+    expect(report.committed).toBe(true);
+    expect(report.environment.confirmationRequired).toBe(true);
+    expect(report.reachableSystemAdministrators).toBe(0);
+    expect(await referenceCounts()).toEqual(LOADED);
   });
 });

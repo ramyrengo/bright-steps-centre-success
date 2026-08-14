@@ -6,6 +6,12 @@ import { requireIanaTimezone } from "../daily-success/time";
 import { centreSuccessDB } from "../db";
 import { assertLocalDevelopmentEnvironment } from "../authentication/local-identity-linker";
 import {
+  evaluateReviewedEnvironmentGate,
+  environmentRequiresConfirmation,
+  REVIEWED_APPLY_ENVIRONMENT_NAMES,
+  REVIEWED_CONFIRMATION_ENVIRONMENT_NAMES,
+} from "../operations/reviewed-environment-gate";
+import {
   BRIGHT_STEPS_DATASET_APPROVED_ON,
   BRIGHT_STEPS_DATASET_VERSION,
   BRIGHT_STEPS_NON_TRADING_CENTRES,
@@ -28,18 +34,47 @@ import {
  *
  * It creates no principal, no membership, and no role assignment. People are
  * provisioned only through the Milestone 2C invitation lifecycle.
+ *
+ * It runs in local development, staging, and production. Which of those an
+ * `--apply` is allowed to reach is decided by the shared reviewed environment
+ * gate in `operations/reviewed-environment-gate.ts` — the same gate the ADR-0021
+ * D5 first-administrator ceremony passes — plus the unchanged local assertion
+ * below. See `assertEnvironmentGate`.
  */
 
 const ADVISORY_LOCK_KEY_HIGH = 1112691796;
 const ADVISORY_LOCK_KEY_LOW = 20260814;
 
+/**
+ * The closed set of environments this load may **apply** in: the two reviewed
+ * deployed environments, plus local development.
+ *
+ * `local` appears here and NOT in the shared list because admitting local is a
+ * decision about this tool alone. Unlike the first-administrator ceremony, this
+ * is a supported local development tool today and stays one — but it earns local
+ * by ALSO passing the untouched `assertLocalDevelopmentEnvironment` guard, so an
+ * environment merely *named* `local` cannot claim it. Widening this list is a
+ * source change under review, not an operator flag.
+ */
+export const ORGANISATION_LOAD_APPLY_ENVIRONMENT_NAMES = [
+  "local",
+  ...REVIEWED_APPLY_ENVIRONMENT_NAMES,
+] as const;
+
 export type OrganisationLoadFailureCode =
+  | "environment_not_declared"
+  | "environment_mismatch"
+  | "environment_not_permitted"
+  | "environment_type_not_permitted"
+  | "production_confirmation_required"
+  | "confirmation_not_applicable"
   | "local_environment_required"
   | "organisation_timezone_required"
   | "organisation_timezone_invalid"
   | "reference_data_conflict"
   | "organisation_already_populated"
-  | "canonical_role_unavailable";
+  | "canonical_role_unavailable"
+  | "structure_only_violated";
 
 export class OrganisationLoadError extends Error {
   readonly code: OrganisationLoadFailureCode;
@@ -76,8 +111,18 @@ export interface CanonicalRoleReport {
   missing: readonly string[];
 }
 
+export interface OrganisationLoadEnvironmentReport {
+  /** What the operator typed. It had to equal `name` to get this far. */
+  declared: string;
+  name: string;
+  type: string;
+  cloud: string;
+  confirmationRequired: boolean;
+}
+
 export interface OrganisationLoadReport {
   mode: "dry_run" | "apply";
+  environment: OrganisationLoadEnvironmentReport;
   organisationId: string;
   organisationName: string;
   organisationTimezone: string;
@@ -89,10 +134,25 @@ export interface OrganisationLoadReport {
   counts: Record<PlannedAction, number>;
   canonicalRoles: CanonicalRoleReport;
   excludedNonTradingCentres: readonly string[];
+  /**
+   * People & Access reachability for the loaded organisation, evaluated after
+   * the deferred guard has been forced to run. It is asserted to be ZERO: this
+   * tool loads structure and grants nobody anything, so the organisation it
+   * leaves behind is one that still needs the D5 first-administrator ceremony.
+   */
+  reachableSystemAdministrators: number;
   committed: boolean;
 }
 
 export interface OrganisationLoadOptions {
+  /**
+   * The environment the operator believes they are pointed at, typed out in
+   * full. It is matched against `appMeta().environment.name`; a mismatch refuses
+   * before any database work, on dry runs as well as applies. There is
+   * deliberately no default — including no default of `local`, because an
+   * exemption for local is exactly the hole the gate exists to close.
+   */
+  declaredEnvironment: string;
   /**
    * `organisations.default_timezone` is NOT NULL and is read by Daily Success
    * and Centre Quality to derive the organisation's business date. The approved
@@ -104,6 +164,8 @@ export interface OrganisationLoadOptions {
   environment: Pick<EnvironmentMeta, "cloud" | "name" | "type">;
   /** Dry run is the default. Nothing commits unless this is explicitly true. */
   apply?: boolean;
+  /** Required only when applying to production. Refused anywhere else. */
+  confirmProduction?: boolean;
   now?: () => Date;
 }
 
@@ -144,6 +206,70 @@ interface PlacementRow {
 
 function sameInstant(value: Date, expected: Date): boolean {
   return value.getTime() === expected.getTime();
+}
+
+/**
+ * The environment gate.
+ *
+ * This tool used to assert exact local development on `--apply` and refuse
+ * everything else, which left no reviewed way to create the organisation in
+ * staging or production — so the ADR-0021 D5 ceremony had nothing to target and
+ * no real person could ever be admitted. The assertion is therefore widened, but
+ * only by adopting the SAME gate that ceremony already passes rather than a new
+ * one of this tool's own devising. It differs from the ceremony's in exactly one
+ * respect, deliberately: `local` is in this tool's apply allow-list, because
+ * unlike the ceremony this is a supported local development tool.
+ *
+ * Local is not admitted on the strength of its NAME. When the operator declares
+ * `local`, the unchanged `assertLocalDevelopmentEnvironment` from
+ * `local-identity-linker.ts` must also pass — exact local cloud, local name, and
+ * development type. That guard is not modified, not copied, and not weakened
+ * here; it is called. So a cloud environment that somebody names `local` gets a
+ * refusal, and the local path behaves exactly as it did before.
+ *
+ * What this gate is NOT is the safety property. That is environment-independent
+ * and enforced separately below: the load stands down entirely once the
+ * organisation holds any membership, in every environment, dry run and apply
+ * alike.
+ */
+function assertEnvironmentGate(
+  options: OrganisationLoadOptions,
+  apply: boolean,
+): void {
+  const refusal = evaluateReviewedEnvironmentGate(
+    {
+      declaredEnvironment: options.declaredEnvironment,
+      apply,
+      confirmProduction: options.confirmProduction,
+    },
+    options.environment,
+    {
+      applyEnvironmentNames: ORGANISATION_LOAD_APPLY_ENVIRONMENT_NAMES,
+      confirmationEnvironmentNames: REVIEWED_CONFIRMATION_ENVIRONMENT_NAMES,
+      refusedTypeConsequence: "create the organisation for real",
+      notPermittedNote:
+        "widening that list is a source change under review, not an operator flag",
+    },
+  );
+
+  if (refusal !== null) {
+    throw new OrganisationLoadError(refusal.code, refusal.detail);
+  }
+
+  if (!apply || options.declaredEnvironment.trim() !== "local") {
+    return;
+  }
+
+  try {
+    assertLocalDevelopmentEnvironment(options.environment);
+  } catch {
+    throw new OrganisationLoadError(
+      "local_environment_required",
+      "an environment named local must also report the local cloud and the " +
+        "development type; this one reports " +
+        `cloud ${options.environment.cloud} and type ${options.environment.type}`,
+    );
+  }
 }
 
 function differences(
@@ -503,6 +629,61 @@ async function recordLoadAudit(
   }
 }
 
+/**
+ * Re-checks, after this load's own writes, that the load granted nobody
+ * anything. `assertOrganisationUnpopulated` proves the organisation was empty
+ * when we started; this proves we left it that way, which is the claim the
+ * operator report makes and the reason staff can only arrive through the
+ * Milestone 2C invitation lifecycle.
+ *
+ * `reachable_system_administrator_count` is the People & Access reachability
+ * definition from migration 017 and must be zero here. The organisation this
+ * tool leaves behind is deliberately one that still needs the D5 ceremony.
+ */
+async function assertStructureOnly(
+  transaction: Transaction,
+): Promise<number> {
+  const facts = await transaction.queryRow<{
+    memberships: number;
+    assignments: number;
+    scopes: number;
+    reachable: number;
+  }>`
+    SELECT
+      (SELECT count(*)::integer FROM organisation_memberships
+       WHERE organisation_id = ${BRIGHT_STEPS_ORGANISATION_ID}) AS memberships,
+      (SELECT count(*)::integer FROM role_assignments
+       WHERE organisation_id = ${BRIGHT_STEPS_ORGANISATION_ID}) AS assignments,
+      (SELECT count(*)::integer FROM assignment_scopes
+       WHERE organisation_id = ${BRIGHT_STEPS_ORGANISATION_ID}) AS scopes,
+      reachable_system_administrator_count(${BRIGHT_STEPS_ORGANISATION_ID}) AS reachable
+  `;
+
+  if (facts === null) {
+    throw new OrganisationLoadError(
+      "structure_only_violated",
+      "the structure-only verification query returned no row",
+    );
+  }
+
+  if (
+    facts.memberships > 0 ||
+    facts.assignments > 0 ||
+    facts.scopes > 0 ||
+    facts.reachable > 0
+  ) {
+    throw new OrganisationLoadError(
+      "structure_only_violated",
+      `this load would leave ${facts.memberships} membership(s), ` +
+        `${facts.assignments} assignment(s), ${facts.scopes} scope(s) and ` +
+        `${facts.reachable} reachable System Administrator(s); it creates no ` +
+        "principal, membership, or role assignment",
+    );
+  }
+
+  return facts.reachable;
+}
+
 function countActions(changes: readonly PlannedChange[]): Record<PlannedAction, number> {
   return {
     create: changes.filter((change) => change.action === "create").length,
@@ -518,12 +699,25 @@ function countActions(changes: readonly PlannedChange[]): Record<PlannedAction, 
  * rolls it back, so it is a rehearsal rather than a guess: every constraint,
  * trigger, and canonical-role provisioning step is genuinely exercised and
  * nothing is persisted.
+ *
+ * The People & Access last-administrator guard from migrations 017 and 018 is
+ * DEFERRABLE INITIALLY DEFERRED, and the ADR-0006 provisioning trigger inserts
+ * `role_definitions` and `role_capabilities` rows that enqueue it — so it would
+ * otherwise fire only at COMMIT and never in a transaction that ends in a
+ * rollback. `SET CONSTRAINTS ALL IMMEDIATE` forces it before either outcome, so
+ * a dry run exercises exactly what an apply does instead of skipping the one
+ * check that only ever runs on the real thing.
  */
 export async function loadBrightStepsOrganisationReference(
   options: OrganisationLoadOptions,
 ): Promise<OrganisationLoadReport> {
   const apply = options.apply === true;
   const now = options.now ?? (() => new Date());
+
+  // First, and before centreSuccessDB.begin(): a refused environment must not be
+  // able to open a transaction that could commit. A dry run writes nothing and is
+  // permitted in any environment, but must still name the one it is pointed at.
+  assertEnvironmentGate(options, apply);
 
   if (options.organisationTimezone.trim().length === 0) {
     throw new OrganisationLoadError(
@@ -538,14 +732,6 @@ export async function loadBrightStepsOrganisationReference(
       "organisation_timezone_invalid",
       `${options.organisationTimezone} is not a resolvable IANA timezone`,
     );
-  }
-
-  // This must remain before centreSuccessDB.begin(): a non-local environment
-  // cannot open a transaction that could commit. A dry run writes nothing and
-  // is permitted anywhere so a reviewer can see the plan for the environment
-  // they are about to load.
-  if (apply) {
-    assertLocalDevelopmentEnvironment(options.environment);
   }
 
   const changes: PlannedChange[] = [];
@@ -592,6 +778,12 @@ export async function loadBrightStepsOrganisationReference(
 
     await recordLoadAudit(transaction, changes, now());
 
+    // Force the deferred last-administrator guard from migrations 017 and 018 to
+    // run now, so that a dry run exercises it exactly as an apply would.
+    await transaction.exec`SET CONSTRAINTS ALL IMMEDIATE`;
+
+    const reachableSystemAdministrators = await assertStructureOnly(transaction);
+
     if (apply) {
       await transaction.commit();
       committed = true;
@@ -603,6 +795,15 @@ export async function loadBrightStepsOrganisationReference(
 
     return {
       mode: apply ? "apply" : "dry_run",
+      environment: {
+        declared: options.declaredEnvironment.trim(),
+        name: options.environment.name,
+        type: options.environment.type,
+        cloud: options.environment.cloud,
+        confirmationRequired: environmentRequiresConfirmation(
+          options.environment.name,
+        ),
+      },
       organisationId: BRIGHT_STEPS_ORGANISATION_ID,
       organisationName: BRIGHT_STEPS_ORGANISATION_NAME,
       organisationTimezone: options.organisationTimezone,
@@ -613,6 +814,7 @@ export async function loadBrightStepsOrganisationReference(
       counts,
       canonicalRoles,
       excludedNonTradingCentres: BRIGHT_STEPS_NON_TRADING_CENTRES,
+      reachableSystemAdministrators,
       committed,
     };
   } catch (error) {
@@ -631,6 +833,8 @@ export function formatOrganisationLoadReport(report: OrganisationLoadReport): st
     : "APPLIED — changes committed";
   lines.push(`Bright Steps Academy organisation reference load — ${heading}`);
   lines.push("");
+  lines.push(`environment            ${report.environment.name} (type ${report.environment.type}, cloud ${report.environment.cloud})`);
+  lines.push(`declared by operator   ${report.environment.declared}  (matched against appMeta)`);
   lines.push(`organisation-id        ${report.organisationId}`);
   lines.push(`organisation-name      ${report.organisationName}`);
   lines.push(`organisation-timezone  ${report.organisationTimezone}  (operator input, not approved dataset)`);
@@ -668,6 +872,11 @@ export function formatOrganisationLoadReport(report: OrganisationLoadReport): st
   lines.push("people: none. This tool creates no principal, membership, or role");
   lines.push("assignment. Staff are provisioned only through the Milestone 2C");
   lines.push("invitation lifecycle, which requires a verified Entra identity.");
+  lines.push(
+    `reachable System Administrators after this load: ${report.reachableSystemAdministrators}`,
+  );
+  lines.push("The organisation this leaves behind still needs the ADR-0021 D5");
+  lines.push("first-administrator ceremony before any human can sign in.");
 
   return lines.join("\n");
 }

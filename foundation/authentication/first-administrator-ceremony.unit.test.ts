@@ -29,6 +29,7 @@ const linkerSource = readSource("./local-identity-linker.ts");
 const localBootstrapSource = readSource(
   "./local-first-administrator-bootstrap.ts",
 );
+const gateSource = readSource("../operations/reviewed-environment-gate.ts");
 
 describe("first-administrator ceremony — no API surface", () => {
   test("is reachable only through the Encore exec package commands", () => {
@@ -94,15 +95,48 @@ describe("first-administrator ceremony — no API surface", () => {
   });
 
   test("applying is confined to a closed allow-list that only review can widen", () => {
+    // The three lists moved to operations/reviewed-environment-gate.ts so the
+    // organisation reference load could pass the identical gate instead of a
+    // second copy of it. They are still closed literals in one reviewed place.
+    expect(normalise(gateSource)).toContain(
+      'export const REVIEWED_APPLY_ENVIRONMENT_NAMES = ["staging", "production"] as const;',
+    );
+    expect(normalise(gateSource)).toContain(
+      'export const REVIEWED_CONFIRMATION_ENVIRONMENT_NAMES = ["production"] as const;',
+    );
+    expect(normalise(gateSource)).toContain(
+      'export const REFUSED_APPLY_ENVIRONMENT_TYPES = ["ephemeral", "test"] as const;',
+    );
+  });
+
+  test("the ceremony's own allow-list is still those lists and nothing added", () => {
+    // Not "the shared list plus something". If a later tool needs another
+    // environment it names it in its own policy, as the organisation reference
+    // load names local; this ceremony's list stays the reviewed deployed two.
     expect(normalise(ceremonySource)).toContain(
-      'export const CEREMONY_APPLY_ENVIRONMENT_NAMES = ["staging", "production"] as const;',
+      "export const CEREMONY_APPLY_ENVIRONMENT_NAMES = REVIEWED_APPLY_ENVIRONMENT_NAMES;",
     );
     expect(normalise(ceremonySource)).toContain(
-      'export const CEREMONY_CONFIRMATION_ENVIRONMENT_NAMES = ["production"] as const;',
+      "export const CEREMONY_CONFIRMATION_ENVIRONMENT_NAMES = REVIEWED_CONFIRMATION_ENVIRONMENT_NAMES;",
     );
     expect(normalise(ceremonySource)).toContain(
-      'const REFUSED_APPLY_ENVIRONMENT_TYPES = ["ephemeral", "test"] as const;',
+      normalise(`
+        applyEnvironmentNames: CEREMONY_APPLY_ENVIRONMENT_NAMES,
+        confirmationEnvironmentNames: CEREMONY_CONFIRMATION_ENVIRONMENT_NAMES,
+      `).trim(),
     );
+  });
+
+  test("the gate still runs before the ceremony can open a transaction", () => {
+    const gateIndex = ceremonySource.indexOf(
+      "assertEnvironmentGate(input, dependencies.environment, apply)",
+    );
+    const transactionIndex = ceremonySource.indexOf(
+      "await centreSuccessDB.begin()",
+    );
+    expect(gateIndex).toBeGreaterThan(-1);
+    expect(transactionIndex).toBeGreaterThan(-1);
+    expect(gateIndex).toBeLessThan(transactionIndex);
   });
 });
 
