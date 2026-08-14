@@ -1655,6 +1655,27 @@ textarea {
 
 .workflow-dialog__error p { margin: var(--space-1) 0 0; }
 
+/*
+ * The dialog's other outcome block: something needs attention, but nothing
+ * failed. It carries the warning surface rather than the critical one because
+ * a version that published without an assignment is live and permanent, and
+ * dressing that as an error is the mistake this block exists to avoid.
+ */
+.workflow-dialog__notice {
+  padding: var(--space-3);
+  background: var(--surface-warning);
+  border-inline-start: 0.25rem solid var(--status-warning);
+  border-radius: var(--radius-small);
+}
+
+.workflow-dialog__notice p { margin: 0; }
+.workflow-dialog__notice p + p { margin: var(--space-2) 0 0; }
+
+.workflow-dialog__notice-reason {
+  color: var(--text-secondary);
+  font-size: var(--type-small);
+}
+
 .invitation-package-list {
   display: grid;
   gap: var(--space-4);

@@ -31,6 +31,7 @@ import {
   dueTimeLabel,
   countQuestions,
   localToday,
+  type AssignResult,
   type AssignmentOptions,
   type DraftQuestion,
   type PublishResult,
@@ -974,6 +975,166 @@ describe("publishing", () => {
     ).toBeTruthy();
     // Retry stays available: a refusal is a decision the reader can act on.
     expect(screen.getByRole("button", { name: "Publish" })).toHaveProperty("disabled", false);
+  });
+
+  /* ---------------------------------------------------------------- *
+   * A version that published without an assignment
+   * ---------------------------------------------------------------- */
+
+  const notAssigned: PublishResult = {
+    outcome: "PUBLISHED_NOT_ASSIGNED",
+    versionId: PUBLISHED_VERSION,
+    versionLabel: "Version 2",
+    publishedLocalTime: "2:20pm",
+    reason: "One of the chosen centres is outside what you are authorised for.",
+  };
+
+  const nowAssigned: AssignResult = {
+    outcome: "ASSIGNED",
+    assignment: {
+      scope: "CENTRES",
+      description: "Newstead Test Centre",
+      centreNames: ["Newstead Test Centre"],
+    },
+    schedule: {
+      recurrence: "DAILY",
+      dueLocalTime: "9:00am",
+      timeZoneNote: "in each centre's own local time",
+    },
+  };
+
+  /** Publishes, is told the assignment did not happen, and stops there. */
+  async function publishWithoutAssigning(overrides: Partial<TemplateBuilderGateway> = {}) {
+    const view = renderDialog({
+      publishVersion: () => Promise.resolve(notAssigned),
+      ...overrides,
+    });
+    await screen.findByText("Ashgrove Quality Centre");
+    fireEvent.click(screen.getByRole("checkbox", { name: /Ashgrove Quality Centre/ }));
+    fireEvent.click(screen.getByRole("button", { name: "Publish" }));
+    await screen.findByText("Published — no centres set yet");
+    return view;
+  }
+
+  test("a version that published without an assignment is never shown as a failed publish", async () => {
+    await publishWithoutAssigning();
+
+    // The half that committed, stated as permanent rather than as an outcome
+    // still in doubt.
+    expect(
+      screen.getByText(/Version 2 is live and permanent, published at 2:20pm\./),
+    ).toBeTruthy();
+    expect(screen.getByText(/Only the step that sets where and when it runs was refused\./))
+      .toBeTruthy();
+    // The backend's own wording for the half that did not.
+    expect(
+      screen.getByText("One of the chosen centres is outside what you are authorised for."),
+    ).toBeTruthy();
+
+    // The wording of a refused publish must not appear for a version that is
+    // live: it is the sentence that would send an Area Manager back to press
+    // publish again.
+    expect(screen.queryByText("This wasn't published")).toBeNull();
+    expect(screen.queryByText(/Nothing has been published/)).toBeNull();
+  });
+
+  test("publishing again is not offered, because the backend would refuse it", async () => {
+    await publishWithoutAssigning();
+
+    expect(screen.queryByRole("button", { name: "Publish" })).toBeNull();
+    expect(screen.queryByRole("button", { name: /^Publish/ })).toBeNull();
+    expect(screen.getByText(/Publishing it again isn't possible and isn't needed\./)).toBeTruthy();
+    // Nor the copy written in the future tense about a publish that already
+    // happened, nor an offer to check it on a phone first.
+    expect(screen.queryByText("What you are about to publish")).toBeNull();
+    expect(screen.queryByRole("link", { name: /Preview it on a phone first/ })).toBeNull();
+
+    // The way out leads to the version, which exists.
+    fireEvent.click(screen.getByRole("button", { name: "View published version" }));
+  });
+
+  test("the retry sets only the assignment, and sends the corrected centres", async () => {
+    const publishVersion = vi.fn(() => Promise.resolve(notAssigned));
+    const assignPublishedVersion = vi.fn(() => Promise.resolve(nowAssigned));
+    await publishWithoutAssigning({ publishVersion, assignPublishedVersion });
+
+    // The pickers are still live, so the refusal — a centre outside authority —
+    // is something the reader can act on rather than only read.
+    fireEvent.click(screen.getByRole("checkbox", { name: /Ashgrove Quality Centre/ }));
+    fireEvent.click(screen.getByRole("checkbox", { name: /Newstead Test Centre/ }));
+    fireEvent.change(screen.getByLabelText("Due by"), { target: { value: "07:30" } });
+
+    const retry = screen.getByRole("button", { name: "Set where it runs" });
+    fireEvent.click(retry);
+    fireEvent.click(retry);
+
+    await screen.findByText("Now set to run");
+    // Keyed on the version that now exists, not on the draft's token.
+    expect(assignPublishedVersion).toHaveBeenCalledTimes(1);
+    expect(assignPublishedVersion).toHaveBeenCalledWith({
+      templateId: TEMPLATE_ID,
+      versionId: PUBLISHED_VERSION,
+      assignment: { scope: "CENTRES", centreIds: ["c-2"] },
+      schedule: {
+        recurrence: "DAILY",
+        opensLocalTime: "06:00",
+        dueLocalTime: "07:30",
+        effectiveFrom: localToday(),
+      },
+    });
+    // The publish is never repeated. A second one would be refused, and the
+    // version is already permanent.
+    expect(publishVersion).toHaveBeenCalledTimes(1);
+
+    expect(screen.getByText(/Version 2 was published at 2:20pm and is now set to run\./))
+      .toBeTruthy();
+    expect(
+      screen.getByText(/Newstead Test Centre · 9:00am in each centre's own local time/),
+    ).toBeTruthy();
+  });
+
+  test("a refused retry keeps saying the version is live, in the backend's new words", async () => {
+    await publishWithoutAssigning({
+      assignPublishedVersion: () =>
+        Promise.resolve({
+          outcome: "REFUSED",
+          reason: "That centre already has a daily check due at this time.",
+        }),
+    });
+
+    fireEvent.click(screen.getByRole("button", { name: "Set where it runs" }));
+
+    expect(
+      await screen.findByText("That centre already has a daily check due at this time."),
+    ).toBeTruthy();
+    expect(
+      screen.getByText(/Version 2 is live and permanent, published at 2:20pm\./),
+    ).toBeTruthy();
+    // Superseded, not stacked: one reason at a time, and it is the current one.
+    expect(
+      screen.queryByText("One of the chosen centres is outside what you are authorised for."),
+    ).toBeNull();
+    expect(screen.queryByRole("button", { name: "Publish" })).toBeNull();
+    // Still retryable: a refusal is a decision the reader can act on.
+    expect(screen.getByRole("button", { name: "Set where it runs" })).toHaveProperty(
+      "disabled",
+      false,
+    );
+  });
+
+  test("a retry that could not be confirmed never puts the published version in doubt", async () => {
+    await publishWithoutAssigning({
+      assignPublishedVersion: () => Promise.reject(new Error("timeout")),
+    });
+
+    fireEvent.click(screen.getByRole("button", { name: "Set where it runs" }));
+
+    expect(await screen.findByText("We couldn't confirm this was set to run")).toBeTruthy();
+    expect(screen.getByText(/Version 2 is still live and unchanged/)).toBeTruthy();
+    // The publish is not what was in doubt, so its confirmation copy must not
+    // appear and neither must the control it belongs to.
+    expect(screen.queryByText("We couldn't confirm the publish")).toBeNull();
+    expect(screen.queryByRole("button", { name: "Publish" })).toBeNull();
   });
 
   test("an ambiguous failure never claims nothing was published", async () => {

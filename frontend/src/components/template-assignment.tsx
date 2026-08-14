@@ -1,7 +1,7 @@
 "use client";
 
 import Link from "next/link";
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 
 import { Dialog, LoadingSkeleton, Notice } from "./design-system";
 import {
@@ -9,6 +9,7 @@ import {
   describeAssignment,
   dueTimeLabel,
   templatePreviewRoute,
+  type AssignResult,
   type AssignmentOptions,
   type AssignmentSelection,
   type PublishResult,
@@ -97,11 +98,36 @@ export function CentrePicker({
   );
 }
 
+/**
+ * The state of the last attempt at setting where a published version runs.
+ *
+ * Separate from the publish itself, because by the time any of these can happen
+ * the publish is settled: the version is live and permanent, and the only thing
+ * still being worked on is the assignment.
+ */
+type AssignRetry =
+  | { kind: "refused"; reason: string }
+  | { kind: "assigning" }
+  | { kind: "failed" };
+
 type PublishPhase =
   | { kind: "configuring" }
   | { kind: "publishing" }
   | { kind: "failed" }
   | { kind: "refused"; reason: string }
+  | {
+      /**
+       * The version went live and the assignment did not. This is not a failed
+       * publish and must never be shown as one: publishing again is not
+       * offered, because the draft has already been snapshotted and the backend
+       * would refuse the second press. Only the assignment is retried.
+       */
+      kind: "not-assigned";
+      versionId: string;
+      versionLabel: string;
+      publishedLocalTime: string;
+      retry: AssignRetry;
+    }
   | {
       kind: "published";
       versionId: string;
@@ -109,6 +135,26 @@ type PublishPhase =
       message: string;
       detail?: string;
     };
+
+/**
+ * The schedule both commands on this surface send.
+ *
+ * Times are wall-clock and applied in each centre's own zone by the backend,
+ * which stays authoritative for what they mean.
+ */
+function scheduleFor(dueTime: string): ScheduleSelection {
+  return {
+    recurrence: "DAILY",
+    opensLocalTime: DEFAULT_OPENS_TIME,
+    dueLocalTime: dueTime,
+    effectiveFrom: todayLocalDate(),
+  };
+}
+
+/** " at 2:20pm", or nothing where the backend gave no timestamp to print. */
+function publishedAtClause(publishedLocalTime: string): string {
+  return publishedLocalTime ? ` at ${publishedLocalTime}` : "";
+}
 
 export function PublishDialog({
   gateway,
@@ -136,7 +182,14 @@ export function PublishDialog({
 
   // A synchronous lock. Publishing is the one irreversible action here, and two
   // clicks dispatched in the same batch would both see the pre-render state.
+  // Once a version exists it is never released, because the publish path must
+  // not reopen.
   const inFlight = useRef(false);
+
+  // Retrying the assignment gets its own lock rather than sharing the one
+  // above: the two are locked out for different reasons and for different
+  // lengths of time, and the assignment retry is meant to be repeatable.
+  const assigning = useRef(false);
 
   useEffect(() => {
     let current = true;
@@ -156,8 +209,12 @@ export function PublishDialog({
     };
   }, [gateway]);
 
-  const selection: AssignmentSelection =
-    scope === "PORTFOLIO" ? { scope: "PORTFOLIO" } : { scope: "CENTRES", centreIds };
+  // Memoised because two commands now close over it. Rebuilt on every render it
+  // would rebuild both of their callbacks on every render too.
+  const selection: AssignmentSelection = useMemo(
+    () => (scope === "PORTFOLIO" ? { scope: "PORTFOLIO" } : { scope: "CENTRES", centreIds }),
+    [centreIds, scope],
+  );
 
   const ready =
     optionsState === "ready" &&
@@ -169,14 +226,7 @@ export function PublishDialog({
     inFlight.current = true;
     setPhase({ kind: "publishing" });
 
-    // Times are wall-clock and applied in each centre's own zone by the
-    // backend, which stays authoritative for what they mean.
-    const schedule: ScheduleSelection = {
-      recurrence: "DAILY",
-      opensLocalTime: DEFAULT_OPENS_TIME,
-      dueLocalTime: dueTime,
-      effectiveFrom: todayLocalDate(),
-    };
+    const schedule = scheduleFor(dueTime);
 
     void gateway.publishVersion({ templateId, lockVersion, assignment: selection, schedule }).then(
       (result: PublishResult) => {
@@ -216,10 +266,45 @@ export function PublishDialog({
           });
           return;
         }
-        // A refusal is a decision, not an outage. The backend's wording is
-        // shown as it was given.
+        if (result.outcome === "PUBLISHED_NOT_ASSIGNED") {
+          // Half of a two-command sequence committed. The version is live and
+          // permanent, so `inFlight` stays held: pressing publish again is not
+          // a recovery, it is a command the backend would refuse. Only the
+          // assignment is still outstanding, and only that is retried.
+          setPhase({
+            kind: "not-assigned",
+            versionId: result.versionId,
+            versionLabel: result.versionLabel,
+            publishedLocalTime: result.publishedLocalTime,
+            retry: { kind: "refused", reason: result.reason },
+          });
+          return;
+        }
+        if (result.outcome === "REFUSED") {
+          // A refusal is a decision, not an outage. The backend's wording is
+          // shown as it was given.
+          inFlight.current = false;
+          setPhase({ kind: "refused", reason: result.reason });
+          return;
+        }
+        // Every outcome is matched by name, and this tail is what keeps it that
+        // way. `PUBLISHED_NOT_ASSIGNED` reached the refusal branch in the first
+        // place because it carries a `reason` exactly as `REFUSED` does, so
+        // narrowing left both assignable and the fall-through type-checked in
+        // silence. An outcome added to `PublishResult` now stops compiling here
+        // instead of quietly rendering "This wasn't published" over a version
+        // that is live.
+        //
+        // Unreachable while the union is matched, so this sets the
+        // ambiguous-failure phase rather than throwing: an exception raised in
+        // this handler is not caught by the rejection handler beside it, and
+        // would leave the dialog stuck on "Publishing…" saying nothing at all.
+        // "We couldn't confirm the publish" is the honest reading of an outcome
+        // this build does not know how to name.
         inFlight.current = false;
-        setPhase({ kind: "refused", reason: result.reason });
+        setPhase({ kind: "failed" });
+        const unhandled: never = result;
+        return unhandled;
       },
       () => {
         // The request may have committed and lost its response, so the copy
@@ -230,6 +315,63 @@ export function PublishDialog({
       },
     );
   }, [dueTime, gateway, lockVersion, ready, selection, templateId]);
+
+  /**
+   * Setting where and when an already-published version runs.
+   *
+   * This is the second command on its own, keyed on the version that now
+   * exists rather than on the draft's token. The publish is not repeated and
+   * cannot be. The pickers stay live above this, so a refusal about the centres
+   * chosen is something the reader can act on rather than only read.
+   */
+  const setWhereItRuns = useCallback(() => {
+    if (phase.kind !== "not-assigned" || assigning.current || !ready) return;
+    const live = phase;
+    assigning.current = true;
+    setPhase({ ...live, retry: { kind: "assigning" } });
+
+    void gateway
+      .assignPublishedVersion({
+        templateId,
+        versionId: live.versionId,
+        assignment: selection,
+        schedule: scheduleFor(dueTime),
+      })
+      .then(
+        (result: AssignResult) => {
+          assigning.current = false;
+          if (result.outcome === "ASSIGNED") {
+            setPhase({
+              kind: "published",
+              versionId: live.versionId,
+              // Not "Published" — the reader watched that happen already, and
+              // the news here is the part that had not.
+              title: "Now set to run",
+              message: `${live.versionLabel} was published${publishedAtClause(
+                live.publishedLocalTime,
+              )} and is now set to run.`,
+              detail: `${result.assignment.description} · ${result.schedule.dueLocalTime} ${result.schedule.timeZoneNote}`,
+            });
+            return;
+          }
+          if (result.outcome === "REFUSED") {
+            setPhase({ ...live, retry: { kind: "refused", reason: result.reason } });
+            return;
+          }
+          // The same guard on the second command's union. `AssignResult` has
+          // two members today; a third would otherwise land in the refusal
+          // branch and be shown as the backend's own wording for a refusal it
+          // never made.
+          setPhase({ ...live, retry: { kind: "failed" } });
+          const unhandled: never = result;
+          return unhandled;
+        },
+        () => {
+          assigning.current = false;
+          setPhase({ ...live, retry: { kind: "failed" } });
+        },
+      );
+  }, [dueTime, gateway, phase, ready, selection, templateId]);
 
   if (phase.kind === "published") {
     return (
@@ -258,33 +400,81 @@ export function PublishDialog({
   }
 
   const publishing = phase.kind === "publishing";
+  // The version is live from here on. Everything below that reads this branch
+  // is saying what already happened, never what is about to.
+  const live = phase.kind === "not-assigned" ? phase : undefined;
+  const retrying = live?.retry.kind === "assigning";
 
   return (
     <Dialog
       eyebrow="Publish"
-      title="Where and when should this run?"
-      onDismiss={onDismiss}
+      title={live ? "Published — no centres set yet" : "Where and when should this run?"}
+      // Dismissing opens the version rather than closing on a screen that no
+      // longer exists: it was published, and the editor has to say so.
+      onDismiss={live ? () => onPublished(live.versionId) : onDismiss}
       footer={
-        <>
-          <button
-            className="button button--secondary"
-            type="button"
-            onClick={onDismiss}
-            disabled={publishing}
-          >
-            Cancel
-          </button>
-          <button
-            className="button button--accent"
-            type="button"
-            onClick={publish}
-            disabled={!ready || publishing}
-          >
-            {publishing ? "Publishing…" : "Publish"}
-          </button>
-        </>
+        live ? (
+          <>
+            <button
+              className="button button--secondary"
+              type="button"
+              onClick={() => onPublished(live.versionId)}
+              disabled={retrying}
+            >
+              View published version
+            </button>
+            {/* Never "Publish" again. This is the second command on its own. */}
+            <button
+              className="button button--accent"
+              type="button"
+              onClick={setWhereItRuns}
+              disabled={!ready || retrying}
+            >
+              {retrying ? "Setting…" : "Set where it runs"}
+            </button>
+          </>
+        ) : (
+          <>
+            <button
+              className="button button--secondary"
+              type="button"
+              onClick={onDismiss}
+              disabled={publishing}
+            >
+              Cancel
+            </button>
+            <button
+              className="button button--accent"
+              type="button"
+              onClick={publish}
+              disabled={!ready || publishing}
+            >
+              {publishing ? "Publishing…" : "Publish"}
+            </button>
+          </>
+        )
       }
     >
+      {/* Above the picker, and outside the branch that depends on the centre
+          list loading: what a version did is not conditional on what this
+          screen can still read. */}
+      {live ? (
+        <div className="workflow-dialog__notice" role="alert">
+          <p>
+            {live.versionLabel} is live and permanent
+            {live.publishedLocalTime ? `, published at ${live.publishedLocalTime}` : ""}. Only the
+            step that sets where and when it runs was refused.
+          </p>
+          {live.retry.kind === "refused" ? (
+            // The backend's own wording, shown as it was given.
+            <p className="workflow-dialog__notice-reason">{live.retry.reason}</p>
+          ) : null}
+          <p className="workflow-dialog__notice-reason">
+            Publishing it again isn&apos;t possible and isn&apos;t needed.
+          </p>
+        </div>
+      ) : null}
+
       {optionsState === "loading" ? (
         <LoadingSkeleton label="Checking which centres you can assign to." rows={2} />
       ) : optionsState === "error" || !options ? (
@@ -366,35 +556,41 @@ export function PublishDialog({
             </p>
           </fieldset>
 
-          <div className="publish-summary">
-            <h3>What you are about to publish</h3>
-            <dl>
-              <div>
-                <dt>Questions</dt>
-                <dd>
-                  {questionCount} question{questionCount === 1 ? "" : "s"}
-                </dd>
-              </div>
-              <div>
-                <dt>Centres</dt>
-                <dd>{describeAssignment(selection, options)}</dd>
-              </div>
-              <div>
-                <dt>Due</dt>
-                <dd>
-                  {RECURRENCE_LABEL.DAILY.toLowerCase()} by {dueTimeLabel(dueTime)}
-                </dd>
-              </div>
-            </dl>
-            <p className="publish-summary__detail">
-              Once published, this version cannot be changed. To change it later you start a new
-              draft, and this version stays in history exactly as it is.
-            </p>
-            <p className="publish-summary__detail">
-              <Link href={templatePreviewRoute(templateId)}>Preview it on a phone first</Link> if
-              you have not already.
-            </p>
-          </div>
+          {/* Withheld once the version exists. Every line of it is written in
+              the future tense about a publish that has already happened, and
+              the phone preview is an offer to check something before it goes
+              out. */}
+          {live ? null : (
+            <div className="publish-summary">
+              <h3>What you are about to publish</h3>
+              <dl>
+                <div>
+                  <dt>Questions</dt>
+                  <dd>
+                    {questionCount} question{questionCount === 1 ? "" : "s"}
+                  </dd>
+                </div>
+                <div>
+                  <dt>Centres</dt>
+                  <dd>{describeAssignment(selection, options)}</dd>
+                </div>
+                <div>
+                  <dt>Due</dt>
+                  <dd>
+                    {RECURRENCE_LABEL.DAILY.toLowerCase()} by {dueTimeLabel(dueTime)}
+                  </dd>
+                </div>
+              </dl>
+              <p className="publish-summary__detail">
+                Once published, this version cannot be changed. To change it later you start a new
+                draft, and this version stays in history exactly as it is.
+              </p>
+              <p className="publish-summary__detail">
+                <Link href={templatePreviewRoute(templateId)}>Preview it on a phone first</Link> if
+                you have not already.
+              </p>
+            </div>
+          )}
 
           {phase.kind === "refused" ? (
             <div className="workflow-dialog__error" role="alert">
@@ -409,6 +605,16 @@ export function PublishDialog({
               <p>
                 We couldn&apos;t confirm whether this was published. Your settings are still here;
                 it&apos;s safe to try again, and it will not publish twice.
+              </p>
+            </div>
+          ) : null}
+
+          {live?.retry.kind === "failed" ? (
+            <div className="workflow-dialog__error" role="alert">
+              <strong>We couldn&apos;t confirm this was set to run</strong>
+              <p>
+                {live.versionLabel} is still live and unchanged — this affects only where and when
+                it runs. It&apos;s safe to try again.
               </p>
             </div>
           ) : null}
