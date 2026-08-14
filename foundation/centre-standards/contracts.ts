@@ -79,3 +79,26 @@ export interface CompleteStandardsCheckResponse {
   issueRaised?: boolean;
   completedByRequester?: boolean;
 }
+
+/**
+ * Seeds the synthetic Centre Standards pilot into an environment permitted to
+ * hold it. Restricted to local development and the exact `staging`
+ * environment, and to `system.configure`.
+ */
+export interface SeedSyntheticStandardsPilotRequest {
+  centreId: string;
+  /** `YYYY-MM-DD`. Defaults to today, so the pilot opens straight away. */
+  effectiveFrom?: string;
+  /** Deploy it active so occurrences generate. Defaults to true. */
+  activate?: boolean;
+}
+
+export interface SeedSyntheticStandardsPilotResponse {
+  templateId: string;
+  versionId: string;
+  deploymentId: string;
+  scheduleRevisionId: string;
+  questionCount: number;
+  effectiveFrom: string;
+  activated: boolean;
+}

@@ -168,6 +168,7 @@ export namespace foundation {
             this.returnCorrectiveAction = this.returnCorrectiveAction.bind(this)
             this.revokePerson = this.revokePerson.bind(this)
             this.saveQuarterlyAuditResponse = this.saveQuarterlyAuditResponse.bind(this)
+            this.seedSyntheticStandardsPilotRoute = this.seedSyntheticStandardsPilotRoute.bind(this)
             this.sendInvitation = this.sendInvitation.bind(this)
             this.startCorrectiveAction = this.startCorrectiveAction.bind(this)
             this.startQuarterlyAudit = this.startQuarterlyAudit.bind(this)
@@ -559,6 +560,17 @@ export namespace foundation {
             // Now make the actual call to the API
             const resp = await this.baseClient.callTypedAPI("PUT", `/quarterly-reviews/audits/${encodeURIComponent(auditId)}/responses/${encodeURIComponent(itemId)}`, JSON.stringify(params))
             return await resp.json() as quarterly_reviews.SaveAuditResponseResponse
+        }
+
+        /**
+         * Administrative, not part of the Centre Standards experience. It is guarded by
+         * `system.configure` and refused outright anywhere but local development and
+         * the exact `staging` environment.
+         */
+        public async seedSyntheticStandardsPilotRoute(params: centre_standards.SeedSyntheticStandardsPilotRequest): Promise<centre_standards.SeedSyntheticStandardsPilotResponse> {
+            // Now make the actual call to the API
+            const resp = await this.baseClient.callTypedAPI("POST", `/admin/centre-standards/synthetic-pilot`, JSON.stringify(params))
+            return await resp.json() as centre_standards.SeedSyntheticStandardsPilotResponse
         }
 
         public async sendInvitation(invitationId: string, params: people_access.VersionedInvitationRequest): Promise<people_access.InvitationSummary> {
@@ -1429,6 +1441,34 @@ export namespace centre_standards {
     }
 
     export type OperationalTimeliness = "DUE" | "OVERDUE" | "COMPLETED_ON_TIME" | "COMPLETED_LATE"
+
+    /**
+     * Seeds the synthetic Centre Standards pilot into an environment permitted to
+     * hold it. Restricted to local development and the exact `staging`
+     * environment, and to `system.configure`.
+     */
+    export interface SeedSyntheticStandardsPilotRequest {
+        centreId: string
+        /**
+         * `YYYY-MM-DD`. Defaults to today, so the pilot opens straight away.
+         */
+        effectiveFrom?: string
+
+        /**
+         * Deploy it active so occurrences generate. Defaults to true.
+         */
+        activate?: boolean
+    }
+
+    export interface SeedSyntheticStandardsPilotResponse {
+        templateId: string
+        versionId: string
+        deploymentId: string
+        scheduleRevisionId: string
+        questionCount: number
+        effectiveFrom: string
+        activated: boolean
+    }
 
     export interface StandardsAnswerOption {
         /**

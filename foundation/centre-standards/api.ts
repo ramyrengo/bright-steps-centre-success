@@ -4,6 +4,8 @@ import type { CentreSuccessAuthData } from "../authentication/auth-handler";
 import type {
   CompleteStandardsCheckRequest,
   CompleteStandardsCheckResponse,
+  SeedSyntheticStandardsPilotRequest,
+  SeedSyntheticStandardsPilotResponse,
   StandardsCheckDetailResponse,
   StandardsOccurrenceRequest,
   StandardsWorkspaceResponse,
@@ -13,6 +15,8 @@ import {
   completeStandardsCheck,
   loadStandardsCheckDetail,
 } from "./service";
+import { SyntheticStandardsSeedError } from "./synthetic-environment";
+import { seedSyntheticStandardsPilotForPrincipal } from "./synthetic-pilot-operation";
 import { CentreStandardsError } from "./types";
 
 function requirePrincipalId(): string {
@@ -86,4 +90,37 @@ export const completeStandardsOccurrence = api(
   { expose: true, auth: true, method: "POST", path: "/standards/checks/:occurrenceId/complete" },
   (request: CompleteStandardsCheckRequest): Promise<CompleteStandardsCheckResponse> =>
     completeStandardsCheckEndpoint(request),
+);
+
+export async function seedSyntheticStandardsPilotEndpoint(
+  request: SeedSyntheticStandardsPilotRequest,
+): Promise<SeedSyntheticStandardsPilotResponse> {
+  try {
+    return await seedSyntheticStandardsPilotForPrincipal({
+      principalId: requirePrincipalId(),
+      centreId: request.centreId,
+      ...(request.effectiveFrom ? { effectiveFrom: request.effectiveFrom } : {}),
+      ...(request.activate === undefined ? {} : { activate: request.activate }),
+    });
+  } catch (error) {
+    // The environment refusal is a precondition, not a permission problem, and
+    // saying so plainly is the difference between "you may not" and "not here".
+    if (error instanceof SyntheticStandardsSeedError) {
+      throw APIError.failedPrecondition(error.message).withDetails({
+        reason: "synthetic_pilot_unavailable",
+      });
+    }
+    return toApiError(error);
+  }
+}
+
+/**
+ * Administrative, not part of the Centre Standards experience. It is guarded by
+ * `system.configure` and refused outright anywhere but local development and
+ * the exact `staging` environment.
+ */
+export const seedSyntheticStandardsPilotRoute = api(
+  { expose: true, auth: true, method: "POST", path: "/admin/centre-standards/synthetic-pilot" },
+  (request: SeedSyntheticStandardsPilotRequest): Promise<SeedSyntheticStandardsPilotResponse> =>
+    seedSyntheticStandardsPilotEndpoint(request),
 );
