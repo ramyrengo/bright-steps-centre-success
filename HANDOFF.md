@@ -13,8 +13,9 @@
 | **Active worktree** | `/Users/ramymorkos/Documents/Claude/bright-steps-centre-success-budgets` |
 | **Branch** | `feature/centre-budgets` |
 | **Base** | `origin/main` at `24f0bcc` |
-| **HEAD** | `bd22bf9` (8 commits ahead of main) |
-| **Working tree** | **CLEAN** except untracked `HANDOFF.md` (this file). |
+| **Last code commit** | `bd22bf9` — 8 ahead of `main`. All gates green here; §7's test counts refer to it. **This is the review target.** |
+| **HEAD** | Tip of `feature/centre-budgets`. Everything after `bd22bf9` is this handoff — documentation only, no code. Check with `git log --oneline -3`. |
+| **Working tree** | **CLEAN.** `HANDOFF.md` is tracked as of `e9cc436`. |
 
 **Stack:** Encore.ts + PostgreSQL modular monolith; Next.js/React/TypeScript frontend; Microsoft Entra ID authentication; PostgreSQL-owned authorisation.
 
@@ -23,7 +24,7 @@
 | Path suffix | Branch | HEAD | State |
 | --- | --- | --- | --- |
 | *(main)* | `main` | `24f0bcc` | Has uncommitted governance docs — **do not touch** |
-| `-budgets` | `feature/centre-budgets` | `bd22bf9` | **Active. This handoff.** |
+| `-budgets` | `feature/centre-budgets` | `bd22bf9` + handoff | **Active. This handoff.** |
 | `-form-builder-integration` | `integration/form-builder` | `9d099c6` | **WIP, gate FAILS.** See §4 |
 | `-form-builder-{base,backend,ux}` | — | `9866018`/`1768630`/`149e055` | Synced, idle |
 | `-standards-{backend,ux}`, `-4a-integration`, `-product`, `-production-readiness` | — | — | Idle |
