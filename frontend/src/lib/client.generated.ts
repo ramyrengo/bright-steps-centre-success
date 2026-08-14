@@ -137,6 +137,7 @@ export namespace foundation {
             this.getPeopleOptions = this.getPeopleOptions.bind(this)
             this.getPerson = this.getPerson.bind(this)
             this.getPersonAccess = this.getPersonAccess.bind(this)
+            this.getPersonEffectiveAccess = this.getPersonEffectiveAccess.bind(this)
             this.getPersonHistory = this.getPersonHistory.bind(this)
             this.getPortfolioBudgetMonth = this.getPortfolioBudgetMonth.bind(this)
             this.getQuarterlyAudit = this.getQuarterlyAudit.bind(this)
@@ -331,6 +332,12 @@ export namespace foundation {
             return await resp.json() as people_access.PersonAccessResponse
         }
 
+        public async getPersonEffectiveAccess(principalId: string): Promise<people_access.EffectiveAccessResponse> {
+            // Now make the actual call to the API
+            const resp = await this.baseClient.callTypedAPI("GET", `/admin/people/${encodeURIComponent(principalId)}/effective-access`)
+            return await resp.json() as people_access.EffectiveAccessResponse
+        }
+
         public async getPersonHistory(principalId: string): Promise<people_access.AccessHistoryResponse> {
             // Now make the actual call to the API
             const resp = await this.baseClient.callTypedAPI("GET", `/admin/people/${encodeURIComponent(principalId)}/history`)
@@ -493,6 +500,16 @@ export namespace authentication {
     export interface AuthenticationParams {
         authorization: string
     }
+}
+
+export namespace authorization {
+    export type AuthorisationContextFailureCode = "invalid_identifier" | "principal_missing" | "principal_inactive" | "organisation_missing" | "organisation_inactive" | "membership_missing" | "membership_ambiguous" | "assignment_context_invalid"
+
+    export type CentreAuthorisationIssueReason = "hierarchy_ambiguous" | "hierarchy_cycle" | "hierarchy_inactive"
+
+    export type DenyReason = "invalid_context" | "invalid_resource" | "principal_inactive" | "active_organisation_mismatch" | "membership_missing" | "membership_ambiguous" | "capability_missing" | "scope_mismatch"
+
+    export type FoundationCapability = "organisation.read" | "centre.read" | "centre.manage" | "principal.read" | "principal.manage" | "identity.mapping.manage" | "assignment.read" | "assignment.manage" | "system.configure" | "system.health.read" | "budget.summary.read" | "budget.position.read" | "budget.actual.enter" | "quarterly_audit.read" | "quarterly_audit.conduct" | "quarterly_audit.finalise" | "quarterly_audit.acknowledge" | "finding.read" | "corrective_action.read" | "corrective_action.remediate" | "corrective_action.verify" | "evidence.read" | "evidence.upload" | "compliance.oversight.read" | "invitation.read" | "invitation.manage" | "access_history.read" | "privileged_access.approve" | "access.change.request"
 }
 
 export namespace centre_budgets {
@@ -1462,6 +1479,65 @@ export namespace people_access {
         reason: string
     }
 
+    /**
+     * Why no capability could be evaluated at all. Each value is a state the
+     * authorisation context loader refuses to build a context for, which is also
+     * the answer to the support question that prompted the lookup — "cannot sign
+     * in" is usually `principal_inactive` or `membership_missing`.
+     */
+    export type EffectiveAccessBlocker = authorization.AuthorisationContextFailureCode
+
+    /**
+     * One authorisation decision, reported exactly as the policy returned it.
+     */
+    export type EffectiveAccessDecision = {
+        allowed: true
+        assignmentId: string
+        roleKey: string
+    } | {
+        allowed: false
+        reason: authorization.DenyReason
+    }
+
+    /**
+     * The report is a union rather than one shape with optional fields so that a
+     * blocked lookup cannot be read as "this person has no access anywhere". An
+     * empty capability list is a conclusion; a blocker is the absence of one.
+     */
+    export type EffectiveAccessReport = {
+        evaluated: false
+        principalId: string
+        evaluatedAt: string
+        blockedBy: EffectiveAccessBlocker
+    } | {
+        evaluated: true
+        principalId: string
+        evaluatedAt: string
+        capabilities: EffectiveCapabilityAccess[]
+        unevaluatedCentres: UnevaluatedCentre[]
+    }
+
+    /**
+     * Wraps the report because Encore requires a named interface at the response
+     * root, and the report itself is deliberately a union so that a blocked lookup
+     * cannot be mistaken for "no access anywhere".
+     */
+    export interface EffectiveAccessResponse {
+        report: EffectiveAccessReport
+    }
+
+    export interface EffectiveCapabilityAccess {
+        capability: authorization.FoundationCapability
+        organisation: EffectiveAccessDecision
+        centres: EffectiveCentreAccess[]
+    }
+
+    export interface EffectiveCentreAccess {
+        centreId: string
+        centreName: string
+        decision: EffectiveAccessDecision
+    }
+
     export type InvitationScopeSummary = {
         scopeType: "organisation"
         displayName: string
@@ -1581,6 +1657,18 @@ export namespace people_access {
     } | {
         scopeType: "centre"
         centreId: string
+    }
+
+    /**
+     * A centre deliberately left out of the matrix because its hierarchy could not
+     * be resolved. It is reported rather than dropped: an administrator reading
+     * "allowed at no centre" must be able to tell a real denial from a centre this
+     * report never managed to ask about.
+     */
+    export interface UnevaluatedCentre {
+        centreId: string
+        centreName: string
+        reason: authorization.CentreAuthorisationIssueReason
     }
 
     export interface VersionedInvitationRequest {
