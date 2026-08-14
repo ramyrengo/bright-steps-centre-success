@@ -28,6 +28,7 @@ import {
   Section,
   StatusBadge,
 } from "./design-system";
+import { historyActionLabel } from "./people-access-labels";
 import {
   BusinessWorkspaceGate,
   formatDate,
@@ -203,7 +204,7 @@ export function PeopleAccessWorkspace() {
           <Link className="button" href="/admin/people/invite">Invite user</Link>
         </div>
         {error ? <WorkflowState kind="error" title="People & Access unavailable" message="Your authorised organisation view could not be loaded." onRetry={() => { setError(false); setAttempt((value) => value + 1); }} /> : null}
-        {!error && filtered === null ? <WorkflowState kind="loading" title="Loading People & Access" message="Checking current PostgreSQL permissions and access records…" /> : null}
+        {!error && filtered === null ? <WorkflowState kind="loading" title="Loading People & Access" message="Checking current permissions and access records…" /> : null}
         {filtered && data ? (
           <>
             <MetricRow>
@@ -732,7 +733,7 @@ export function PersonAccessWorkspace({ principalId }: Readonly<{ principalId: s
 
   return (
     <BusinessWorkspaceGate>
-      <WorkflowShell eyebrow="People & Access" title="Manage access" summary="Assignments remain independent. Changes are effective-dated and re-authorised from PostgreSQL on every request.">
+      <WorkflowShell eyebrow="People & Access" title="Manage access" summary="Assignments remain independent. Changes are effective-dated and re-authorised on every request.">
         {error ? <WorkflowState kind="error" title="Access change unavailable" message={error} onRetry={() => { setError(""); load(); }} /> : null}
         {!person || !options ? (!error ? <WorkflowState kind="loading" title="Loading current access" message="Checking active assignments and valid scope options…" /> : null) : (
           <div className="workflow-stack">
@@ -853,7 +854,7 @@ export function PersonHistoryWorkspace({ principalId }: Readonly<{ principalId: 
           <ol className="timeline card">
             {history.events.map((event) => (
               <li key={event.id}>
-                <span><strong>{event.action.replaceAll("_", " ")}</strong></span>
+                <span><strong>{historyActionLabel(event.action)}</strong></span>
                 <span className="timeline__when">{formatDate(event.occurredAt)} · {event.actorDisplayName ?? "System workflow"}</span>
                 <p>{event.reasonRecorded ? "A reason was recorded." : "No reason field applies."}</p>
               </li>
@@ -1099,7 +1100,14 @@ export function InvitationAcceptanceWorkspace() {
       const reason = typeof failure === "object" && failure !== null && "details" in failure
         ? Reflect.get(Reflect.get(failure, "details") ?? {}, "reason")
         : undefined;
-      setError(reason === "invitation_expired" ? "expired" : reason === "invitation_cancelled" || reason === "invitation_superseded" || reason === "invitation_replayed" ? "cancelled" : reason === "identity_review_required" ? "review" : "unavailable");
+      const outcomeKind = reason === "invitation_expired" ? "expired" : reason === "invitation_cancelled" || reason === "invitation_superseded" || reason === "invitation_replayed" ? "cancelled" : reason === "identity_review_required" ? "review" : "unavailable";
+      setError(outcomeKind);
+      // A code that is expired, cancelled or sent to identity review is spent:
+      // nothing the reader does will make it work, so leaving it in the field
+      // invites a pointless resubmission and leaves a dead secret on screen.
+      // `unavailable` is deliberately excluded — that outcome tells the reader
+      // to check the code and try again, which they cannot do if it is gone.
+      if (outcomeKind !== "unavailable") setCode("");
     } finally { setWorking(false); }
   };
 

@@ -385,7 +385,9 @@ describe("access history presentation", () => {
     });
     render(<PersonHistoryWorkspace principalId={PRINCIPAL} />);
 
-    expect(await screen.findByText("assignment added")).toBeDefined();
+    // `assignment_added` carries no mapped label, so this also exercises the
+    // fallback: readable, capitalised, and with no internal punctuation left.
+    expect(await screen.findByText("Assignment added")).toBeDefined();
     expect(screen.getByText(/Synthetic System Administrator/u)).toBeDefined();
     expect(screen.getByText("A reason was recorded.")).toBeDefined();
     const timeline = document.querySelector(".timeline");
