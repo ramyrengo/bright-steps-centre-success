@@ -92,12 +92,13 @@ async function activeSchedules(
       ON schedule.organisation_id = deployment.organisation_id
      AND schedule.centre_id = deployment.centre_id
      AND schedule.deployment_id = deployment.id
+     AND schedule.centre_timezone = centre.timezone
      AND schedule.effective_from <= (${decisionAt} AT TIME ZONE centre.timezone)::date
     JOIN audit_template_versions AS version
-      ON version.organisation_id = deployment.organisation_id
+     ON version.organisation_id = deployment.organisation_id
      AND version.id = deployment.template_version_id
      AND version.template_subtype = 'OPERATIONAL_STANDARD'
-     AND version.status = 'active'
+     AND version.status IN ('active', 'superseded')
     WHERE deployment.status = 'ACTIVE'
       AND centre.status = 'active'
       AND deployment.effective_from <= (${decisionAt} AT TIME ZONE centre.timezone)::date

@@ -164,6 +164,34 @@ The implementation normalises stable templates from immutable versions, ordered 
 
 Findings retain their originating response. Corrective actions retain owner, due/severity/evidence/verification configuration and an append-only transition history. Immediate configured findings/actions may exist before audit finalisation; uniqueness constraints make reconciliation retry-safe. A response correction can move the paired records to `WITHDRAWN` only with actor, time, and reason metadata; later qualifying outcomes reactivate the same IDs. `CRITICAL` or immediate outcome configuration is invalid unless independent verification is required. Performance bands use complete half-open ranges with the final `100` inclusive and carry the versioned internal-threshold classification used by oversight. Acknowledgements and positive observations are separate immutable records. Private evidence metadata and object versions link through target-specific, tenant-constrained join tables rather than an unchecked cross-tenant polymorphic identifier.
 
+### Authorised Area Manager Template & Form Builder physical shape
+
+The builder reuses `audit_templates`, `audit_template_versions`,
+`audit_template_sections`, and `audit_template_items` for operational template
+identity and immutable published history. Mutable
+`operational_template_drafts`, draft sections, and draft questions form the
+authoring workspace; publication copies one validated snapshot into the
+existing `OPERATIONAL_STANDARD` version lineage. Published versions record the
+publisher, publication time, metadata and existing source classification, and
+the database rejects later version or child-content mutation.
+
+`operational_template_assignments` records the attributable centre-selection
+intent. Its centre relation points to the existing
+`operational_standard_deployments`, and each deployment keeps using the
+existing schedule-revision and occurrence engine. The initial backend schedule
+contract is `DAILY` only. Each schedule revision stores and validates the
+centre's authoritative IANA timezone so later occurrences retain pinned civil
+time. Portfolio assignment is resolved from current PostgreSQL authority and
+materialised only as validated per-centre deployment rows; it is not stored as
+client-asserted authority.
+
+The reused lifecycle columns remain non-null enums with safe initial defaults:
+template roots start `active` (not retired), versions start `draft`, and
+deployments start `DRAFT`. Builder publication requires non-null publisher and
+publication time, while retirement atomically persists root `inactive`,
+retirement attribution, and `INACTIVE` for every active deployment. The pinned
+published version and its content remain unchanged.
+
 ## Quality and QIP module
 
 | Aggregate/entity | Purpose and key relationships |

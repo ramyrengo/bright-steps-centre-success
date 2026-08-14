@@ -380,11 +380,11 @@ describe.sequential("Milestone 4A Centre Standards vertical slice", () => {
     await expect(centreSuccessDB.exec`
       INSERT INTO operational_standard_schedule_revisions (
         id, organisation_id, centre_id, deployment_id, revision, frequency,
-        opens_local_time, due_local_time, effective_from
+        opens_local_time, due_local_time, effective_from, centre_timezone
       ) VALUES (
         ${randomUUID()}, ${ORGANISATION}, ${CENTRES[0]},
         ${SYNTHETIC_STANDARDS_PILOT_IDS.deploymentId}, 3, 'DAILY',
-        '10:00', '18:00', '2026-08-14'
+        '10:00', '18:00', '2026-08-14', 'Australia/Sydney'
       )
     `).rejects.toThrow(/contiguous/);
   });
@@ -747,11 +747,11 @@ describe.sequential("Milestone 4A Centre Standards vertical slice", () => {
     await centreSuccessDB.exec`
       INSERT INTO operational_standard_schedule_revisions (
         id, organisation_id, centre_id, deployment_id, revision, frequency,
-        opens_local_time, due_local_time, effective_from
+        opens_local_time, due_local_time, effective_from, centre_timezone
       ) VALUES (
         ${SECOND_SCHEDULE}, ${ORGANISATION}, ${CENTRES[0]},
         ${SYNTHETIC_STANDARDS_PILOT_IDS.deploymentId}, 2, 'DAILY',
-        '10:00', '18:00', '2026-08-14'
+        '10:00', '18:00', '2026-08-14', 'Australia/Sydney'
       )
     `;
     await expect(centreSuccessDB.exec`

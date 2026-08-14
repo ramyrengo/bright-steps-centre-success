@@ -42,7 +42,7 @@ export const CANONICAL_ROLE_BUNDLES = [
   {
     key: "area_manager",
     name: "Area Manager",
-    version: 2,
+    version: 3,
     capabilities: [
       capability.centreRead,
       capability.quarterlyAuditRead,
@@ -52,6 +52,10 @@ export const CANONICAL_ROLE_BUNDLES = [
       capability.correctiveActionRead,
       capability.correctiveActionVerify,
       capability.evidenceRead,
+      capability.templateRead,
+      capability.templateCreate,
+      capability.templatePublish,
+      capability.templateAssign,
     ],
   },
   {

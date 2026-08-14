@@ -34,7 +34,7 @@ async function assertSourceContext(
   transaction: Transaction,
   organisationId: string,
   centreId: string,
-): Promise<void> {
+): Promise<string> {
   const context = await transaction.queryRow<{ organisation_id: string; centre_id: string; timezone: string }>`
     SELECT organisation.id AS organisation_id, centre.id AS centre_id, centre.timezone
     FROM organisations AS organisation
@@ -49,6 +49,7 @@ async function assertSourceContext(
   if (context.timezone !== "Australia/Sydney") {
     throw new SyntheticStandardsSeedError("synthetic staging centre must use Australia/Sydney");
   }
+  return context.timezone;
 }
 
 async function insertPilotContent(
@@ -57,6 +58,7 @@ async function insertPilotContent(
   centreId: string,
   effectiveFrom: string,
   activate: boolean,
+  centreTimezone: string,
   actorPrincipalId?: string,
 ): Promise<void> {
   const ids = SYNTHETIC_STANDARDS_PILOT_IDS;
@@ -202,10 +204,12 @@ async function insertPilotContent(
   await transaction.exec`
     INSERT INTO operational_standard_schedule_revisions (
       id, organisation_id, centre_id, deployment_id, revision, frequency,
-      opens_local_time, due_local_time, effective_from, created_by_principal_id
+      opens_local_time, due_local_time, effective_from, centre_timezone,
+      created_by_principal_id
     ) VALUES (
       ${ids.scheduleRevisionId}, ${organisationId}, ${centreId}, ${ids.deploymentId},
-      1, 'DAILY', '09:00', '17:00', ${effectiveFrom}::date, ${actorPrincipalId ?? null}
+      1, 'DAILY', '09:00', '17:00', ${effectiveFrom}::date,
+      ${centreTimezone}, ${actorPrincipalId ?? null}
     ) ON CONFLICT (id) DO NOTHING
   `;
 }
@@ -227,13 +231,18 @@ export async function seedSyntheticStandardsPilot(input: {
   }
   return inSerializableTransaction(async (transaction) => {
     await transaction.exec`SELECT pg_advisory_xact_lock(202608134)`;
-    await assertSourceContext(transaction, input.organisationId, input.centreId);
+    const centreTimezone = await assertSourceContext(
+      transaction,
+      input.organisationId,
+      input.centreId,
+    );
     await insertPilotContent(
       transaction,
       input.organisationId,
       input.centreId,
       input.effectiveFrom,
       input.activate,
+      centreTimezone,
       input.actorPrincipalId,
     );
     return SYNTHETIC_STANDARDS_PILOT_IDS;
