@@ -72,21 +72,25 @@ const UnsavedWorkContext = createContext<UnsavedWorkApi | null>(null);
 /** Registers a predicate that reports whether leaving would discard work. */
 export function useBlockLeaveWhen(shouldBlock: boolean): void {
   const api = useContext(UnsavedWorkContext);
-  const latest = useRef(shouldBlock);
 
-  // The blocker registered below is a stable closure, so it reads the current
-  // value through a ref rather than being re-registered on every keystroke.
-  // The ref is written in an effect: assigning during render is what the
-  // `react-hooks/refs` rule forbids, and it would tear under concurrent render.
-  useEffect(() => {
-    latest.current = shouldBlock;
-  }, [shouldBlock]);
-
+  // The blocker closes over `shouldBlock` directly and is re-registered whenever
+  // it changes.
+  //
+  // An earlier version kept one stable closure reading through a ref, to avoid
+  // re-registering on every keystroke. That made the guard lag its own state by
+  // an effect flush: a check that had just been completed could still block sign
+  // out, because the ref still said "blocked" when the click landed. It passed
+  // locally, where the effect won the race, and failed on slower CI hardware —
+  // which is the worst shape for this bug, since the surface it protects is a
+  // confirmation dialog a user sees only when something has gone wrong.
+  //
+  // Re-registering is a single function assignment. Correctness is worth more
+  // than avoiding it.
   useEffect(() => {
     if (!api) return;
-    api.register(() => latest.current);
+    api.register(() => shouldBlock);
     return () => api.register(null);
-  }, [api]);
+  }, [api, shouldBlock]);
 }
 
 export function BusinessWorkspaceGate({ children }: Readonly<{ children: ReactNode }>) {
