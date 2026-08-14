@@ -158,6 +158,7 @@ export const CorrectiveActionDailySource = {
           ON item.organisation_id = response.organisation_id
          AND item.id = response.audit_item_id
         WHERE finding.organisation_id = ${input.authorisation.organisationId}
+          AND finding.source_family = 'QUARTERLY_AUDIT'
           AND finding.centre_id = ANY(${centreIds}::uuid[])
           AND finding.status = 'OPEN'
           AND finding.severity = 'CRITICAL'

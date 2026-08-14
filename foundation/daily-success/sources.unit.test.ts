@@ -3,6 +3,7 @@ import { FOUNDATION_CAPABILITIES as capability, type FoundationCapability } from
 import type { DailySuccessQueryExecutor } from "./types";
 import { CorrectiveActionDailySource } from "./corrective-action-source";
 import { PeopleAccessDailySource } from "./people-access-source";
+import { OperationalCheckDailySource } from "./operational-check-source";
 import { QuarterlyReviewDailySource } from "./quarterly-review-source";
 import type { DailySourceInput } from "./types";
 
@@ -191,6 +192,50 @@ describe("Daily Success source adapters", () => {
       cta: { route: "/centre/reviews/00000000-0000-4000-8000-000000000012" },
     });
     expect(result.items[0].due).toBeUndefined();
+  });
+
+  test("projects only authorised OPEN Centre Standards work through a controlled CTA", async () => {
+    const input = sourceInput([{
+      id: "00000000-0000-4000-8000-000000000016",
+      centre_id: CENTRE_ID,
+      centre_name: "Synthetic Centre",
+      timezone: "Australia/Sydney",
+      standard_name: "Synthetic Centre Standard",
+      business_date: "2026-08-11",
+      due_at: new Date("2026-08-11T12:00:00.000Z"),
+    }], { kind: "centre", label: "Synthetic Centre", centreId: CENTRE_ID }, [
+      capability.operationalCheckComplete,
+    ]);
+
+    const result = await OperationalCheckDailySource.collect(input);
+
+    expect(result.items).toEqual([expect.objectContaining({
+      sourceType: "operational_check",
+      responsibility: "YOU_NEED_TO_ACT",
+      whyShown: { code: "CHECK_DUE_TODAY", label: "Centre Standard check is due today" },
+      cta: {
+        label: "Complete check",
+        route: "/standards/checks/00000000-0000-4000-8000-000000000016",
+      },
+    })]);
+    const sql = (input.executor.queryAll as ReturnType<typeof vi.fn>).mock.calls[0][0].join(" ");
+    expect(sql).toContain("occurrence.status = 'OPEN'");
+    expect(sql).toContain("occurrence.opens_at <=");
+  });
+
+  test("does not query Centre Standards without same-centre source authority", async () => {
+    const input = sourceInput(
+      [],
+      { kind: "centre", label: "Synthetic Centre", centreId: CENTRE_ID },
+      [],
+    );
+
+    await expect(OperationalCheckDailySource.collect(input)).resolves.toEqual({
+      items: [],
+      completedTodayCount: 0,
+      completedTodayTitles: [],
+    });
+    expect(input.executor.queryAll).not.toHaveBeenCalled();
   });
 
   test("filters independent approval eligibility before the service applies its five-item response limit", async () => {

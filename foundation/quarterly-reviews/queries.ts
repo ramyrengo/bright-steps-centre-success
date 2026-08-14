@@ -28,6 +28,15 @@ function numberValue(value: number | string): number {
   return typeof value === "number" ? value : Number(value);
 }
 
+function quarterLabel(reviewPeriodStart: Date | string): string {
+  const value = reviewPeriodStart instanceof Date
+    ? reviewPeriodStart.toISOString().slice(0, 10)
+    : String(reviewPeriodStart).slice(0, 10);
+  const match = /^(\d{4})-(\d{2})-(\d{2})$/.exec(value);
+  if (!match) return value;
+  return `Q${Math.floor((Number(match[2]) - 1) / 3) + 1} ${match[1]}`;
+}
+
 interface AuditIdentityRow {
   id: string;
   organisation_id: string;
@@ -504,6 +513,7 @@ export async function loadQuarterlyAuditView(input: {
              AND repeated_run.id = repeated.audit_run_id
             WHERE repeated.organisation_id = item.organisation_id
               AND repeated.centre_id = ${identity.centre_id}
+              AND repeated.source_family = 'QUARTERLY_AUDIT'
               AND repeated.item_lineage_key = item.lineage_key
               AND repeated.status <> 'WITHDRAWN'
               AND repeated_run.status = 'FINALISED'
@@ -746,8 +756,11 @@ export async function loadCorrectiveActionDetail(
     owner_principal_id: string | null; independent_verification_required: boolean;
     remediation_submitted_at: Date | null; required_remediation: string;
     evidence_requirement: "none" | "optional" | "required"; lock_version: number;
-    finding_id: string; finding_description: string; audit_run_id: string;
-    audit_status: AuditStatus; audit_acknowledged: boolean;
+    finding_id: string; finding_description: string; source_family: "QUARTERLY_AUDIT" | "OPERATIONAL_CHECK";
+    audit_run_id: string | null; audit_status: AuditStatus | null; audit_acknowledged: boolean;
+    audit_review_period_start: Date | string | null;
+    occurrence_id: string | null; occurrence_business_date: string | null;
+    occurrence_synthetic: boolean | null; operational_standard_name: string | null;
     item_lineage_key: string; repeat_count: number | string;
   }>`
     SELECT
@@ -756,26 +769,47 @@ export async function loadCorrectiveActionDetail(
       action.independent_verification_required, action.remediation_submitted_at,
       action.required_remediation, action.evidence_requirement, action.lock_version,
       finding.id AS finding_id, finding.description AS finding_description,
+      finding.source_family,
       finding.audit_run_id, audit.status AS audit_status,
+      audit.review_period_start AS audit_review_period_start,
       (${principalId ?? null}::uuid IS NOT NULL AND EXISTS (
         SELECT 1 FROM audit_acknowledgements AS acknowledgement
         WHERE acknowledgement.organisation_id = action.organisation_id
           AND acknowledgement.audit_run_id = finding.audit_run_id
           AND acknowledgement.principal_id = ${principalId ?? null}
       )) AS audit_acknowledged,
+      occurrence.id AS occurrence_id,
+      occurrence.business_date::text AS occurrence_business_date,
+      version.synthetic AS occurrence_synthetic,
+      version.title AS operational_standard_name,
       finding.item_lineage_key,
-      (SELECT count(*) FROM findings AS repeated
-       WHERE repeated.organisation_id = finding.organisation_id
-         AND repeated.centre_id = finding.centre_id
-         AND repeated.item_lineage_key = finding.item_lineage_key
-         AND repeated.status <> 'WITHDRAWN') AS repeat_count
+      CASE
+        WHEN finding.source_family = 'QUARTERLY_AUDIT' THEN (
+          SELECT count(*) FROM findings AS repeated
+          WHERE repeated.organisation_id = finding.organisation_id
+            AND repeated.centre_id = finding.centre_id
+            AND repeated.source_family = 'QUARTERLY_AUDIT'
+            AND repeated.item_lineage_key = finding.item_lineage_key
+            AND repeated.status <> 'WITHDRAWN'
+        )
+        ELSE 1
+      END AS repeat_count
     FROM corrective_actions AS action
     JOIN centres AS centre
       ON centre.organisation_id = action.organisation_id AND centre.id = action.centre_id
     JOIN findings AS finding
       ON finding.organisation_id = action.organisation_id AND finding.id = action.finding_id
-    JOIN audit_runs AS audit
+    LEFT JOIN audit_runs AS audit
       ON audit.organisation_id = finding.organisation_id AND audit.id = finding.audit_run_id
+    LEFT JOIN operational_check_responses AS operational_response
+      ON operational_response.organisation_id = finding.organisation_id
+     AND operational_response.id = finding.check_response_id
+    LEFT JOIN operational_check_occurrences AS occurrence
+      ON occurrence.organisation_id = operational_response.organisation_id
+     AND occurrence.id = operational_response.occurrence_id
+    LEFT JOIN audit_template_versions AS version
+      ON version.organisation_id = occurrence.organisation_id
+     AND version.id = occurrence.template_version_id
     WHERE action.organisation_id = ${organisationId} AND action.id = ${actionId}
   `;
   if (!row) throw new QuarterlyReviewError("not_found", "action is not available");
@@ -810,11 +844,25 @@ export async function loadCorrectiveActionDetail(
     ...(row.remediation_submitted_at ? { submittedAt: row.remediation_submitted_at.toISOString() } : {}),
     finding: {
       id: row.finding_id, description: row.finding_description,
-      originatingAuditId: row.audit_run_id,
-      originatingAuditStatus: row.audit_status,
-      originatingAuditAcknowledged: row.audit_acknowledged,
       itemLineageKey: row.item_lineage_key,
       repeatCount: numberValue(row.repeat_count),
+      origin: row.source_family === "QUARTERLY_AUDIT"
+        ? {
+            source: "QUARTERLY_AUDIT",
+            label: "Quarterly review",
+            quarterLabel: quarterLabel(row.audit_review_period_start!),
+            auditId: row.audit_run_id!,
+            auditStatus: row.audit_status!,
+            acknowledged: row.audit_acknowledged,
+          }
+        : {
+            source: "OPERATIONAL_CHECK",
+            label: "Centre Standard",
+            occurrenceId: row.occurrence_id!,
+            standardName: row.operational_standard_name!,
+            businessDate: row.occurrence_business_date!,
+            synthetic: row.occurrence_synthetic === true,
+          },
     },
     requiredRemediation: row.required_remediation,
     evidenceRequirement: row.evidence_requirement,

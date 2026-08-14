@@ -146,3 +146,29 @@ describe("existing workspace links are unchanged", () => {
     expect(deriveWorkspaceLinks(authorisation())).toEqual([]);
   });
 });
+
+describe("Centre Standards workspace link", () => {
+  // Carried over from the form builder integration. Either operational-check
+  // capability is enough to reach the destination: a reader and a completer
+  // both need to find their own work, and the route resolves the surface
+  // server-side from current capability.
+  test.each([
+    FOUNDATION_CAPABILITIES.operationalCheckRead,
+    FOUNDATION_CAPABILITIES.operationalCheckComplete,
+  ])("appears for scoped %s authority", (granted) => {
+    expect(deriveWorkspaceLinks(authorisation({ [granted]: [CENTRE] })))
+      .toContainEqual({ label: "Centre Standards", route: "/standards" });
+  });
+
+  test("is not inferred from unrelated centre authority", () => {
+    expect(deriveWorkspaceLinks(authorisation({
+      [FOUNDATION_CAPABILITIES.centreRead]: [CENTRE],
+    }))).not.toContainEqual({ label: "Centre Standards", route: "/standards" });
+  });
+
+  test("is withheld when the capability resolves to no centre at all", () => {
+    expect(routes(authorisation({
+      [FOUNDATION_CAPABILITIES.operationalCheckComplete]: [],
+    }))).not.toContain("/standards");
+  });
+});

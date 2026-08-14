@@ -26,6 +26,8 @@ export const WORKSPACE_LINK_CENTRE_CAPABILITIES = [
   FOUNDATION_CAPABILITIES.quarterlyAuditRead,
   FOUNDATION_CAPABILITIES.correctiveActionRemediate,
   FOUNDATION_CAPABILITIES.quarterlyAuditConduct,
+  FOUNDATION_CAPABILITIES.operationalCheckRead,
+  FOUNDATION_CAPABILITIES.operationalCheckComplete,
   FOUNDATION_CAPABILITIES.budgetPositionRead,
 ] as const;
 
@@ -60,6 +62,13 @@ export function deriveWorkspaceLinks(
   if (holdsAnyCentre(authorisation, FOUNDATION_CAPABILITIES.quarterlyAuditConduct)) {
     links.push({ label: "Area Manager reviews", route: "/area-manager" });
   }
+  if (
+    holdsAnyCentre(authorisation, FOUNDATION_CAPABILITIES.operationalCheckRead) ||
+    holdsAnyCentre(authorisation, FOUNDATION_CAPABILITIES.operationalCheckComplete)
+  ) {
+    links.push({ label: "Centre Standards", route: "/standards" });
+  }
+
   // The capability that guards the budget read endpoints themselves, so the
   // link and the destination can never disagree about who may see budget
   // content. `budget.summary.read` is the older synthetic Finance marker and

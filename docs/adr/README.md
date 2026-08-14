@@ -27,9 +27,12 @@ no longer governs the current architecture; its replacement record is normative.
 - [ADR-0015: Daily Success as a live read-only priority projection](0015-daily-success-live-priority-projection.md) — accepted and complete
 - [ADR-0016: Microsoft Graph staging invitation email delivery](0016-microsoft-graph-staging-invitation-email-delivery.md) — accepted architecture; implementation acceptance remediation in progress
 - [ADR-0017: Centre Quality & Performance as a narrow read-side projection](0017-centre-quality-performance-read-projection.md) — accepted as a narrow product-slice authorisation
+- [ADR-0020: Area Manager Template & Form Builder](0020-area-manager-template-form-builder.md) — accepted as exactly one next product-slice authorisation; no milestone number assigned
 
 ## Proposed for independent review
 
+- [ADR-0018: Centre Standards — Milestone 4A operational loop](0018-centre-standards-milestone-4a-operational-loop.md) — implemented; local implementation gate passed at `1bf06b7`; independent review and acceptance outstanding
+- [ADR-0019: Finding source families](0019-finding-source-families.md) — implemented alongside ADR-0018; independent review and acceptance outstanding
 - [ADR-0021: Production readiness and the first production release boundary](0021-production-readiness-and-first-release-boundary.md) — defines Release Boundary P1; implementation not authorised
 - [ADR-0022: Centre Budgets](0022-centre-budgets.md) — implementation authorised by the Product Owner takeover instruction; acceptance is separate, and the module sits outside Release Boundary P1
 
@@ -42,3 +45,4 @@ no longer governs the current architecture; its replacement record is normative.
 - [ADR-0008: Production CORS, deployment, and security operations](0008-production-cors-and-deployment.md)
 - [ADR-0009: Break-glass and support impersonation](0009-break-glass-and-support-access.md)
 - [ADR-0010: Authoritative hierarchy and assignment source](0010-authoritative-hierarchy-and-assignment-source.md)
+- [ADR-0023: Operational template `time` question type](0023-operational-template-time-question-type.md) — raises a question about the ADR-0020 type list; `time` is implemented but not authorised

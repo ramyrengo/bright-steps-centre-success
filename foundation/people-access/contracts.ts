@@ -5,6 +5,7 @@ import type {
   PrincipalLifecycleStatus,
   ProposedAssignment,
 } from "./types";
+import type { EffectiveAccessReport } from "./effective-access";
 
 export interface CreateInvitationRequest {
   email: string;
@@ -37,6 +38,15 @@ export interface PersonIdRequest {
 
 export interface PersonAccessResponse {
   person: PersonSummary;
+}
+
+/**
+ * Wraps the report because Encore requires a named interface at the response
+ * root, and the report itself is deliberately a union so that a blocked lookup
+ * cannot be mistaken for "no access anywhere".
+ */
+export interface EffectiveAccessResponse {
+  report: EffectiveAccessReport;
 }
 
 export interface AccessHistoryResponse {

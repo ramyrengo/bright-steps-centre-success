@@ -65,6 +65,22 @@ The following capabilities extend new canonical role-template versions. Existing
 
 Template publication remains migration/local-development seed governance in this slice; no generic template-administration API is introduced.
 
+### Authorised Area Manager Template & Form Builder capability bundle
+
+The ADR-0020 implementation adds `template.read`, `template.create`,
+`template.publish`, and `template.assign`. Canonical Area Manager template
+version 3 carries those four capabilities alongside its accepted quarterly
+review bundle. Each allow path still obtains the capability and a matching
+current centre or portfolio scope from the same PostgreSQL assignment.
+
+Operational templates are organisation-owned reusable content, but draft
+mutation and publication require an Area Manager with at least one current
+authorised centre and are owner-bound in the initial slice. Assignment resolves
+and validates every target centre from the current backend authorisation
+context. The `PORTFOLIO` target is never a client-provided centre list. System
+Administrator receives none of these business-content capabilities through
+technical privilege.
+
 When a principal has multiple roles, access is the union of complete valid grants. Each allow path must independently supply both the requested capability and a matching current scope. Capabilities and scopes from unrelated assignments cannot be recombined to manufacture broader access.
 
 ### Implemented Milestone 2C capability boundary

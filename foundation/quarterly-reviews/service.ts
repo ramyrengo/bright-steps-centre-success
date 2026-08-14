@@ -147,6 +147,7 @@ async function loadResponseConfiguration(
      AND action.finding_id = finding.id
     WHERE run.organisation_id = ${input.organisationId}
       AND run.id = ${input.auditId}
+      AND run.template_subtype = 'QUARTERLY_REVIEW'
     FOR UPDATE OF run
   `;
   if (!row) throw new QuarterlyReviewError("not_found", "audit item is not available");
@@ -297,11 +298,12 @@ async function ensureFindingAndAction(
     finding = { id: randomUUID(), severity: configuration.severity, status: "OPEN" };
     await transaction.exec`
       INSERT INTO findings (
-        id, organisation_id, centre_id, audit_run_id, audit_response_id,
+        id, organisation_id, centre_id, source_family, audit_run_id, audit_response_id,
         item_lineage_key, severity, description, source_classification,
         status, created_by_principal_id, created_at, updated_at
       ) VALUES (
         ${finding.id}, ${configuration.organisation_id}, ${configuration.centre_id},
+        'QUARTERLY_AUDIT',
         ${configuration.audit_run_id}, ${input.responseId}, ${configuration.lineage_key},
         ${configuration.severity}, ${configuration.wording},
         ${configuration.source_classification}, 'OPEN', ${input.actorPrincipalId},
@@ -560,11 +562,13 @@ export async function getAuditPreparation(input: {
     JOIN audit_template_versions AS version
       ON version.organisation_id = centre.organisation_id
      AND version.status = 'active'
+     AND version.template_subtype = 'QUARTERLY_REVIEW'
      AND version.effective_from <= now()
     JOIN audit_templates AS template
       ON template.organisation_id = version.organisation_id
      AND template.id = version.audit_template_id
      AND template.audit_type = 'quarterly_review'
+     AND template.template_subtype = 'QUARTERLY_REVIEW'
      AND template.status = 'active'
     LEFT JOIN LATERAL (
       SELECT run.id, run.finalised_at, run.overall_score
@@ -618,6 +622,8 @@ export async function startQuarterlyAudit(input: {
         AND version.status = 'active'
         AND version.effective_from <= ${at}
         AND template.audit_type = 'quarterly_review'
+        AND template.template_subtype = 'QUARTERLY_REVIEW'
+        AND version.template_subtype = 'QUARTERLY_REVIEW'
         AND template.status = 'active'
       ORDER BY version.effective_from DESC
       LIMIT 1
@@ -638,11 +644,11 @@ export async function startQuarterlyAudit(input: {
     const auditId = randomUUID();
     await transaction.exec`
       INSERT INTO audit_runs (
-        id, organisation_id, centre_id, template_version_id,
+        id, organisation_id, centre_id, template_version_id, template_subtype,
         auditor_principal_id, review_period_start, status, started_at,
         created_at, updated_at
       ) VALUES (
-        ${auditId}, ${input.organisationId}, ${input.centreId}, ${version.id},
+        ${auditId}, ${input.organisationId}, ${input.centreId}, ${version.id}, 'QUARTERLY_REVIEW',
         ${input.actorPrincipalId}, ${period}::date, 'DRAFT', ${at}, ${at}, ${at}
       )
     `;
@@ -1246,13 +1252,16 @@ async function loadActionForUpdate(
     JOIN findings AS finding
       ON finding.organisation_id = action.organisation_id
      AND finding.id = action.finding_id
-    JOIN audit_responses AS response
+    LEFT JOIN audit_responses AS response
       ON response.organisation_id = finding.organisation_id
      AND response.id = finding.audit_response_id
+    LEFT JOIN operational_check_responses AS operational_response
+      ON operational_response.organisation_id = finding.organisation_id
+     AND operational_response.id = finding.check_response_id
     LEFT JOIN audit_item_outcome_configurations AS configuration
-      ON configuration.organisation_id = response.organisation_id
-     AND configuration.audit_item_id = response.audit_item_id
-     AND configuration.outcome = response.outcome
+      ON configuration.organisation_id = finding.organisation_id
+     AND configuration.audit_item_id = COALESCE(response.audit_item_id, operational_response.audit_item_id)
+     AND configuration.outcome = COALESCE(response.outcome, operational_response.outcome)
     WHERE action.organisation_id = ${organisationId} AND action.id = ${actionId}
     FOR UPDATE OF action
   `;
@@ -1560,16 +1569,36 @@ export async function loadComplianceOversight(
               AND band.below_internal_threshold
           )
       ) AS below_threshold,
-      COALESCE((SELECT count(*) FROM findings WHERE organisation_id = ${organisationId}
-                AND severity = 'CRITICAL' AND status = 'OPEN'), 0) AS critical_findings,
-      COALESCE((SELECT count(*) FROM findings WHERE organisation_id = ${organisationId}
-                AND severity = 'HIGH' AND status = 'OPEN'), 0) AS high_findings,
-      COALESCE((SELECT count(*) FROM corrective_actions WHERE organisation_id = ${organisationId}
-                AND status NOT IN ('CLOSED', 'WITHDRAWN')), 0) AS open_actions,
-      COALESCE((SELECT count(*) FROM corrective_actions WHERE organisation_id = ${organisationId}
-                AND status NOT IN ('CLOSED', 'WITHDRAWN') AND due_at < ${at}), 0) AS overdue_actions,
-      COALESCE((SELECT count(*) FROM corrective_actions WHERE organisation_id = ${organisationId}
-                AND status = 'VERIFICATION_REQUIRED'), 0) AS awaiting_verification
+      COALESCE((SELECT count(*) FROM findings AS finding
+                WHERE finding.organisation_id = ${organisationId}
+                  AND finding.source_family = 'QUARTERLY_AUDIT'
+                  AND finding.severity = 'CRITICAL' AND finding.status = 'OPEN'), 0) AS critical_findings,
+      COALESCE((SELECT count(*) FROM findings AS finding
+                WHERE finding.organisation_id = ${organisationId}
+                  AND finding.source_family = 'QUARTERLY_AUDIT'
+                  AND finding.severity = 'HIGH' AND finding.status = 'OPEN'), 0) AS high_findings,
+      COALESCE((SELECT count(*) FROM corrective_actions AS action
+                JOIN findings AS finding
+                  ON finding.organisation_id = action.organisation_id
+                 AND finding.id = action.finding_id
+                 AND finding.source_family = 'QUARTERLY_AUDIT'
+                WHERE action.organisation_id = ${organisationId}
+                  AND action.status NOT IN ('CLOSED', 'WITHDRAWN')), 0) AS open_actions,
+      COALESCE((SELECT count(*) FROM corrective_actions AS action
+                JOIN findings AS finding
+                  ON finding.organisation_id = action.organisation_id
+                 AND finding.id = action.finding_id
+                 AND finding.source_family = 'QUARTERLY_AUDIT'
+                WHERE action.organisation_id = ${organisationId}
+                  AND action.status NOT IN ('CLOSED', 'WITHDRAWN')
+                  AND action.due_at < ${at}), 0) AS overdue_actions,
+      COALESCE((SELECT count(*) FROM corrective_actions AS action
+                JOIN findings AS finding
+                  ON finding.organisation_id = action.organisation_id
+                 AND finding.id = action.finding_id
+                 AND finding.source_family = 'QUARTERLY_AUDIT'
+                WHERE action.organisation_id = ${organisationId}
+                  AND action.status = 'VERIFICATION_REQUIRED'), 0) AS awaiting_verification
     FROM audit_runs AS run
     WHERE run.organisation_id = ${organisationId}
   `;
@@ -1582,10 +1611,18 @@ export async function loadComplianceOversight(
            latest.id AS latest_audit_id, latest.overall_score AS latest_score,
            latest.risk_status,
            (SELECT count(*) FROM corrective_actions AS action
+            JOIN findings AS finding
+              ON finding.organisation_id = action.organisation_id
+             AND finding.id = action.finding_id
+             AND finding.source_family = 'QUARTERLY_AUDIT'
             WHERE action.organisation_id = centre.organisation_id
               AND action.centre_id = centre.id
               AND action.status NOT IN ('CLOSED', 'WITHDRAWN')) AS open_actions,
            (SELECT count(*) FROM corrective_actions AS action
+            JOIN findings AS finding
+              ON finding.organisation_id = action.organisation_id
+             AND finding.id = action.finding_id
+             AND finding.source_family = 'QUARTERLY_AUDIT'
             WHERE action.organisation_id = centre.organisation_id
               AND action.centre_id = centre.id
               AND action.status NOT IN ('CLOSED', 'WITHDRAWN')

@@ -14,8 +14,8 @@ export const CANONICAL_ROLE_BUNDLES = [
   {
     key: "educator",
     name: "Educator",
-    version: 1,
-    capabilities: [capability.centreRead],
+    version: 2,
+    capabilities: [capability.centreRead, capability.operationalCheckComplete],
   },
   {
     key: "assistant_director",
@@ -54,6 +54,10 @@ export const CANONICAL_ROLE_BUNDLES = [
       capability.correctiveActionRead,
       capability.correctiveActionVerify,
       capability.evidenceRead,
+      capability.templateRead,
+      capability.templateCreate,
+      capability.templatePublish,
+      capability.templateAssign,
       capability.budgetPositionRead,
     ],
   },

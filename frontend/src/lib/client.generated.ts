@@ -119,10 +119,13 @@ export namespace foundation {
             this.acknowledgeQuarterlyAudit = this.acknowledgeQuarterlyAudit.bind(this)
             this.addPersonAssignment = this.addPersonAssignment.bind(this)
             this.approveInvitation = this.approveInvitation.bind(this)
+            this.assignOperationalTemplateRoute = this.assignOperationalTemplateRoute.bind(this)
             this.cancelInvitationEndpoint = this.cancelInvitationEndpoint.bind(this)
             this.completeEvidenceUpload = this.completeEvidenceUpload.bind(this)
+            this.completeStandardsOccurrence = this.completeStandardsOccurrence.bind(this)
             this.createCentreBudgetActual = this.createCentreBudgetActual.bind(this)
             this.createInvitation = this.createInvitation.bind(this)
+            this.createOperationalTemplate = this.createOperationalTemplate.bind(this)
             this.finaliseQuarterlyAudit = this.finaliseQuarterlyAudit.bind(this)
             this.getAuditPreparation = this.getAuditPreparation.bind(this)
             this.getAuthorisedNavigationEndpoint = this.getAuthorisedNavigationEndpoint.bind(this)
@@ -134,24 +137,34 @@ export namespace foundation {
             this.getDailySuccess = this.getDailySuccess.bind(this)
             this.getEvidenceAccess = this.getEvidenceAccess.bind(this)
             this.getInvitation = this.getInvitation.bind(this)
+            this.getOperationalTemplateVersionRoute = this.getOperationalTemplateVersionRoute.bind(this)
+            this.getOperationalTemplateWorkspaceRoute = this.getOperationalTemplateWorkspaceRoute.bind(this)
             this.getPeopleOptions = this.getPeopleOptions.bind(this)
             this.getPerson = this.getPerson.bind(this)
             this.getPersonAccess = this.getPersonAccess.bind(this)
+            this.getPersonEffectiveAccess = this.getPersonEffectiveAccess.bind(this)
             this.getPersonHistory = this.getPersonHistory.bind(this)
             this.getPortfolioBudgetMonth = this.getPortfolioBudgetMonth.bind(this)
             this.getQuarterlyAudit = this.getQuarterlyAudit.bind(this)
+            this.getStandardsCheck = this.getStandardsCheck.bind(this)
+            this.getStandardsWorkspace = this.getStandardsWorkspace.bind(this)
             this.health = this.health.bind(this)
             this.listAssignedAuditCentres = this.listAssignedAuditCentres.bind(this)
             this.listCorrectiveActionVerificationQueue = this.listCorrectiveActionVerificationQueue.bind(this)
             this.listMyCorrectiveActions = this.listMyCorrectiveActions.bind(this)
+            this.listOperationalTemplateAssignmentOptionsRoute = this.listOperationalTemplateAssignmentOptionsRoute.bind(this)
+            this.listOperationalTemplateLibrary = this.listOperationalTemplateLibrary.bind(this)
             this.listPeople = this.listPeople.bind(this)
             this.markQuarterlyAuditReady = this.markQuarterlyAuditReady.bind(this)
             this.me = this.me.bind(this)
+            this.previewOperationalTemplateDraftRoute = this.previewOperationalTemplateDraftRoute.bind(this)
+            this.publishOperationalTemplateRoute = this.publishOperationalTemplateRoute.bind(this)
             this.reactivatePerson = this.reactivatePerson.bind(this)
             this.removePersonAssignment = this.removePersonAssignment.bind(this)
             this.replacePersonAssignmentScope = this.replacePersonAssignmentScope.bind(this)
             this.requestEvidenceUpload = this.requestEvidenceUpload.bind(this)
             this.resendInvitation = this.resendInvitation.bind(this)
+            this.retireOperationalTemplateRoute = this.retireOperationalTemplateRoute.bind(this)
             this.returnCorrectiveAction = this.returnCorrectiveAction.bind(this)
             this.revokePerson = this.revokePerson.bind(this)
             this.saveQuarterlyAuditResponse = this.saveQuarterlyAuditResponse.bind(this)
@@ -160,6 +173,7 @@ export namespace foundation {
             this.startQuarterlyAudit = this.startQuarterlyAudit.bind(this)
             this.submitCorrectiveActionEvidence = this.submitCorrectiveActionEvidence.bind(this)
             this.suspendPerson = this.suspendPerson.bind(this)
+            this.updateOperationalTemplateDraftRoute = this.updateOperationalTemplateDraftRoute.bind(this)
             this.verifyAndCloseCorrectiveAction = this.verifyAndCloseCorrectiveAction.bind(this)
         }
 
@@ -187,6 +201,12 @@ export namespace foundation {
             return await resp.json() as people_access.InvitationSummary
         }
 
+        public async assignOperationalTemplateRoute(templateId: string, params: operational_templates.AssignOperationalTemplateRequest): Promise<operational_templates.AssignOperationalTemplateResponse> {
+            // Now make the actual call to the API
+            const resp = await this.baseClient.callTypedAPI("POST", `/standards/templates/${encodeURIComponent(templateId)}/assignments`, JSON.stringify(params))
+            return await resp.json() as operational_templates.AssignOperationalTemplateResponse
+        }
+
         public async cancelInvitationEndpoint(invitationId: string, params: people_access.VersionedInvitationRequest): Promise<people_access.InvitationSummary> {
             // Now make the actual call to the API
             const resp = await this.baseClient.callTypedAPI("POST", `/admin/people/invitations/${encodeURIComponent(invitationId)}/cancel`, JSON.stringify(params))
@@ -197,6 +217,12 @@ export namespace foundation {
             // Now make the actual call to the API
             const resp = await this.baseClient.callTypedAPI("POST", `/evidence/${encodeURIComponent(evidenceId)}/complete`)
             return await resp.json() as quarterly_reviews.CompleteEvidenceUploadResponse
+        }
+
+        public async completeStandardsOccurrence(occurrenceId: string, params: centre_standards.CompleteStandardsCheckRequest): Promise<centre_standards.CompleteStandardsCheckResponse> {
+            // Now make the actual call to the API
+            const resp = await this.baseClient.callTypedAPI("POST", `/standards/checks/${encodeURIComponent(occurrenceId)}/complete`, JSON.stringify(params))
+            return await resp.json() as centre_standards.CompleteStandardsCheckResponse
         }
 
         public async createCentreBudgetActual(month: string, centreId: string, params: centre_budgets.RecordCentreBudgetActualRequest): Promise<centre_budgets.RecordCentreBudgetActualResponse> {
@@ -213,6 +239,12 @@ export namespace foundation {
             // Now make the actual call to the API
             const resp = await this.baseClient.callTypedAPI("POST", `/admin/people/invitations`, JSON.stringify(params))
             return await resp.json() as people_access.InvitationSummary
+        }
+
+        public async createOperationalTemplate(params: operational_templates.CreateOperationalTemplateRequest): Promise<operational_templates.OperationalTemplateDraft> {
+            // Now make the actual call to the API
+            const resp = await this.baseClient.callTypedAPI("POST", `/standards/templates`, JSON.stringify(params))
+            return await resp.json() as operational_templates.OperationalTemplateDraft
         }
 
         public async finaliseQuarterlyAudit(auditId: string, params: quarterly_reviews.AuditTransitionRequest): Promise<quarterly_reviews.FinaliseQuarterlyAuditResponse> {
@@ -313,6 +345,18 @@ export namespace foundation {
             return await resp.json() as people_access.InvitationSummary
         }
 
+        public async getOperationalTemplateVersionRoute(templateId: string, versionId: string): Promise<operational_templates.OperationalTemplateVersion> {
+            // Now make the actual call to the API
+            const resp = await this.baseClient.callTypedAPI("GET", `/standards/templates/${encodeURIComponent(templateId)}/versions/${encodeURIComponent(versionId)}`)
+            return await resp.json() as operational_templates.OperationalTemplateVersion
+        }
+
+        public async getOperationalTemplateWorkspaceRoute(templateId: string): Promise<operational_templates.OperationalTemplateWorkspace> {
+            // Now make the actual call to the API
+            const resp = await this.baseClient.callTypedAPI("GET", `/standards/templates/${encodeURIComponent(templateId)}`)
+            return await resp.json() as operational_templates.OperationalTemplateWorkspace
+        }
+
         public async getPeopleOptions(): Promise<people_access.PeopleAccessOptionsResponse> {
             // Now make the actual call to the API
             const resp = await this.baseClient.callTypedAPI("GET", `/admin/people/options`)
@@ -329,6 +373,12 @@ export namespace foundation {
             // Now make the actual call to the API
             const resp = await this.baseClient.callTypedAPI("GET", `/admin/people/${encodeURIComponent(principalId)}/access`)
             return await resp.json() as people_access.PersonAccessResponse
+        }
+
+        public async getPersonEffectiveAccess(principalId: string): Promise<people_access.EffectiveAccessResponse> {
+            // Now make the actual call to the API
+            const resp = await this.baseClient.callTypedAPI("GET", `/admin/people/${encodeURIComponent(principalId)}/effective-access`)
+            return await resp.json() as people_access.EffectiveAccessResponse
         }
 
         public async getPersonHistory(principalId: string): Promise<people_access.AccessHistoryResponse> {
@@ -351,6 +401,26 @@ export namespace foundation {
             // Now make the actual call to the API
             const resp = await this.baseClient.callTypedAPI("GET", `/quarterly-reviews/audits/${encodeURIComponent(auditId)}`)
             return await resp.json() as quarterly_reviews.QuarterlyAuditView
+        }
+
+        public async getStandardsCheck(occurrenceId: string): Promise<centre_standards.StandardsCheckDetailResponse> {
+            // Now make the actual call to the API
+            const resp = await this.baseClient.callTypedAPI("GET", `/standards/checks/${encodeURIComponent(occurrenceId)}`)
+
+            //Populate the return object from the JSON body and received headers
+            const rtn = await resp.json() as centre_standards.StandardsCheckDetailResponse
+            rtn.cacheControl = mustBeSet("Header `cache-control`", resp.headers.get("cache-control"))
+            return rtn
+        }
+
+        public async getStandardsWorkspace(): Promise<centre_standards.StandardsWorkspaceResponse> {
+            // Now make the actual call to the API
+            const resp = await this.baseClient.callTypedAPI("GET", `/standards`)
+
+            //Populate the return object from the JSON body and received headers
+            const rtn = await resp.json() as centre_standards.StandardsWorkspaceResponse
+            rtn.cacheControl = mustBeSet("Header `cache-control`", resp.headers.get("cache-control"))
+            return rtn
         }
 
         /**
@@ -381,6 +451,28 @@ export namespace foundation {
             return await resp.json() as quarterly_reviews.ListCorrectiveActionsResponse
         }
 
+        /**
+         * * Deliberately not nested under `/standards/templates/...`. A literal segment
+         * * there would sit alongside `:templateId` and the routing would depend on
+         * * precedence rather than on the path being unambiguous.
+         */
+        public async listOperationalTemplateAssignmentOptionsRoute(): Promise<operational_templates.OperationalTemplateAssignmentOptions> {
+            // Now make the actual call to the API
+            const resp = await this.baseClient.callTypedAPI("GET", `/standards/template-assignment-options`)
+            return await resp.json() as operational_templates.OperationalTemplateAssignmentOptions
+        }
+
+        public async listOperationalTemplateLibrary(params: operational_templates.ListOperationalTemplatesRequest): Promise<operational_templates.ListOperationalTemplatesResponse> {
+            // Convert our params into the objects we need for the request
+            const query = makeRecord<string, string | string[]>({
+                centreId: params.centreId,
+            })
+
+            // Now make the actual call to the API
+            const resp = await this.baseClient.callTypedAPI("GET", `/standards/templates`, undefined, {query})
+            return await resp.json() as operational_templates.ListOperationalTemplatesResponse
+        }
+
         public async listPeople(): Promise<people_access.PeopleListResponse> {
             // Now make the actual call to the API
             const resp = await this.baseClient.callTypedAPI("GET", `/admin/people`)
@@ -401,6 +493,18 @@ export namespace foundation {
             // Now make the actual call to the API
             const resp = await this.baseClient.callTypedAPI("GET", `/foundation/me`)
             return await resp.json() as FoundationMeResponse
+        }
+
+        public async previewOperationalTemplateDraftRoute(templateId: string): Promise<operational_templates.OperationalTemplatePreview> {
+            // Now make the actual call to the API
+            const resp = await this.baseClient.callTypedAPI("GET", `/standards/templates/${encodeURIComponent(templateId)}/preview`)
+            return await resp.json() as operational_templates.OperationalTemplatePreview
+        }
+
+        public async publishOperationalTemplateRoute(templateId: string, params: operational_templates.PublishOperationalTemplateRequest): Promise<operational_templates.OperationalTemplateVersion> {
+            // Now make the actual call to the API
+            const resp = await this.baseClient.callTypedAPI("POST", `/standards/templates/${encodeURIComponent(templateId)}/publish`, JSON.stringify(params))
+            return await resp.json() as operational_templates.OperationalTemplateVersion
         }
 
         public async reactivatePerson(principalId: string, params: people_access.PrincipalLifecycleRequest): Promise<people_access.PrincipalLifecycleResponse> {
@@ -431,6 +535,12 @@ export namespace foundation {
             // Now make the actual call to the API
             const resp = await this.baseClient.callTypedAPI("POST", `/admin/people/invitations/${encodeURIComponent(invitationId)}/resend`, JSON.stringify(params))
             return await resp.json() as people_access.InvitationSummary
+        }
+
+        public async retireOperationalTemplateRoute(templateId: string, params: operational_templates.RetireOperationalTemplateRequest): Promise<operational_templates.RetireOperationalTemplateResponse> {
+            // Now make the actual call to the API
+            const resp = await this.baseClient.callTypedAPI("POST", `/standards/templates/${encodeURIComponent(templateId)}/retire`, JSON.stringify(params))
+            return await resp.json() as operational_templates.RetireOperationalTemplateResponse
         }
 
         public async returnCorrectiveAction(actionId: string, params: quarterly_reviews.ReturnCorrectiveActionRequest): Promise<quarterly_reviews.ActionTransitionResponse> {
@@ -481,6 +591,12 @@ export namespace foundation {
             return await resp.json() as people_access.PrincipalLifecycleResponse
         }
 
+        public async updateOperationalTemplateDraftRoute(templateId: string, params: operational_templates.UpdateOperationalTemplateDraftRequest): Promise<operational_templates.OperationalTemplateDraft> {
+            // Now make the actual call to the API
+            const resp = await this.baseClient.callTypedAPI("PUT", `/standards/templates/${encodeURIComponent(templateId)}/draft`, JSON.stringify(params))
+            return await resp.json() as operational_templates.OperationalTemplateDraft
+        }
+
         public async verifyAndCloseCorrectiveAction(actionId: string, params: quarterly_reviews.VerifyCorrectiveActionRequest): Promise<quarterly_reviews.ActionTransitionResponse> {
             // Now make the actual call to the API
             const resp = await this.baseClient.callTypedAPI("POST", `/corrective-actions/${encodeURIComponent(actionId)}/verify`, JSON.stringify(params))
@@ -493,6 +609,16 @@ export namespace authentication {
     export interface AuthenticationParams {
         authorization: string
     }
+}
+
+export namespace authorization {
+    export type AuthorisationContextFailureCode = "invalid_identifier" | "principal_missing" | "principal_inactive" | "organisation_missing" | "organisation_inactive" | "membership_missing" | "membership_ambiguous" | "assignment_context_invalid"
+
+    export type CentreAuthorisationIssueReason = "hierarchy_ambiguous" | "hierarchy_cycle" | "hierarchy_inactive"
+
+    export type DenyReason = "invalid_context" | "invalid_resource" | "principal_inactive" | "active_organisation_mismatch" | "membership_missing" | "membership_ambiguous" | "capability_missing" | "scope_mismatch"
+
+    export type FoundationCapability = "organisation.read" | "centre.read" | "centre.manage" | "principal.read" | "principal.manage" | "identity.mapping.manage" | "assignment.read" | "assignment.manage" | "system.configure" | "system.health.read" | "budget.summary.read" | "budget.position.read" | "budget.actual.enter" | "quarterly_audit.read" | "quarterly_audit.conduct" | "quarterly_audit.finalise" | "quarterly_audit.acknowledge" | "finding.read" | "corrective_action.read" | "corrective_action.remediate" | "corrective_action.verify" | "evidence.read" | "evidence.upload" | "compliance.oversight.read" | "operational_check.read" | "operational_check.complete" | "template.read" | "template.create" | "template.publish" | "template.assign" | "invitation.read" | "invitation.manage" | "access_history.read" | "privileged_access.approve" | "access.change.request"
 }
 
 export namespace centre_budgets {
@@ -1272,6 +1398,88 @@ export namespace centre_quality {
     }
 }
 
+export namespace centre_standards {
+    export interface CompleteStandardsCheckRequest {
+        answers: {
+            questionId: string
+            value: string
+        }[]
+    }
+
+    export interface CompleteStandardsCheckResponse {
+        outcome: "COMPLETED" | "ALREADY_COMPLETED"
+        completedAt: string
+        completedLocalTime: string
+        issueRaised?: boolean
+        completedByRequester?: boolean
+    }
+
+    export interface OpenStandardsCheckSummary {
+        occurrenceId: string
+        standardName: string
+        synthetic: boolean
+        syntheticNotice?: string
+        centreName: string
+        businessDate: string
+        dueLocalTime: string
+        timeliness: "DUE" | "OVERDUE"
+        questionCount: number
+        state: "OPEN"
+        canComplete: boolean
+    }
+
+    export type OperationalTimeliness = "DUE" | "OVERDUE" | "COMPLETED_ON_TIME" | "COMPLETED_LATE"
+
+    export interface StandardsAnswerOption {
+        /**
+         * Opaque permitted outcome value, passed back untouched by the browser.
+         */
+        value: string
+
+        label: string
+        description?: string
+    }
+
+    export interface StandardsCheckDetailResponse {
+        cacheControl: string
+        occurrenceId: string
+        standardName: string
+        synthetic: boolean
+        syntheticNotice?: string
+        centreName: string
+        businessDate: string
+        dueLocalTime: string
+        timeliness: OperationalTimeliness
+        state: "OPEN" | "COMPLETED"
+        completedLocalTime?: string
+        questionCount: number
+        canComplete?: boolean
+        questions: StandardsQuestion[]
+        responses?: StandardsRecordedResponse[]
+    }
+
+    export interface StandardsQuestion {
+        questionId: string
+        wording: string
+        instructions?: string
+        options: StandardsAnswerOption[]
+    }
+
+    export interface StandardsRecordedResponse {
+        questionId: string
+        wording: string
+        answerLabel: string
+    }
+
+    export interface StandardsWorkspaceResponse {
+        status: "ready" | "partial" | "unsupported"
+        openChecks?: OpenStandardsCheckSummary[]
+        warning?: string
+        cacheControl: string
+        asOf: string
+    }
+}
+
 export namespace daily_success {
     export type DailyAttentionBand = "URGENT" | "TODAY" | "UPCOMING" | "WAITING" | "AWARENESS"
 
@@ -1319,7 +1527,7 @@ export namespace daily_success {
     export type DailyResponsibility = "YOU_NEED_TO_ACT" | "YOUR_CENTRE_NEEDS_TO_ACT" | "WAITING_ON_SOMEONE_ELSE" | "FOR_YOUR_AWARENESS"
 
     export interface DailySourceHealth {
-        source: "corrective_actions" | "quarterly_reviews" | "people_access"
+        source: "corrective_actions" | "quarterly_reviews" | "people_access" | "operational_checks"
         status: "available" | "unavailable" | "not_applicable"
     }
 
@@ -1330,7 +1538,7 @@ export namespace daily_success {
 
     export interface DailySuccessItem {
         id: string
-        sourceType: "corrective_action" | "finding" | "quarterly_review" | "people_access"
+        sourceType: "corrective_action" | "finding" | "quarterly_review" | "people_access" | "operational_check"
         sourceId: string
         centreId?: string
         centreName?: string
@@ -1394,7 +1602,7 @@ export namespace daily_success {
     }
 
     export interface DailyWhyShown {
-        code: "CRITICAL_RISK" | "IMMEDIATE_RISK" | "ACTION_OVERDUE" | "ACTION_DUE_TODAY" | "ACTION_DUE_SOON" | "REMEDIATION_RETURNED" | "REMEDIATION_REQUIRED" | "VERIFICATION_REQUIRED" | "AUDIT_REQUIRES_ACTION" | "REVIEW_REQUIRES_ACKNOWLEDGEMENT" | "PRIVILEGED_APPROVAL_REQUIRED" | "IDENTITY_REVIEW_REQUIRED"
+        code: "CRITICAL_RISK" | "IMMEDIATE_RISK" | "ACTION_OVERDUE" | "ACTION_DUE_TODAY" | "ACTION_DUE_SOON" | "REMEDIATION_RETURNED" | "REMEDIATION_REQUIRED" | "VERIFICATION_REQUIRED" | "AUDIT_REQUIRES_ACTION" | "REVIEW_REQUIRES_ACKNOWLEDGEMENT" | "PRIVILEGED_APPROVAL_REQUIRED" | "IDENTITY_REVIEW_REQUIRED" | "CHECK_DUE_TODAY" | "CHECK_OVERDUE"
         label: string
     }
 
@@ -1413,6 +1621,302 @@ export namespace navigation {
     export interface WorkspaceLink {
         label: string
         route: string
+    }
+}
+
+export namespace operational_templates {
+    export interface AssignOperationalTemplateRequest {
+        versionId: string
+        target: {
+            kind: "CENTRES"
+            centreIds: string[]
+        } | {
+            kind: "PORTFOLIO"
+        }
+        schedule: {
+            frequency: "DAILY"
+            opensLocalTime: string
+            dueLocalTime: string
+            effectiveFrom: string
+        }
+    }
+
+    export interface AssignOperationalTemplateResponse {
+        assignmentId: string
+        templateId: string
+        versionId: string
+        targetKind: "CENTRES" | "PORTFOLIO"
+        frequency: "DAILY"
+        centreCount: number
+        deployments: {
+            centreId: string
+            deploymentId: string
+            scheduleRevisionId: string
+            centreTimezone: string
+        }[]
+    }
+
+    export interface AssignableCentre {
+        centreId: string
+        centreName: string
+    }
+
+    export interface CreateOperationalTemplateRequest {
+        title: string
+        instructions: string
+        metadata?: OperationalTemplateMetadata
+        sections: OperationalSectionInput[]
+    }
+
+    export interface ListOperationalTemplatesRequest {
+        /**
+         * When absent, assignment context is filtered to the current authorised portfolio.
+         */
+        centreId?: string
+    }
+
+    export interface ListOperationalTemplatesResponse {
+        templates: OperationalTemplateSummary[]
+        assignmentFilter: {
+            kind: "PORTFOLIO"
+        } | {
+            kind: "CENTRE"
+            centreId: string
+        }
+    }
+
+    export interface OperationalChoiceOption {
+        value: string
+        label: string
+    }
+
+    export type OperationalQuestionInput = {
+        id?: string
+        label: string
+        instructions?: string
+        order: number
+        required: boolean
+        type: "short_text" | "long_text"
+        minLength?: number
+        maxLength?: number
+    } | {
+        id?: string
+        label: string
+        instructions?: string
+        order: number
+        required: boolean
+        type: "single_choice"
+        options: OperationalChoiceOption[]
+    } | {
+        id?: string
+        label: string
+        instructions?: string
+        order: number
+        required: boolean
+        type: "multiple_choice"
+        options: OperationalChoiceOption[]
+        minSelections?: number
+        maxSelections?: number
+    } | {
+        id?: string
+        label: string
+        instructions?: string
+        order: number
+        required: boolean
+        type: "numeric"
+        minimum?: number
+        maximum?: number
+    } | {
+        id?: string
+        label: string
+        instructions?: string
+        order: number
+        required: boolean
+        type: "time"
+        /**
+         * Local time of day, `HH:MM`.
+         */
+        earliest?: string
+
+        /**
+         * Local time of day, `HH:MM`.
+         */
+        latest?: string
+    } | {
+        id?: string
+        label: string
+        instructions?: string
+        order: number
+        required: boolean
+        type: "date"
+        /**
+         * Calendar date, `YYYY-MM-DD`. No time and no timezone.
+         */
+        earliest?: string
+
+        /**
+         * Calendar date, `YYYY-MM-DD`. No time and no timezone.
+         */
+        latest?: string
+    }
+
+    export type OperationalQuestionType = "short_text" | "long_text" | "single_choice" | "multiple_choice" | "numeric" | "time" | "date"
+
+    export interface OperationalSectionInput {
+        id?: string
+        title: string
+        instructions?: string
+        order: number
+        questions: OperationalQuestionInput[]
+    }
+
+    /**
+     * The centres this principal may actually assign a template to. The browser is
+     * never the authority on assignment scope. `incompleteNotice` is present only
+     * when some authorised centre could not be resolved, so a short list is never
+     * mistaken for a complete one.
+     */
+    export interface OperationalTemplateAssignmentOptions {
+        centres: AssignableCentre[]
+        portfolioAvailable: boolean
+        portfolioCentreCount: number
+        incompleteNotice?: string
+    }
+
+    export interface OperationalTemplateDraft {
+        templateId: string
+        lifecycle: OperationalTemplateLifecycle
+        title: string
+        instructions: string
+        metadata: OperationalTemplateMetadata
+        authorId: string
+        lockVersion: number
+        updatedAt: string
+        sections: OperationalTemplateSection[]
+    }
+
+    export type OperationalTemplateLifecycle = "DRAFT" | "PUBLISHED" | "RETIRED"
+
+    export type OperationalTemplateMetadata = { [key: string]: string | number | boolean | null }
+
+    export interface OperationalTemplatePreview {
+        device: "PHONE"
+        source: "DRAFT" | "PUBLISHED"
+        template: OperationalTemplateDraft | OperationalTemplateVersion
+    }
+
+    export interface OperationalTemplateQuestion {
+        id: string
+        label: string
+        instructions?: string
+        order: number
+        required: boolean
+        type: OperationalQuestionType
+        options?: OperationalChoiceOption[]
+        minLength?: number
+        maxLength?: number
+        minSelections?: number
+        maxSelections?: number
+        minimum?: number
+        maximum?: number
+        /**
+         * Lower bound: `HH:MM` on a time question, `YYYY-MM-DD` on a date question.
+         */
+        earliest?: string
+
+        /**
+         * Upper bound: `HH:MM` on a time question, `YYYY-MM-DD` on a date question.
+         */
+        latest?: string
+    }
+
+    export interface OperationalTemplateSection {
+        id: string
+        title: string
+        instructions?: string
+        order: number
+        questions: OperationalTemplateQuestion[]
+    }
+
+    export interface OperationalTemplateSummary {
+        templateId: string
+        title: string
+        lifecycle: OperationalTemplateLifecycle
+        authorId?: string
+        lockVersion: number
+        latestPublishedVersion?: {
+            versionId: string
+            versionNumber: number
+            publishedAt: string
+            authorId: string
+        }
+        assignedCentres: {
+            centreId: string
+            centreName: string
+        }[]
+    }
+
+    export interface OperationalTemplateVersion {
+        templateId: string
+        versionId: string
+        versionNumber: number
+        lifecycle: "PUBLISHED" | "RETIRED"
+        title: string
+        instructions: string
+        metadata: OperationalTemplateMetadata
+        sourceKind: "BSA_INTERNAL"
+        authorId: string
+        publishedAt: string
+        sections: OperationalTemplateSection[]
+    }
+
+    /**
+     * One entry in a template's permanent version history.
+     */
+    export interface OperationalTemplateVersionSummary {
+        versionId: string
+        versionNumber: number
+        lifecycle: "PUBLISHED" | "RETIRED"
+        publishedAt: string
+        authorId: string
+    }
+
+    /**
+     * Everything the builder needs to open one template. `draft` is absent rather
+     * than null when no editable draft exists, so a published-only template cannot
+     * be mistaken for one with an empty draft.
+     */
+    export interface OperationalTemplateWorkspace {
+        templateId: string
+        title: string
+        lifecycle: OperationalTemplateLifecycle
+        draft?: OperationalTemplateDraft
+        /**
+         * Newest first. Published and retired entries are permanent.
+         */
+        versions: OperationalTemplateVersionSummary[]
+    }
+
+    export interface PublishOperationalTemplateRequest {
+        lockVersion: number
+    }
+
+    export interface RetireOperationalTemplateRequest {
+        lockVersion: number
+    }
+
+    export interface RetireOperationalTemplateResponse {
+        templateId: string
+        lifecycle: "RETIRED"
+        lockVersion: number
+    }
+
+    export interface UpdateOperationalTemplateDraftRequest {
+        lockVersion: number
+        title: string
+        instructions: string
+        metadata?: OperationalTemplateMetadata
+        sections: OperationalSectionInput[]
     }
 }
 
@@ -1460,6 +1964,65 @@ export namespace people_access {
         displayName: string
         assignments: ProposedAssignment[]
         reason: string
+    }
+
+    /**
+     * Why no capability could be evaluated at all. Each value is a state the
+     * authorisation context loader refuses to build a context for, which is also
+     * the answer to the support question that prompted the lookup — "cannot sign
+     * in" is usually `principal_inactive` or `membership_missing`.
+     */
+    export type EffectiveAccessBlocker = authorization.AuthorisationContextFailureCode
+
+    /**
+     * One authorisation decision, reported exactly as the policy returned it.
+     */
+    export type EffectiveAccessDecision = {
+        allowed: true
+        assignmentId: string
+        roleKey: string
+    } | {
+        allowed: false
+        reason: authorization.DenyReason
+    }
+
+    /**
+     * The report is a union rather than one shape with optional fields so that a
+     * blocked lookup cannot be read as "this person has no access anywhere". An
+     * empty capability list is a conclusion; a blocker is the absence of one.
+     */
+    export type EffectiveAccessReport = {
+        evaluated: false
+        principalId: string
+        evaluatedAt: string
+        blockedBy: EffectiveAccessBlocker
+    } | {
+        evaluated: true
+        principalId: string
+        evaluatedAt: string
+        capabilities: EffectiveCapabilityAccess[]
+        unevaluatedCentres: UnevaluatedCentre[]
+    }
+
+    /**
+     * Wraps the report because Encore requires a named interface at the response
+     * root, and the report itself is deliberately a union so that a blocked lookup
+     * cannot be mistaken for "no access anywhere".
+     */
+    export interface EffectiveAccessResponse {
+        report: EffectiveAccessReport
+    }
+
+    export interface EffectiveCapabilityAccess {
+        capability: authorization.FoundationCapability
+        organisation: EffectiveAccessDecision
+        centres: EffectiveCentreAccess[]
+    }
+
+    export interface EffectiveCentreAccess {
+        centreId: string
+        centreName: string
+        decision: EffectiveAccessDecision
     }
 
     export type InvitationScopeSummary = {
@@ -1581,6 +2144,18 @@ export namespace people_access {
     } | {
         scopeType: "centre"
         centreId: string
+    }
+
+    /**
+     * A centre deliberately left out of the matrix because its hierarchy could not
+     * be resolved. It is reported rather than dropped: an administrator reading
+     * "allowed at no centre" must be able to tell a real denial from a centre this
+     * report never managed to ask about.
+     */
+    export interface UnevaluatedCentre {
+        centreId: string
+        centreName: string
+        reason: authorization.CentreAuthorisationIssueReason
     }
 
     export interface VersionedInvitationRequest {
@@ -1740,11 +2315,23 @@ export namespace quarterly_reviews {
         finding: {
             id: string
             description: string
-            originatingAuditId: string
-            originatingAuditStatus: AuditStatus
-            originatingAuditAcknowledged: boolean
             itemLineageKey: string
             repeatCount: number
+            origin: {
+                source: "QUARTERLY_AUDIT"
+                label: "Quarterly review"
+                quarterLabel: string
+                auditId: string
+                auditStatus: AuditStatus
+                acknowledged: boolean
+            } | {
+                source: "OPERATIONAL_CHECK"
+                label: "Centre Standard"
+                occurrenceId: string
+                standardName: string
+                businessDate: string
+                synthetic: boolean
+            }
         }
         requiredRemediation: string
         evidenceRequirement: "none" | "optional" | "required"

@@ -1,11 +1,21 @@
 "use client";
 
 import Link from "next/link";
-import { useEffect, useMemo, useState, type ReactNode } from "react";
+import {
+  createContext,
+  useCallback,
+  useContext,
+  useEffect,
+  useMemo,
+  useRef,
+  useState,
+  type ReactNode,
+} from "react";
 
 import { useCentreSuccessAuthentication } from "../lib/centre-success-authentication";
 import { useAuthenticatedCentreSuccessClient } from "../lib/centre-success-client";
 import { AuthenticationGate } from "./authentication-gate";
+import { Dialog } from "./design-system";
 
 /**
  * The Centre Success application frame.
@@ -31,6 +41,58 @@ const DAILY_SUCCESS_LINK: WorkspaceLink = { label: "Daily Success", route: "/" }
 /** Safe baseline while navigation is unknown, denied, or unavailable. */
 const BASELINE_LINKS: readonly WorkspaceLink[] = [DAILY_SUCCESS_LINK];
 
+/**
+ * Unsaved-work protection for the shell's own leave paths.
+ *
+ * `beforeunload` only covers a real page unload. The focused single-task shell
+ * still offers the brand link and sign out, both of which discard unsaved work
+ * through client-side navigation without the browser ever asking. A screen
+ * holding answers registers a blocker here, and the shell asks before it acts.
+ *
+ * This is deliberately not a router framework: it guards the two leave paths
+ * the shell itself owns, and nothing else.
+ */
+type LeaveBlocker = () => boolean;
+
+/**
+ * A held departure. Navigation is resolved by rendering a real link in the
+ * confirmation rather than pushing through a router, which keeps the shell
+ * free of router coupling and leaves the browser to do the navigating.
+ */
+export type PendingLeave =
+  | { kind: "navigate"; href: string }
+  | { kind: "run"; run: () => void };
+
+interface UnsavedWorkApi {
+  register: (blocker: LeaveBlocker | null) => void;
+}
+
+const UnsavedWorkContext = createContext<UnsavedWorkApi | null>(null);
+
+/** Registers a predicate that reports whether leaving would discard work. */
+export function useBlockLeaveWhen(shouldBlock: boolean): void {
+  const api = useContext(UnsavedWorkContext);
+
+  // The blocker closes over `shouldBlock` directly and is re-registered whenever
+  // it changes.
+  //
+  // An earlier version kept one stable closure reading through a ref, to avoid
+  // re-registering on every keystroke. That made the guard lag its own state by
+  // an effect flush: a check that had just been completed could still block sign
+  // out, because the ref still said "blocked" when the click landed. It passed
+  // locally, where the effect won the race, and failed on slower CI hardware —
+  // which is the worst shape for this bug, since the surface it protects is a
+  // confirmation dialog a user sees only when something has gone wrong.
+  //
+  // Re-registering is a single function assignment. Correctness is worth more
+  // than avoiding it.
+  useEffect(() => {
+    if (!api) return;
+    api.register(() => shouldBlock);
+    return () => api.register(null);
+  }, [api, shouldBlock]);
+}
+
 export function BusinessWorkspaceGate({ children }: Readonly<{ children: ReactNode }>) {
   const { state } = useCentreSuccessAuthentication();
   if (state.kind !== "signed-in") {
@@ -42,12 +104,24 @@ export function BusinessWorkspaceGate({ children }: Readonly<{ children: ReactNo
 export function AppBar({
   links,
   active,
-}: Readonly<{ links: readonly WorkspaceLink[]; active?: string }>) {
+  onLeave,
+}: Readonly<{
+  links: readonly WorkspaceLink[];
+  active?: string;
+  /** Returns true when the shell has taken responsibility for the departure. */
+  onLeave?: (pending: PendingLeave) => boolean;
+}>) {
   const { signOut } = useCentreSuccessAuthentication();
   return (
     <header className="app-bar">
       <div className="app-bar__inner">
-        <Link className="app-bar__brand" href="/">
+        <Link
+          className="app-bar__brand"
+          href="/"
+          onClick={(event) => {
+            if (onLeave?.({ kind: "navigate", href: "/" })) event.preventDefault();
+          }}
+        >
           Bright Steps
           <span>Centre Success</span>
         </Link>
@@ -65,7 +139,17 @@ export function AppBar({
           </nav>
         ) : null}
         <div className="app-bar__account">
-          <button className="app-bar__sign-out" type="button" onClick={() => void signOut()}>
+          <button
+            className="app-bar__sign-out"
+            type="button"
+            onClick={(event) => {
+              if (onLeave?.({ kind: "run", run: () => void signOut() })) {
+                event.preventDefault();
+                return;
+              }
+              void signOut();
+            }}
+          >
             Sign out
           </button>
         </div>
@@ -129,13 +213,68 @@ export function AppShell({
   const authorised = useAuthorisedNavigation(override === undefined);
   const links = useMemo(() => override ?? authorised, [override, authorised]);
 
+  const blocker = useRef<LeaveBlocker | null>(null);
+  const [pendingLeave, setPendingLeave] = useState<PendingLeave | null>(null);
+  const unsavedWork = useMemo<UnsavedWorkApi>(
+    () => ({ register: (next) => { blocker.current = next; } }),
+    [],
+  );
+
+  const onLeave = useCallback((pending: PendingLeave) => {
+    if (!blocker.current?.()) return false;
+    setPendingLeave(pending);
+    return true;
+  }, []);
+
   return (
-    <div className="app-shell">
-      <a className="skip-link" href="#centre-success-main">Skip to main content</a>
-      <AppBar links={links} active={active} />
-      <main className="app-main" id="centre-success-main">
-        {children}
-      </main>
-    </div>
+    <UnsavedWorkContext.Provider value={unsavedWork}>
+      <div className="app-shell">
+        <a className="skip-link" href="#centre-success-main">Skip to main content</a>
+        <AppBar links={links} active={active} onLeave={onLeave} />
+        <main className="app-main" id="centre-success-main">
+          {children}
+        </main>
+        {pendingLeave ? (
+          <Dialog
+            title="Leave this check?"
+            onDismiss={() => setPendingLeave(null)}
+            footer={
+              <>
+                <button
+                  className="button button--secondary"
+                  type="button"
+                  data-autofocus
+                  onClick={() => setPendingLeave(null)}
+                >
+                  Stay on this check
+                </button>
+                {pendingLeave.kind === "navigate" ? (
+                  <Link className="button" href={pendingLeave.href}>
+                    Leave anyway
+                  </Link>
+                ) : (
+                  <button
+                    className="button"
+                    type="button"
+                    onClick={() => {
+                      const { run } = pendingLeave;
+                      setPendingLeave(null);
+                      run();
+                    }}
+                  >
+                    Leave anyway
+                  </button>
+                )}
+              </>
+            }
+          >
+            <p>
+              You have answers on this check that have not been submitted. They will be
+              lost if you leave now.
+            </p>
+          </Dialog>
+        ) : null}
+      </div>
+    </UnsavedWorkContext.Provider>
   );
 }

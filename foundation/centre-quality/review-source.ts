@@ -298,6 +298,7 @@ export const QualityReviewSource = {
         ON run.organisation_id = finding.organisation_id
        AND run.id = finding.audit_run_id
       WHERE finding.organisation_id = ${authorisation.organisationId}
+        AND finding.source_family = 'QUARTERLY_AUDIT'
         AND finding.centre_id = ${centreId}
         AND finding.status = 'OPEN'
         AND finding.severity = 'CRITICAL'

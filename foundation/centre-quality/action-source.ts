@@ -71,6 +71,10 @@ export const QualityActionSource = {
           action.independent_verification_required,
           NULL::timestamptz AS closed_at
         FROM corrective_actions AS action
+        JOIN findings AS finding
+          ON finding.organisation_id = action.organisation_id
+         AND finding.id = action.finding_id
+         AND finding.source_family = 'QUARTERLY_AUDIT'
         WHERE action.organisation_id = ${authorisation.organisationId}
           AND action.centre_id = ANY(${actionCentreIds as string[]}::uuid[])
           AND action.status NOT IN ('CLOSED', 'WITHDRAWN')
@@ -89,6 +93,10 @@ export const QualityActionSource = {
           action.independent_verification_required,
           action.closed_at
         FROM corrective_actions AS action
+        JOIN findings AS finding
+          ON finding.organisation_id = action.organisation_id
+         AND finding.id = action.finding_id
+         AND finding.source_family = 'QUARTERLY_AUDIT'
         WHERE action.organisation_id = ${authorisation.organisationId}
           AND action.centre_id = ANY(${actionCentreIds as string[]}::uuid[])
           AND action.status = 'CLOSED'
@@ -115,6 +123,7 @@ export const QualityActionSource = {
           ON item.organisation_id = response.organisation_id
          AND item.id = response.audit_item_id
         WHERE finding.organisation_id = ${authorisation.organisationId}
+          AND finding.source_family = 'QUARTERLY_AUDIT'
           AND finding.centre_id = ANY(${findingCentreIds as string[]}::uuid[])
           AND finding.status = 'OPEN'
           AND finding.severity = 'CRITICAL'

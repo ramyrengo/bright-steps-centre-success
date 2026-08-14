@@ -1191,14 +1191,17 @@ describe("authorised navigation is derived from current capability and scope", (
     expect(routes).toContain("/quality");
   });
 
-  test("gives a principal from another organisation no destination, and never caches", async () => {
+  test("gives a principal only destinations authorised in their own organisation, and never caches", async () => {
     // The outsider holds an active membership in their own organisation, so
-    // navigation resolves normally and correctly yields nothing to show.
+    // navigation resolves normally. Educator v2 now has the approved,
+    // centre-scoped Standards destination but gains no Quality destination.
     const outsider = await buildAuthorisedNavigation(
       { principalId: fixture.outsiderId },
       { now },
     );
-    expect(outsider.response.links).toEqual([]);
+    expect(outsider.response.links).toEqual([
+      { label: "Centre Standards", route: "/standards" },
+    ]);
 
     const result = await buildAuthorisedNavigation(
       { principalId: fixture.centreDirectorId },

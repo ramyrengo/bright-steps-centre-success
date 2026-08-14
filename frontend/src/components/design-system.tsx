@@ -1,7 +1,7 @@
 "use client";
 
 import Link from "next/link";
-import { useEffect, useId, useRef, type ReactNode } from "react";
+import { useCallback, useEffect, useId, useRef, type ReactNode } from "react";
 
 /**
  * Bright Steps Centre Success design-system primitives.
@@ -388,6 +388,353 @@ export function Dialog({
 }
 
 /** A short reason explaining why a control is unavailable, tied to it by id. */
+/**
+ * A single assessed answer, rendered as a set of large targets.
+ *
+ * Built on native radios so keyboard operation, arrow-key movement, the
+ * accessible selected state and forced-colors support all come from the
+ * platform rather than being re-implemented. The visible target is the label,
+ * which is what makes a 56px one-handed control possible without abandoning
+ * real form semantics.
+ *
+ * It is deliberately not a form framework: it renders permitted options for
+ * one question and reports the chosen opaque value.
+ */
+export function AnswerControl({
+  legend,
+  name,
+  options,
+  value,
+  onChange,
+  disabled = false,
+  instructions,
+  takeFocus = false,
+}: Readonly<{
+  legend: string;
+  name: string;
+  options: readonly { value: string; label: string; description?: string }[];
+  value: string | undefined;
+  onChange: (next: string) => void;
+  disabled?: boolean;
+  instructions?: string;
+  /**
+   * Moves focus to the group when it mounts.
+   *
+   * A one-question-at-a-time flow replaces the question in place while the
+   * step controls keep their position, so a screen-reader or keyboard user is
+   * left focused on a "Next" button with no signal that the question beneath
+   * it changed. Focusing the group makes the platform read the new question
+   * and its options, which is what a sighted reader gets for free.
+   *
+   * It is off for the first question so arriving on the screen does not yank
+   * focus past the heading that says which check this is.
+   */
+  takeFocus?: boolean;
+}>) {
+  const instructionsId = useId();
+  const group = useRef<HTMLFieldSetElement>(null);
+
+  useEffect(() => {
+    if (takeFocus) group.current?.focus();
+  }, [takeFocus]);
+
+  return (
+    <fieldset
+      className="answer-control"
+      ref={group}
+      // Only a programmatic target: it must never become a Tab stop, which
+      // would put an extra silent stop in front of every question.
+      {...(takeFocus ? { tabIndex: -1 } : {})}
+      {...(instructions ? { "aria-describedby": instructionsId } : {})}
+    >
+      <legend className="answer-control__legend">{legend}</legend>
+      {instructions ? (
+        <p className="answer-control__instructions" id={instructionsId}>
+          {instructions}
+        </p>
+      ) : null}
+      <div className="answer-control__options">
+        {options.map((option) => (
+          <label className="answer-option" key={option.value}>
+            <input
+              type="radio"
+              name={name}
+              value={option.value}
+              checked={value === option.value}
+              disabled={disabled}
+              onChange={() => onChange(option.value)}
+            />
+            <span className="answer-option__mark" aria-hidden="true" />
+            <span className="answer-option__body">
+              <span className="answer-option__label">{option.label}</span>
+              {option.description ? (
+                <span className="answer-option__description">{option.description}</span>
+              ) : null}
+            </span>
+          </label>
+        ))}
+      </div>
+    </fieldset>
+  );
+}
+
+/**
+ * A question where any number of options may be chosen.
+ *
+ * The sibling of `AnswerControl`, built on native checkboxes for the same
+ * reason: the accessible checked state, the group semantics and forced-colors
+ * support come from the platform, and the visually hidden input keeps them
+ * while the styled label supplies the 56px one-handed target.
+ *
+ * It is a separate component rather than a mode of `AnswerControl` because the
+ * two answer *different* questions — "which one" and "which of these" — and
+ * collapsing them would mean one component whose value is sometimes a string
+ * and sometimes an array.
+ */
+export function MultiAnswerControl({
+  legend,
+  name,
+  options,
+  values,
+  onChange,
+  disabled = false,
+  instructions,
+  takeFocus = false,
+}: Readonly<{
+  legend: string;
+  name: string;
+  options: readonly { value: string; label: string; description?: string }[];
+  values: readonly string[];
+  onChange: (next: string[]) => void;
+  disabled?: boolean;
+  instructions?: string;
+  takeFocus?: boolean;
+}>) {
+  const instructionsId = useId();
+  const group = useRef<HTMLFieldSetElement>(null);
+
+  useEffect(() => {
+    if (takeFocus) group.current?.focus();
+  }, [takeFocus]);
+
+  return (
+    <fieldset
+      className="answer-control"
+      ref={group}
+      {...(takeFocus ? { tabIndex: -1 } : {})}
+      {...(instructions ? { "aria-describedby": instructionsId } : {})}
+    >
+      <legend className="answer-control__legend">{legend}</legend>
+      {instructions ? (
+        <p className="answer-control__instructions" id={instructionsId}>
+          {instructions}
+        </p>
+      ) : null}
+      <div className="answer-control__options">
+        {options.map((option) => {
+          const checked = values.includes(option.value);
+          return (
+            <label className="answer-option answer-option--multi" key={option.value}>
+              <input
+                type="checkbox"
+                name={name}
+                value={option.value}
+                checked={checked}
+                disabled={disabled}
+                onChange={() =>
+                  onChange(
+                    checked
+                      ? values.filter((value) => value !== option.value)
+                      : [...values, option.value],
+                  )
+                }
+              />
+              <span className="answer-option__mark" aria-hidden="true" />
+              <span className="answer-option__body">
+                <span className="answer-option__label">{option.label}</span>
+                {option.description ? (
+                  <span className="answer-option__description">{option.description}</span>
+                ) : null}
+              </span>
+            </label>
+          );
+        })}
+      </div>
+    </fieldset>
+  );
+}
+
+/**
+ * A question answered by typing or picking rather than by choosing an option:
+ * written text, a number, a date, a time of day.
+ *
+ * The label is a real `<label>` tied to one control, so the question wording is
+ * the accessible name and tapping it focuses the field. `suffix` carries a unit
+ * without putting it inside the value.
+ */
+export function EntryControl({
+  label,
+  name,
+  entry,
+  value,
+  onChange,
+  disabled = false,
+  instructions,
+  suffix,
+  min,
+  max,
+  takeFocus = false,
+}: Readonly<{
+  label: string;
+  name: string;
+  entry: "text" | "paragraph" | "number" | "date" | "time";
+  value: string;
+  onChange: (next: string) => void;
+  disabled?: boolean;
+  instructions?: string;
+  /** A unit shown beside a number, e.g. "children". Never part of the value. */
+  suffix?: string;
+  /**
+   * Bounds for a date, time or number entry, in that entry's own format. The
+   * platform picker enforces them, which is what makes an out-of-range value
+   * hard to enter rather than merely refused afterwards. A paragraph ignores
+   * them — there is no such thing as a bounded paragraph.
+   */
+  min?: string;
+  max?: string;
+  takeFocus?: boolean;
+}>) {
+  const instructionsId = useId();
+  const control = useRef<HTMLInputElement | HTMLTextAreaElement | null>(null);
+  // A callback ref rather than an object ref: the same variable has to hold
+  // either an input or a textarea depending on `entry`, and this is the one
+  // form that types cleanly for both without a cast.
+  const attach = useCallback((node: HTMLInputElement | HTMLTextAreaElement | null) => {
+    control.current = node;
+  }, []);
+
+  useEffect(() => {
+    if (takeFocus) control.current?.focus();
+  }, [takeFocus]);
+
+  const described = instructions ? { "aria-describedby": instructionsId } : {};
+
+  return (
+    <div className="entry-control">
+      <label className="entry-control__label" htmlFor={name}>
+        {label}
+      </label>
+      {instructions ? (
+        <p className="entry-control__instructions" id={instructionsId}>
+          {instructions}
+        </p>
+      ) : null}
+      <div className="entry-control__field">
+        {entry === "paragraph" ? (
+          <textarea
+            id={name}
+            name={name}
+            ref={attach}
+            rows={4}
+            value={value}
+            disabled={disabled}
+            onChange={(event) => onChange(event.target.value)}
+            {...described}
+          />
+        ) : (
+          <input
+            id={name}
+            name={name}
+            ref={attach}
+            type={
+              entry === "number"
+                ? "number"
+                : entry === "date"
+                  ? "date"
+                  : entry === "time"
+                    ? "time"
+                    : "text"
+            }
+            {...(entry === "number" ? { inputMode: "decimal" as const } : {})}
+            {...(min !== undefined ? { min } : {})}
+            {...(max !== undefined ? { max } : {})}
+            value={value}
+            disabled={disabled}
+            onChange={(event) => onChange(event.target.value)}
+            {...described}
+          />
+        )}
+        {suffix ? <span className="entry-control__suffix">{suffix}</span> : null}
+      </div>
+    </div>
+  );
+}
+
+/** Position within a check. The written count is the accessible source of truth. */
+export function CheckProgress({
+  current,
+  total,
+}: Readonly<{ current: number; total: number }>) {
+  return (
+    <div className="check-progress">
+      <p className="check-progress__text">
+        Question {current} of {total}
+      </p>
+      <div className="check-progress__track" aria-hidden="true">
+        {/* The question in hand is "current", never "done". Filling it as done
+            told the reader they had answered one more question than they had,
+            which on the last step reads as a finished check. */}
+        {Array.from({ length: total }, (_, index) => (
+          <span
+            key={index}
+            className="check-progress__step"
+            data-state={
+              index < current - 1 ? "done" : index === current - 1 ? "current" : "todo"
+            }
+          />
+        ))}
+      </div>
+    </div>
+  );
+}
+
+/**
+ * The screen a completed check lands on. Completion is a destination, never a
+ * toast: an educator who looked away must still be able to tell it worked.
+ */
+export function CompletionState({
+  title,
+  message,
+  detail,
+  action,
+}: Readonly<{
+  title: string;
+  message: string;
+  detail?: string;
+  action?: ReactNode;
+}>) {
+  const titleId = useId();
+  const heading = useRef<HTMLHeadingElement>(null);
+
+  // Completion replaces the form, so focus must be moved deliberately rather
+  // than left on a control that no longer exists. Without this, a keyboard or
+  // screen-reader user is dropped at the top of the document with no idea the
+  // check succeeded.
+  useEffect(() => {
+    heading.current?.focus();
+  }, []);
+
+  return (
+    <section className="completion-state" aria-labelledby={titleId} role="status">
+      <span className="completion-state__mark" aria-hidden="true">✓</span>
+      <h1 id={titleId} ref={heading} data-page-focus tabIndex={-1}>{title}</h1>
+      <p className="completion-state__message">{message}</p>
+      {detail ? <p className="completion-state__detail">{detail}</p> : null}
+      {action ? <div className="completion-state__action">{action}</div> : null}
+    </section>
+  );
+}
+
 export function DisabledReason({ id, children }: Readonly<{ id: string; children: ReactNode }>) {
   return <p className="metric__note" id={id}>{children}</p>;
 }

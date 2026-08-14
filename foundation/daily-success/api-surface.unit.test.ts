@@ -12,7 +12,7 @@ describe("Daily Success API surface", () => {
   });
 
   test("contains no persistent Daily Success or free-form CTA storage seam", () => {
-    const files = ["contracts.ts", "service.ts", "corrective-action-source.ts", "quarterly-review-source.ts", "people-access-source.ts"];
+    const files = ["contracts.ts", "service.ts", "corrective-action-source.ts", "quarterly-review-source.ts", "people-access-source.ts", "operational-check-source.ts"];
     const source = files.map((file) => readFileSync(new URL(`./${file}`, import.meta.url), "utf8")).join("\n");
     expect(source).not.toMatch(/daily_tasks|daily_success_items|snooze|dismiss|materiali[sz]ed/giu);
     expect(source).not.toMatch(/INSERT\s+INTO|UPDATE\s+daily|DELETE\s+FROM/giu);

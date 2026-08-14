@@ -14,6 +14,7 @@ import {
 import {
   ErrCode,
   isAPIError,
+  type authorization,
   type people_access,
 } from "../lib/client.generated";
 import { useCentreSuccessAuthentication } from "../lib/centre-success-authentication";
@@ -606,6 +607,7 @@ export function PersonWorkspace({ principalId }: Readonly<{ principalId: string 
             <div className="people-actions">
               <Link className="button" href={`/admin/people/${person.principalId}/access`}>Manage access</Link>
               <Link className="button button--secondary" href={`/admin/people/${person.principalId}/history`}>View history</Link>
+              <Link className="button button--secondary" href={`/admin/people/${person.principalId}/effective-access`}>Effective access</Link>
             </div>
           </article>
         ) : null}
@@ -857,6 +859,220 @@ export function PersonHistoryWorkspace({ principalId }: Readonly<{ principalId: 
               </li>
             ))}
           </ol>
+        ) : null}
+      </WorkflowShell>
+    </BusinessWorkspaceGate>
+  );
+}
+
+/**
+ * Plain wording for the states that stop a lookup before any capability can be
+ * evaluated. Each one is the answer to the question that prompted the lookup,
+ * so it names the next action rather than restating the code.
+ */
+const ACCESS_BLOCKER_MESSAGE: Record<people_access.EffectiveAccessBlocker, string> = {
+  invalid_identifier: "That identifier is not a valid principal reference.",
+  principal_missing: "No person with that identifier exists in your organisation.",
+  principal_inactive:
+    "This person's account is not active, so nothing could be evaluated. Their access will stay refused until the account is active again, whatever their assignments say.",
+  organisation_missing: "The organisation for this lookup could not be read.",
+  organisation_inactive: "This organisation is not active, so no access can be evaluated.",
+  membership_missing:
+    "This person holds no active membership of this organisation, so no assignment can take effect.",
+  membership_ambiguous:
+    "This person holds more than one active membership of this organisation. The policy refuses to choose between them, so every request is refused until one is ended.",
+  assignment_context_invalid:
+    "This person's assignment records could not be read as a valid authorisation context.",
+};
+
+const ACCESS_DENY_MESSAGE: Record<authorization.DenyReason, string> = {
+  capability_missing: "No active assignment carries this capability.",
+  scope_mismatch: "An assignment carries this capability, but not here.",
+  membership_missing: "No active membership of this organisation.",
+  membership_ambiguous: "More than one active membership; the policy refuses to choose.",
+  principal_inactive: "The account is not active.",
+  active_organisation_mismatch: "The record belongs to a different organisation.",
+  invalid_context: "The authorisation context could not be read.",
+  invalid_resource: "The centre or organisation could not be resolved.",
+};
+
+type EvaluatedAccess = Extract<people_access.EffectiveAccessReport, { evaluated: true }>;
+
+/**
+ * Describes where one capability applies. Denials are summarised by their
+ * distinct reasons rather than collapsed to a count, because "not held at all"
+ * and "held, wrong centre" send an administrator to different fixes.
+ */
+function describeCapability(entry: EvaluatedAccess["capabilities"][number]): {
+  held: boolean;
+  where: string;
+  why: string;
+  grantedBy?: string;
+} {
+  const allowedCentres = entry.centres.filter((centre) => centre.decision.allowed);
+  const grant = entry.organisation.allowed
+    ? entry.organisation
+    : allowedCentres[0]?.decision;
+  const reasons = [
+    ...(entry.organisation.allowed ? [] : [entry.organisation.reason]),
+    ...entry.centres.flatMap((centre) =>
+      centre.decision.allowed ? [] : [centre.decision.reason],
+    ),
+  ];
+  const distinct = [...new Set(reasons)];
+
+  if (entry.organisation.allowed) {
+    return {
+      held: true,
+      where: "Organisation-wide, and at every centre",
+      why: "",
+      grantedBy: grant?.allowed ? grant.roleKey : undefined,
+    };
+  }
+
+  if (allowedCentres.length > 0) {
+    return {
+      held: true,
+      where: allowedCentres.map((centre) => centre.centreName).join(", "),
+      why: distinct.map((reason) => ACCESS_DENY_MESSAGE[reason]).join(" "),
+      grantedBy: grant?.allowed ? grant.roleKey : undefined,
+    };
+  }
+
+  return {
+    held: false,
+    where: "Nowhere",
+    why: distinct.map((reason) => ACCESS_DENY_MESSAGE[reason]).join(" "),
+  };
+}
+
+export function PersonEffectiveAccessWorkspace({
+  principalId,
+}: Readonly<{ principalId: string }>) {
+  const client = useAuthenticatedCentreSuccessClient();
+  const [response, setResponse] = useState<people_access.EffectiveAccessResponse | null>(
+    null,
+  );
+  const [error, setError] = useState(false);
+
+  useEffect(() => {
+    let current = true;
+    void client.foundation.getPersonEffectiveAccess(principalId).then(
+      (result) => current && setResponse(result),
+      () => current && setError(true),
+    );
+    return () => {
+      current = false;
+    };
+  }, [client, principalId]);
+
+  const report = response?.report;
+  const evaluated = report?.evaluated ? report : undefined;
+  const held = useMemo(
+    () =>
+      (evaluated?.capabilities ?? [])
+        .map((entry) => ({ entry, described: describeCapability(entry) }))
+        .filter((item) => item.described.held),
+    [evaluated],
+  );
+  const notHeld = useMemo(
+    () =>
+      (evaluated?.capabilities ?? [])
+        .map((entry) => ({ entry, described: describeCapability(entry) }))
+        .filter((item) => !item.described.held),
+    [evaluated],
+  );
+
+  return (
+    <BusinessWorkspaceGate>
+      <WorkflowShell
+        eyebrow="People & Access"
+        title="Effective access"
+        summary="What this person can do right now, decided by the same policy that refuses their requests. Reporting only: opening this grants nobody access and reads no business content."
+      >
+        {error ? (
+          <WorkflowState
+            kind="error"
+            title="Effective access unavailable"
+            message="Effective access is not available in your current organisation scope."
+          />
+        ) : null}
+        {!response && !error ? (
+          <WorkflowState
+            kind="loading"
+            title="Evaluating access"
+            message="Asking the authorisation policy for every capability…"
+          />
+        ) : null}
+        {report && !report.evaluated ? (
+          <WorkflowState
+            kind="error"
+            title="No access could be evaluated"
+            message={ACCESS_BLOCKER_MESSAGE[report.blockedBy]}
+          />
+        ) : null}
+        {evaluated && evaluated.unevaluatedCentres.length > 0 ? (
+          <WorkflowState
+            kind="error"
+            title="Some centres could not be checked"
+            message={`${evaluated.unevaluatedCentres
+              .map((centre) => centre.centreName)
+              .join(", ")} could not be resolved, so this report says nothing about them. Treat their access as unknown, not as refused.`}
+          />
+        ) : null}
+        {evaluated ? (
+          <>
+            <Section
+              title="Held"
+              description="Capabilities an active assignment currently grants, and where."
+              count={`${held.length}`}
+            >
+              {held.length === 0 ? (
+                <WorkflowState
+                  kind="empty"
+                  title="No capability is currently granted"
+                  message="Every capability was evaluated and none is granted anywhere. This is a decision, not a missing record."
+                />
+              ) : (
+                <DataList label="Held capabilities">
+                  {held.map(({ entry, described }) => (
+                    <DataListRow
+                      key={entry.capability}
+                      title={entry.capability}
+                      headingLevel={3}
+                      badge={<StatusBadge tone="positive">Granted</StatusBadge>}
+                      facts={[
+                        { term: "Where", value: described.where },
+                        ...(described.grantedBy
+                          ? [{ term: "Granted by", value: described.grantedBy }]
+                          : []),
+                        ...(described.why
+                          ? [{ term: "Elsewhere", value: described.why }]
+                          : []),
+                      ]}
+                    />
+                  ))}
+                </DataList>
+              )}
+            </Section>
+            <Section
+              title="Not held"
+              description="Capabilities no active assignment grants anywhere, and the reason the policy gave."
+              count={`${notHeld.length}`}
+            >
+              <DataList label="Capabilities not held">
+                {notHeld.map(({ entry, described }) => (
+                  <DataListRow
+                    key={entry.capability}
+                    title={entry.capability}
+                    headingLevel={3}
+                    facts={[{ term: "Why", value: described.why }]}
+                  />
+                ))}
+              </DataList>
+            </Section>
+            <p className="card__meta">Evaluated {formatDate(evaluated.evaluatedAt)}.</p>
+          </>
         ) : null}
       </WorkflowShell>
     </BusinessWorkspaceGate>

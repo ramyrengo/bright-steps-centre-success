@@ -9,7 +9,7 @@ import type {
 } from "./contracts";
 
 export interface DailySuccessQueryExecutor extends AuthorisationQueryExecutor {
-  exec: (strings: TemplateStringsArray, ...values: Primitive[]) => Promise<unknown>;
+  exec: (strings: TemplateStringsArray, ...values: Primitive[]) => Promise<void>;
 }
 
 export interface DailyAuthorisationView {
