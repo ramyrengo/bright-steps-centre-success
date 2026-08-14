@@ -252,7 +252,10 @@ describe("Milestone 2C People & Access experience", () => {
       occurredAt: "2026-08-11T12:00:00.000Z", actorDisplayName: "Synthetic Administrator", reasonRecorded: true,
     }] });
     render(<PersonHistoryWorkspace principalId={PRINCIPAL_ID} />);
-    expect(await screen.findAllByText("role assignment.granted")).toHaveLength(1);
+    // Was "role assignment.granted" — the raw audit code with its underscores
+    // swapped, dot and all. Still exactly one occurrence: this test also guards
+    // the history against rendering an event twice.
+    expect(await screen.findAllByText("Role granted")).toHaveLength(1);
     expect(screen.getAllByText("A reason was recorded.")).toHaveLength(1);
   });
 
@@ -433,5 +436,36 @@ describe("Milestone 2C People & Access experience", () => {
     expect(await screen.findByRole("heading", { name: "Invitation expired" })).toBeDefined();
     expect(screen.getByText(/create a new invitation/i)).toBeDefined();
     expect(screen.queryByText(/rotate and resend/i)).toBeNull();
+  });
+
+  test.each([
+    ["invitation_expired", "Invitation expired"],
+    ["invitation_cancelled", "Invitation unavailable"],
+    ["identity_review_required", "Administrator review required"],
+  ])("clears a spent code from the field (%s)", async (reason, heading) => {
+    // Nothing the candidate does will make a spent code work. Leaving it in the
+    // field invites a pointless resubmission and leaves a dead secret on screen
+    // for whoever is standing behind them.
+    clientMocks.foundation.acceptInvitation.mockRejectedValue({ details: { reason } });
+    render(<InvitationAcceptanceWorkspace />);
+    const field = screen.getByLabelText("Invitation code") as HTMLInputElement;
+    fireEvent.change(field, { target: { value: "spent-code" } });
+    fireEvent.click(screen.getByRole("button", { name: "Verify and continue" }));
+
+    expect(await screen.findByRole("heading", { name: heading })).toBeDefined();
+    expect((screen.getByLabelText("Invitation code") as HTMLInputElement).value).toBe("");
+    expect(document.body.textContent).not.toContain("spent-code");
+  });
+
+  test("keeps a code the candidate is being asked to check", async () => {
+    // The counterpart. This outcome tells the reader to check the code and try
+    // again, which they cannot do if it has been taken away from them.
+    clientMocks.foundation.acceptInvitation.mockRejectedValue({ details: { reason: "unknown_failure" } });
+    render(<InvitationAcceptanceWorkspace />);
+    fireEvent.change(screen.getByLabelText("Invitation code"), { target: { value: "mistyped-code" } });
+    fireEvent.click(screen.getByRole("button", { name: "Verify and continue" }));
+
+    expect(await screen.findByRole("heading", { name: "Invitation could not be verified" })).toBeDefined();
+    expect((screen.getByLabelText("Invitation code") as HTMLInputElement).value).toBe("mistyped-code");
   });
 });
