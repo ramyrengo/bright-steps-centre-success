@@ -28,6 +28,10 @@ no longer governs the current architecture; its replacement record is normative.
 - [ADR-0016: Microsoft Graph staging invitation email delivery](0016-microsoft-graph-staging-invitation-email-delivery.md) — accepted architecture; implementation acceptance remediation in progress
 - [ADR-0017: Centre Quality & Performance as a narrow read-side projection](0017-centre-quality-performance-read-projection.md) — accepted as a narrow product-slice authorisation
 
+## Proposed for independent review
+
+- [ADR-0021: Production readiness and the first production release boundary](0021-production-readiness-and-first-release-boundary.md) — defines Release Boundary P1; implementation not authorised
+
 ## Superseded
 
 - [ADR-0011: Clerk authentication with Centre Success-owned authorisation](0011-clerk-authentication-centre-success-authorisation.md) — superseded by ADR-0012; retained as decision history
