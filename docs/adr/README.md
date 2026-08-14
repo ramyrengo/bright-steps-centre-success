@@ -29,6 +29,10 @@ no longer governs the current architecture; its replacement record is normative.
 - [ADR-0017: Centre Quality & Performance as a narrow read-side projection](0017-centre-quality-performance-read-projection.md) — accepted as a narrow product-slice authorisation
 - [ADR-0020: Area Manager Template & Form Builder](0020-area-manager-template-form-builder.md) — accepted as exactly one next product-slice authorisation; no milestone number assigned
 
+## Proposed for independent review
+
+- [ADR-0021: Production readiness and the first production release boundary](0021-production-readiness-and-first-release-boundary.md) — defines Release Boundary P1; implementation not authorised
+
 ## Superseded
 
 - [ADR-0011: Clerk authentication with Centre Success-owned authorisation](0011-clerk-authentication-centre-success-authorisation.md) — superseded by ADR-0012; retained as decision history
