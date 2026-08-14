@@ -14,6 +14,7 @@ import type {
   AddAssignmentRequest,
   AssignmentMutationRequest,
   CreateInvitationRequest,
+  EffectiveAccessResponse,
   InvitationIdRequest,
   InvitationSummary,
   PeopleListResponse,
@@ -28,6 +29,7 @@ import {
   requirePeopleAdministrator,
   toPeopleAccessApiError,
 } from "./authorization";
+import { getEffectiveAccess } from "./effective-access";
 import {
   getAccessHistory as getAccessHistoryQuery,
   getInvitationSummary,
@@ -252,6 +254,24 @@ export const getPersonHistory = api(
     try {
       const principal = await requirePeopleAdministrator(capability.accessHistoryRead);
       return getAccessHistoryQuery(principal.organisationId, requireUuid(principalId));
+    } catch (error) {
+      return toPeopleAccessApiError(error);
+    }
+  },
+);
+
+export const getPersonEffectiveAccess = api(
+  { expose: true, auth: true, method: "GET", path: "/admin/people/:principalId/effective-access" },
+  async ({ principalId }: PersonIdRequest): Promise<EffectiveAccessResponse> => {
+    try {
+      const principal = await requirePeopleAdministrator(capability.principalRead);
+      requireOrganisationCapability(principal, capability.assignmentRead);
+      return {
+        report: await getEffectiveAccess({
+          organisationId: principal.organisationId,
+          principalId: requireUuid(principalId),
+        }),
+      };
     } catch (error) {
       return toPeopleAccessApiError(error);
     }
