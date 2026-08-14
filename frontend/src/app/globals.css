@@ -1970,14 +1970,24 @@ textarea {
   font-weight: 680;
 }
 
+/* A description list must not itself be a grid or flex container. WebKit drops
+   the term/description mapping from the accessibility tree when it is, so the
+   card's reasons are announced as loose runs of text — "Why", "Overdue" — with
+   nothing tying either term to its description. The list therefore stays a
+   block and its pairs are separated with a margin rather than `gap`; the
+   two-column layout lives on the wrapping `div`, which has no semantics to
+   lose. Rendered spacing is unchanged. */
 .daily-card__why {
-  display: grid;
-  gap: var(--space-2);
+  display: block;
   margin: 0;
   padding: var(--space-3) var(--space-4);
   background: var(--surface-subtle);
   border-radius: var(--radius-small);
   font-size: var(--type-small);
+}
+
+.daily-card__why > div + div {
+  margin-top: var(--space-2);
 }
 
 .daily-card__why div {
@@ -4118,12 +4128,16 @@ textarea {
   font-weight: 700;
 }
 
+/* Same rule as `.daily-card__why`, and it matters more here: this list is the
+   confirmation of what is about to be published, and publication is permanent.
+   A reader who cannot tell which value belongs to which term is being asked to
+   confirm something they have not actually been told. */
 .publish-summary dl {
-  display: grid;
-  grid-template-columns: minmax(0, 1fr);
-  gap: var(--space-2);
+  display: block;
   margin: 0 0 var(--space-3);
 }
+
+.publish-summary dl > div + div { margin-top: var(--space-2); }
 
 .publish-summary dl > div { min-width: 0; }
 
