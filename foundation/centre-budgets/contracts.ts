@@ -4,9 +4,7 @@ import type { Header } from "encore.dev/api";
  * Centre Budgets exposes a per-centre, per-month budget position by governed
  * reporting category: approved budget, recorded actual, remaining, and percent
  * used.
- *
  * Two rules shape every type in this file.
- *
  * 1. Unknown is not zero. A centre-month-category with no entry is a different
  *    state from one with an entry of 0.00, and the two must stay
  *    distinguishable all the way to the browser. Nothing here is defaulted,
@@ -20,7 +18,6 @@ import type { Header } from "encore.dev/api";
 /**
  * An exact decimal amount rendered as a string, for example `"12345.67"` or
  * `"0.00"`.
- *
  * It is deliberately not a `number`. PostgreSQL stores these as
  * `NUMERIC(14,2)`, and DATABASE_SCHEMA.md requires that "Monetary values use
  * fixed precision, explicit currency, financial period, and source date—not
@@ -52,7 +49,6 @@ export type BudgetValueSourceKind = "manual_entry" | "finance_system_import";
 
 /**
  * Why a category is in the state it is in.
- *
  * `NOTHING_RECORDED`       no approved budget and no actual. Nothing is known.
  * `AWAITING_ACTUAL`        an approved budget exists; no actual has been
  *                          entered. This is the state that must never render
@@ -120,13 +116,11 @@ export interface RecordedActualAmount {
 
 /**
  * The threshold band this position falls in.
- *
  * `NOT_CONFIGURED` means the organisation has no approved threshold policy in
  * force for this month. BUDGET_ACCOUNTABILITY.md lists overspend severities as
  * "Candidate categories—not approved thresholds", so no band is seeded
  * anywhere in this system. `NOT_CONFIGURED` must never be presented as a
  * reassuring green: it means nobody has decided what good looks like yet.
- *
  * `NOT_APPLICABLE` means a policy exists but this position cannot be judged
  * against it, because percent used is undefined.
  */
@@ -145,16 +139,13 @@ export interface BudgetThresholdOutcome {
 
 /**
  * One governed category's position for one centre-month.
- *
  * Which fields are present is determined entirely by `state`:
- *
  * | state                   | approvedBudget | actual | remaining | percentUsed |
  * | ----------------------- | -------------- | ------ | --------- | ----------- |
  * | `NOTHING_RECORDED`      | absent         | absent | absent    | absent      |
  * | `AWAITING_ACTUAL`       | present        | absent | absent    | absent      |
  * | `ACTUAL_WITHOUT_BUDGET` | absent         | present| absent    | absent      |
  * | `BUDGET_AND_ACTUAL`     | present        | present| present   | see below   |
- *
  * The service builds these from an internal discriminated union
  * (`CentreBudgetPositionFacts` in `position.ts`), so a position carrying
  * `remaining` without an `actual` is not constructible.
@@ -185,7 +176,6 @@ export interface CentreBudgetCategoryPosition {
 
 /**
  * Roll-up across the categories of one centre-month.
- *
  * Coverage governs which fields exist, on the same principle Centre Quality
  * uses. Counts of what is missing are known negative evidence and are always
  * safe to state. Sums are not: a total computed over a partly entered month
@@ -257,7 +247,6 @@ export interface PortfolioCentreBudgetCard {
 
 /**
  * `status` discriminates the response exactly as Centre Quality does.
- *
  * `unsupported` means the viewer holds no budget read authority for any
  * centre. It queries no budget source, so it carries no `centres`, no
  * `coverage` and no counts. Returning an empty list with zero counts would

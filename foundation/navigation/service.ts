@@ -41,12 +41,8 @@ export class NavigationError extends Error {
   }
 }
 
-interface PrincipalRow {
-  id: string;
-  status: "pending" | "active" | "suspended" | "revoked";
-}
-
-interface OrganisationRow {
+interface PrincipalOrganisationRow {
+  principal_id: string;
   id: string;
 }
 
