@@ -121,7 +121,7 @@ Database integration evidence also covers nested state/region ancestry, centre m
 
 - MFA, recovery, session-revocation expectations, authentication assurance, and step-up;
 - multi-organisation active-context selection/persistence beyond the exact-one Milestone 2A gate;
-- Milestone 3B and later product workflows beyond the approved Daily Success read projection;
+- Milestone 3B and all later implementation beyond accepted milestones; the separately authorised narrow Centre Quality & Performance read projection reserved by ADR-0017 remains an additive exception, while ADR-0018 and ADR-0019 define Centre Standards 4A, whose implementation passed its local gate at `1bf06b7` and awaits independent review and Product Owner acceptance, and ADR-0020 authorises exactly one further product slice, the Area Manager Template & Form Builder;
 - authoritative organisation/portfolio source integration, hierarchy ownership, and propagation SLA;
 - break-glass or support impersonation;
 - production CORS origins and deployment/security operations; and
