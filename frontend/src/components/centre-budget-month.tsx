@@ -150,6 +150,33 @@ export interface ThresholdRuleView extends StateView {
  * nobody has decided what good looks like yet, which is not the same as being
  * inside a limit.
  */
+/**
+ * The tone a governed band carries.
+ *
+ * The approved thresholds are a green/amber/red warning system, so the colour
+ * is part of what was approved rather than an interpretation added here. It
+ * only ever reinforces: every band also renders its own approved label, which
+ * states the position in words, so a reader who cannot distinguish the colours
+ * loses nothing.
+ *
+ * `bandCode` is governed configuration and the business may add or rename a
+ * band without a deploy. An unrecognised code therefore falls back to a neutral
+ * informational tone rather than guessing a severity — a new band must never
+ * inherit "fine" or "alarming" by accident.
+ */
+export function bandTone(bandCode: string | undefined): Tone {
+  switch (bandCode) {
+    case "RED":
+      return "critical";
+    case "AMBER":
+      return "warning";
+    case "GREEN":
+      return "positive";
+    default:
+      return "informational";
+  }
+}
+
 export function thresholdViews(threshold: Threshold): ThresholdRuleView[] {
   if (threshold.state === "NOT_CONFIGURED") {
     return [
@@ -177,7 +204,7 @@ export function thresholdViews(threshold: Threshold): ThresholdRuleView[] {
     rule.state === "BANDED"
       ? {
           key: rule.ruleCode,
-          tone: "informational",
+          tone: bandTone(rule.bandCode),
           label: rule.bandLabel ?? "Threshold band applies",
           detail: `${rule.ruleLabel}, judged against the spending threshold your organisation approved for this month.`,
         }

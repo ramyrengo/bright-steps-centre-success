@@ -33,7 +33,7 @@ vi.mock("../lib/centre-success-client", () => ({
   useAuthenticatedCentreSuccessClient: () => clientMocks.client,
 }));
 
-import { CentreBudgetMonth } from "./centre-budget-month";
+import { CentreBudgetMonth, bandTone, thresholdViews } from "./centre-budget-month";
 import { PortfolioBudgetMonth } from "./portfolio-budget-month";
 
 const MONTH = "2026-08";
@@ -819,5 +819,57 @@ describe("internal vocabulary stays out of the document", () => {
     expect(document.body.textContent ?? "").not.toMatch(
       /[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}/iu,
     );
+  });
+});
+
+describe("governed band tone", () => {
+  test("carries the approved green/amber/red signal, and never as the only indicator", () => {
+    expect(bandTone("RED")).toBe("critical");
+    expect(bandTone("AMBER")).toBe("warning");
+    expect(bandTone("GREEN")).toBe("positive");
+  });
+
+  test("an unrecognised band inherits neither reassurance nor alarm", () => {
+    // bandCode is governed configuration; the business may add or rename a
+    // band without a deploy. A new band must not silently arrive as "fine".
+    expect(bandTone("WATCH")).toBe("informational");
+    expect(bandTone(undefined)).toBe("informational");
+  });
+
+  test("every banded rule still states its position in words", () => {
+    const views = thresholdViews({
+      state: "GOVERNED",
+      rules: [
+        {
+          ruleCode: "BUDGET_USED",
+          ruleLabel: "Budget used",
+          measure: "percent_used",
+          state: "BANDED",
+          bandCode: "RED",
+          bandLabel: "Over the approved budget",
+        },
+      ],
+    } as Parameters<typeof thresholdViews>[0]);
+    expect(views).toHaveLength(1);
+    expect(views[0].tone).toBe("critical");
+    // The label carries the meaning independently of the colour.
+    expect(views[0].label).toBe("Over the approved budget");
+    expect(views[0].label).not.toMatch(/\bRED\b/u);
+  });
+
+  test("an unjudgeable rule is never given a colour", () => {
+    const views = thresholdViews({
+      state: "GOVERNED",
+      rules: [
+        {
+          ruleCode: "REMAINING_BUDGET",
+          ruleLabel: "Remaining budget",
+          measure: "remaining_amount",
+          state: "NOT_APPLICABLE",
+          reason: "No actual has been recorded for this category.",
+        },
+      ],
+    } as Parameters<typeof thresholdViews>[0]);
+    expect(views[0].tone).toBe("neutral");
   });
 });
