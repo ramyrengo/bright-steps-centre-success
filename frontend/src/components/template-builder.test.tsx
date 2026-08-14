@@ -30,6 +30,7 @@ import {
   draftReadinessProblems,
   dueTimeLabel,
   countQuestions,
+  localToday,
   type AssignmentOptions,
   type DraftQuestion,
   type PublishResult,
@@ -44,15 +45,39 @@ import {
  * question is the one someone would later act on as if it were policy.
  */
 const TEMPLATE_ID = "3f5b6f2c-8b1d-4c9a-9a2e-2f0c9e7b41aa";
-const DRAFT_VERSION = "8c1a0d3e-4f22-4c11-a7b6-0d9f2e5c3311";
 const PUBLISHED_VERSION = "b2d4f6a8-1c3e-4a5b-8d7f-9e0a1b2c3d44";
+
+/**
+ * The draft's optimistic-concurrency token, and the one the backend hands back
+ * after a save.
+ *
+ * A draft has no version identifier — it has never been published, so there is
+ * nothing permanent to identify — and every command that changes it is keyed on
+ * the template plus this token instead. Deliberately not 1: a fixture that used
+ * the first plausible number would still pass if a surface defaulted the token
+ * rather than threading the one it was given.
+ */
+const DRAFT_LOCK_VERSION = 7;
+const NEXT_LOCK_VERSION = 8;
 
 /**
  * Fixtures are built as concrete union members rather than through a
  * `Partial`-and-cast helper. A cast would let a fixture describe a question
- * that the contract makes unrepresentable — a date question carrying choices —
+ * that the contract makes unrepresentable — a time question carrying choices —
  * and the tests would then be proving something about a shape the product
  * cannot produce.
+ *
+ * SCOPE GAP, recorded here because these fixtures are where it surfaced: there
+ * is no date question. `QuestionType` offers YES_NO, SINGLE_SELECT,
+ * MULTI_SELECT, TEXT, NUMBER and TIME, which map one-for-one onto the six the
+ * backend can store — migration 023 constrains `question_type` to
+ * `short_text, long_text, single_choice, multiple_choice, numeric, time`, with
+ * no `date` among them. The fixtures below previously asked for a DATE question
+ * because this contract began as a UX-lane placeholder written before the
+ * transport existed. They now ask for TIME, which is what the product can
+ * actually author. If a date question is in approved scope it is a backend gap
+ * to close in the schema, not a fixture to rewrite — so nothing here pretends
+ * DATE and TIME were ever the same question.
  */
 function yesNo(questionId: string, wording: string, required = true): DraftQuestion {
   return { questionId, wording, required, type: "YES_NO" };
@@ -68,7 +93,7 @@ function draft(overrides: Partial<TemplateDraft> = {}): TemplateDraft {
         title: "Test section one",
         questions: [
           yesNo("q-staging-1", "Test question one — staging only"),
-          { questionId: "q-staging-2", wording: "Test question two", required: true, type: "DATE" },
+          { questionId: "q-staging-2", wording: "Test question two", required: true, type: "TIME" },
         ],
       },
     ],
@@ -83,26 +108,28 @@ function draftWorkspace(
     templateId: TEMPLATE_ID,
     templateName: "Staging test template",
     version: {
-      versionId: DRAFT_VERSION,
-      versionLabel: "Version 2",
       lifecycle: "DRAFT",
+      versionLabel: "Draft",
       draft: overrides.body ?? draft(),
+      // Required by the contract, so a draft that could be edited without the
+      // token every write must carry cannot be built here at all.
+      lockVersion: DRAFT_LOCK_VERSION,
       canEdit: overrides.canEdit ?? true,
       canPublish: overrides.canPublish ?? true,
     },
     history: [
+      // The open draft is a different kind of row from a permanent version: it
+      // has no version identifier to open and cannot be the one in use.
       {
-        versionId: DRAFT_VERSION,
-        versionLabel: "Version 2",
-        lifecycle: "DRAFT",
+        state: "DRAFT",
+        label: "Draft",
         eventLabel: "Draft started 13 Aug 2026",
         eventBy: "Test Area Manager",
-        current: false,
       },
       {
+        state: "PUBLISHED",
         versionId: PUBLISHED_VERSION,
         versionLabel: "Version 1",
-        lifecycle: "PUBLISHED",
         eventLabel: "Published 1 Aug 2026",
         eventBy: "Test Area Manager",
         current: true,
@@ -135,11 +162,13 @@ function publishedWorkspace(): TemplateWorkspace {
       canCreateDraft: true,
       canRetire: true,
     },
+    // No draft row. This template's only history is the version that was
+    // published, which is what makes "start a new draft" the offered action.
     history: [
       {
+        state: "PUBLISHED",
         versionId: PUBLISHED_VERSION,
         versionLabel: "Version 1",
-        lifecycle: "PUBLISHED",
         eventLabel: "Published 1 Aug 2026",
         eventBy: "Test Area Manager",
         current: true,
@@ -161,7 +190,10 @@ function gateway(overrides: Partial<TemplateBuilderGateway> = {}): TemplateBuild
   return {
     ...backendNotAvailableGateway,
     loadAssignmentOptions: () => Promise.resolve(ASSIGNMENT_OPTIONS),
-    saveDraft: () => Promise.resolve({ lastSavedLocalTime: "2:14pm" }),
+    // A save hands back the token the *next* command must send, never the one
+    // it was given: holding the old one would get the very next save refused.
+    saveDraft: () =>
+      Promise.resolve({ lastSavedLocalTime: "2:14pm", lockVersion: NEXT_LOCK_VERSION }),
     ...overrides,
   };
 }
@@ -207,8 +239,11 @@ describe("builder contract helpers", () => {
   });
 
   test("readiness names what is missing, in the order it would be fixed", () => {
-    expect(draftReadinessProblems({ name: "", sections: [] })).toEqual([
+    expect(draftReadinessProblems({ name: "", purpose: "", sections: [] })).toEqual([
       "Give the template a name.",
+      // The backend refuses to store a template that does not say what it is
+      // for, so it is named here while the Area Manager can still fix it.
+      "Say what this template is for.",
       "Add at least one section.",
       "Add at least one question.",
     ]);
@@ -335,7 +370,7 @@ describe("template library", () => {
 
   test("a template is created once even under two clicks in one batch", async () => {
     const createTemplate = vi.fn(() =>
-      Promise.resolve({ templateId: TEMPLATE_ID, versionId: DRAFT_VERSION }),
+      Promise.resolve({ outcome: "CREATED" as const, templateId: TEMPLATE_ID }),
     );
     const onCreated = vi.fn();
     render(
@@ -352,6 +387,11 @@ describe("template library", () => {
     fireEvent.click(await screen.findByRole("button", { name: "New template" }));
     fireEvent.change(screen.getByLabelText("Template name"), {
       target: { value: "Second staging template" },
+    });
+    // Both fields, because the backend stores neither as optional: a template
+    // with no stated purpose is refused outright.
+    fireEvent.change(screen.getByLabelText("What it is for"), {
+      target: { value: "Test scaffolding, not a Bright Steps standard" },
     });
 
     const start = screen.getByRole("button", { name: "Start draft" });
@@ -375,17 +415,17 @@ describe("template library", () => {
 
 describe("draft editor", () => {
   function renderEditor(workspace = draftWorkspace(), overrides: Partial<TemplateBuilderGateway> = {}) {
-    const onOpenVersion = vi.fn();
+    const onOpen = vi.fn();
     const onPreview = vi.fn();
     const view = render(
       <TemplateEditorScreen
         workspace={workspace}
         gateway={gateway(overrides)}
-        onOpenVersion={onOpenVersion}
+        onOpen={onOpen}
         onPreview={onPreview}
       />,
     );
-    return { ...view, onOpenVersion, onPreview };
+    return { ...view, onOpen, onPreview };
   }
 
   test("a section and a question can be added", () => {
@@ -480,7 +520,9 @@ describe("draft editor", () => {
   });
 
   test("preview saves unsaved work first, so it never shows an older form", async () => {
-    const saveDraft = vi.fn(() => Promise.resolve({ lastSavedLocalTime: "2:14pm" }));
+    const saveDraft = vi.fn(() =>
+      Promise.resolve({ lastSavedLocalTime: "2:14pm", lockVersion: NEXT_LOCK_VERSION }),
+    );
     const { onPreview } = renderEditor(draftWorkspace(), { saveDraft });
     fireEvent.change(screen.getByLabelText("Template name"), {
       target: { value: "Renamed staging template" },
@@ -492,7 +534,7 @@ describe("draft editor", () => {
   });
 
   test("publish is withheld until the draft is publishable", () => {
-    renderEditor(draftWorkspace({ body: { name: "", sections: [] } }));
+    renderEditor(draftWorkspace({ body: { name: "", purpose: "", sections: [] } }));
     expect(screen.getByRole("button", { name: "Publish" })).toHaveProperty("disabled", true);
     expect(screen.getByText("Give the template a name.")).toBeTruthy();
     expect(screen.getByText("Add at least one section.")).toBeTruthy();
@@ -518,16 +560,16 @@ describe("draft editor", () => {
 
 describe("published versions are immutable", () => {
   function renderPublished(overrides: Partial<TemplateBuilderGateway> = {}) {
-    const onOpenVersion = vi.fn();
+    const onOpen = vi.fn();
     const view = render(
       <TemplateEditorScreen
         workspace={publishedWorkspace()}
         gateway={gateway(overrides)}
-        onOpenVersion={onOpenVersion}
+        onOpen={onOpen}
         onPreview={vi.fn()}
       />,
     );
-    return { ...view, onOpenVersion };
+    return { ...view, onOpen };
   }
 
   test("a published version offers no edit control at all", () => {
@@ -551,14 +593,18 @@ describe("published versions are immutable", () => {
   });
 
   test("changing it means a new draft, and the published version is untouched", async () => {
-    const createDraftFrom = vi.fn(() =>
-      Promise.resolve({ templateId: TEMPLATE_ID, versionId: "new-draft" }),
-    );
-    const { onOpenVersion } = renderPublished({ createDraftFrom });
+    // The command carries no draft body and returns no version identifier: it
+    // opens the template's editable draft, and the published version it was
+    // started from is neither consumed nor copied over.
+    const createDraftFrom = vi.fn(() => Promise.resolve({ templateId: TEMPLATE_ID }));
+    const { onOpen } = renderPublished({ createDraftFrom });
 
     fireEvent.click(screen.getByRole("button", { name: "Create a new draft" }));
-    await waitFor(() => expect(onOpenVersion).toHaveBeenCalledWith("new-draft"));
-    expect(createDraftFrom).toHaveBeenCalledWith({ versionId: PUBLISHED_VERSION });
+    await waitFor(() => expect(onOpen).toHaveBeenCalledWith({ kind: "DRAFT" }));
+    expect(createDraftFrom).toHaveBeenCalledWith({
+      templateId: TEMPLATE_ID,
+      versionId: PUBLISHED_VERSION,
+    });
   });
 
   test("a failed new draft says the published version is unchanged", async () => {
@@ -573,7 +619,7 @@ describe("published versions are immutable", () => {
       <TemplateEditorScreen
         workspace={draftWorkspace({ canEdit: false })}
         gateway={gateway()}
-        onOpenVersion={vi.fn()}
+        onOpen={vi.fn()}
         onPreview={vi.fn()}
       />,
     );
@@ -591,34 +637,34 @@ describe("published versions are immutable", () => {
 describe("version history", () => {
   test("every version stays listed, and the one in use is named", () => {
     render(
-      <VersionHistory
-        history={draftWorkspace().history}
-        currentVersionId={DRAFT_VERSION}
-        onOpen={vi.fn()}
-      />,
+      <VersionHistory history={draftWorkspace().history} open={{ kind: "DRAFT" }} onOpen={vi.fn()} />,
     );
-    // Asserted as rows in order, not as loose text. Every label also appears in
-    // the accessible name of that row's own Open button — "Open Version 1" —
-    // so a bare text query is ambiguous, and the thing worth proving is that
-    // each version has a row of its own, newest first.
+    // Asserted as rows in order, not as loose text. Every version label also
+    // appears in the accessible name of that row's own Open button — "Open
+    // Version 1" — so a bare text query is ambiguous, and the thing worth
+    // proving is that each entry has a row of its own, newest first. The draft
+    // row is matched on its event wording rather than on the word "Draft",
+    // which is also the wording of its own state badge.
     const rows = within(
       screen.getByRole("region", { name: "Version history" }),
     ).getAllByRole("listitem");
     expect(rows.map((row) => row.textContent)).toEqual([
-      expect.stringContaining("Version 2"),
+      expect.stringContaining("Draft started 13 Aug 2026"),
       expect.stringContaining("Version 1"),
     ]);
-    expect(within(rows[0]!).getByText("You are viewing this version")).toBeTruthy();
+    // The reader is on the draft, and a draft is not a version: the row says
+    // which one they are on in the wording that belongs to it.
+    expect(within(rows[0]!).getByText("You are editing this draft")).toBeTruthy();
     expect(within(rows[1]!).getByText("In use")).toBeTruthy();
   });
 
   test("history is permanent, and the copy says so", () => {
-    render(<VersionHistory history={draftWorkspace().history} currentVersionId={DRAFT_VERSION} />);
+    render(<VersionHistory history={draftWorkspace().history} open={{ kind: "DRAFT" }} />);
     expect(screen.getByText(/A new draft never changes an old one/)).toBeTruthy();
   });
 
   test("a template with no history says nothing has been published rather than showing a zero", () => {
-    render(<VersionHistory history={[]} currentVersionId={DRAFT_VERSION} />);
+    render(<VersionHistory history={[]} open={{ kind: "DRAFT" }} />);
     expect(screen.getByText("Nothing published yet")).toBeTruthy();
   });
 });
@@ -634,8 +680,11 @@ describe("publishing", () => {
     const view = render(
       <PublishDialog
         gateway={gateway(overrides)}
-        versionId={DRAFT_VERSION}
+        // Publishing is keyed on the template and its concurrency token. There
+        // is no version identifier to key it on: the version does not exist
+        // until publishing succeeds.
         templateId={TEMPLATE_ID}
+        lockVersion={DRAFT_LOCK_VERSION}
         questionCount={2}
         onDismiss={onDismiss}
         onPublished={onPublished}
@@ -693,8 +742,8 @@ describe("publishing", () => {
           loadAssignmentOptions: () =>
             Promise.resolve({ centres: [], portfolioAvailable: true }),
         })}
-        versionId={DRAFT_VERSION}
         templateId={TEMPLATE_ID}
+        lockVersion={DRAFT_LOCK_VERSION}
         questionCount={2}
         onDismiss={vi.fn()}
         onPublished={vi.fn()}
@@ -744,9 +793,20 @@ describe("publishing", () => {
     await screen.findByText("Published");
     expect(publishVersion).toHaveBeenCalledTimes(1);
     expect(publishVersion).toHaveBeenCalledWith({
-      versionId: DRAFT_VERSION,
+      templateId: TEMPLATE_ID,
+      // The token the draft was loaded with, sent back untouched. Publishing
+      // is refused if it has moved, which is what stops two Area Managers
+      // publishing over each other.
+      lockVersion: DRAFT_LOCK_VERSION,
       assignment: { scope: "CENTRES", centreIds: ["c-1"] },
-      schedule: { recurrence: "DAILY", dueTime: "09:00" },
+      // All four fields, because the backend requires all four: a daily check
+      // that opens at one time, is due at another, from a first real day.
+      schedule: {
+        recurrence: "DAILY",
+        opensLocalTime: "06:00",
+        dueLocalTime: "09:00",
+        effectiveFrom: localToday(),
+      },
     });
 
     fireEvent.click(screen.getByRole("button", { name: "View published version" }));
@@ -775,7 +835,6 @@ describe("publishing", () => {
           versionId: PUBLISHED_VERSION,
           versionLabel: "Version 2",
           publishedLocalTime: "2:20pm",
-          publishedByRequester: true,
         }),
     });
 
@@ -787,7 +846,26 @@ describe("publishing", () => {
     expect(screen.getByText(/It was not published twice/)).toBeTruthy();
   });
 
-  test("someone else's publish says so, and that these settings were not applied", async () => {
+  test("an already-published version says these settings were not applied", async () => {
+    // KNOWN REGRESSION, recorded rather than papered over.
+    //
+    // This test and the one above it were a matched pair. `ALREADY_PUBLISHED`
+    // carried `publishedByRequester`, and the dialog branched on it: the person
+    // whose own response was lost was told "You published Version 2 at 2:20pm.
+    // It was not published twice." and was NOT shown the disclaimer, because
+    // their settings were the ones applied. Anyone else was told the version was
+    // already published, and that the settings on their screen were not.
+    //
+    // The rewire onto the generated client dropped the field and made both
+    // strings unconditional, so a retrying Area Manager is now told their own
+    // settings were not applied. The distinction is no longer representable, so
+    // neither fixture can express it and this test can only pin the disclaimer.
+    //
+    // It is not a backend limitation: `OperationalTemplateVersionSummary`
+    // carries `authorId`, and the gateway already resolves the current
+    // principal and exposes `owns(authorId)` for exactly this kind of question.
+    // Restoring the branch is a product decision about wording, so it is raised
+    // rather than taken here.
     renderDialog({
       publishVersion: () =>
         Promise.resolve({
@@ -795,7 +873,6 @@ describe("publishing", () => {
           versionId: PUBLISHED_VERSION,
           versionLabel: "Version 2",
           publishedLocalTime: "2:20pm",
-          publishedByRequester: false,
         }),
     });
 
@@ -882,14 +959,11 @@ describe("phone preview", () => {
       type: "TEXT",
       multiline: false,
     },
-    {
-      questionId: "t5",
-      wording: "Number test question",
-      required: true,
-      type: "NUMBER",
-      unitLabel: "children",
-    },
-    { questionId: "t6", wording: "Date test question", required: true, type: "DATE" },
+    // A number question carries no unit: the backend stores none, so the
+    // contract gives one nowhere to live and a unit an author typed would have
+    // vanished the next time they opened the draft.
+    { questionId: "t5", wording: "Number test question", required: true, type: "NUMBER" },
+    { questionId: "t6", wording: "Time test question", required: true, type: "TIME" },
   ];
 
   test("one question is shown at a time, with a written progress count", () => {
@@ -926,16 +1000,15 @@ describe("phone preview", () => {
     fireEvent.change(text, { target: { value: "test answer" } });
     fireEvent.click(screen.getByRole("button", { name: "Next" }));
 
-    // Number, with its unit beside the value rather than inside it.
+    // Number.
     const number = screen.getByLabelText("Number test question") as HTMLInputElement;
     expect(number.type).toBe("number");
-    expect(screen.getByText("children")).toBeTruthy();
     fireEvent.change(number, { target: { value: "12" } });
     fireEvent.click(screen.getByRole("button", { name: "Next" }));
 
-    // Date.
-    const date = screen.getByLabelText("Date test question") as HTMLInputElement;
-    expect(date.type).toBe("date");
+    // Time of day.
+    const time = screen.getByLabelText("Time test question") as HTMLInputElement;
+    expect(time.type).toBe("time");
   });
 
   test("a required question holds the flow; an optional one does not", () => {

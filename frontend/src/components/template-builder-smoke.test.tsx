@@ -26,12 +26,18 @@ import { TemplatePreview } from "./template-preview";
 import {
   countQuestions,
   dueTimeLabel,
+  localToday,
+  type AssignResult,
   type AssignmentOptions,
+  type AssignmentSelection,
   type AssignmentSummary,
   type CreateDraftResult,
+  type CreateTemplateResult,
   type PublishResult,
   type RetireResult,
   type SaveDraftResult,
+  type ScheduleSelection,
+  type ScheduleSummary,
   type TemplateBuilderGateway,
   type TemplateDraft,
   type TemplateLibrary,
@@ -59,18 +65,29 @@ import {
  * An in-memory backend that enforces the contract's own rules
  * ------------------------------------------------------------------ */
 
-interface StoredVersion {
+/**
+ * A version as the store keeps it: permanent, and never written to again.
+ *
+ * There is no draft member here, because a draft is not a version. It has never
+ * been published, so there is nothing permanent to identify: the store holds one
+ * persistent draft per template alongside however many versions have been
+ * published from it, which is what the backend does.
+ */
+interface PublishedVersionRecord {
   versionId: string;
   versionLabel: string;
   ordinal: number;
-  lifecycle: "DRAFT" | "PUBLISHED" | "RETIRED";
-  body: TemplateDraft;
-  publishedLocalTime?: string;
-  assignmentDescription?: string;
-  scheduleDueLocalTime?: string;
+  /** Snapshotted at publish. No later edit to the draft can reach it. */
+  content: TemplateDraft;
+  publishedLocalTime: string;
+  assignment: AssignmentSummary;
+  schedule: ScheduleSummary;
 }
 
 const TIME_ZONE_NOTE = "in each centre's own local time";
+const TEMPLATE_ID = "template-1";
+const SAVED_AT = "2:14pm";
+const PUBLISHED_AT = "13 Aug 2026, 2:20pm";
 
 const OPTIONS: AssignmentOptions = {
   centres: [
@@ -81,222 +98,309 @@ const OPTIONS: AssignmentOptions = {
   portfolioCentreCount: 2,
 };
 
+/** The whole of what the builder can produce: daily, opening before it is due. */
+const SCHEDULE: ScheduleSelection = {
+  recurrence: "DAILY",
+  opensLocalTime: "06:00",
+  dueLocalTime: "09:00",
+  effectiveFrom: localToday(),
+};
+
+/** A draft with something in it, for the paths that do not go through the UI. */
+const ONE_QUESTION: TemplateDraft = {
+  name: "Staging test template",
+  purpose: "Test scaffolding, not a Bright Steps standard",
+  sections: [
+    {
+      sectionId: "s-1",
+      title: "Test section one",
+      questions: [
+        { questionId: "q-1", wording: "Test question one", required: true, type: "YES_NO" },
+      ],
+    },
+  ],
+};
+
+/** How an assignment reads once it is published and immutable. */
+function summariseAssignment(selection: AssignmentSelection): AssignmentSummary {
+  if (selection.scope === "PORTFOLIO") {
+    // No centre list travels back either: the size is the backend's, and the
+    // browser never supplied one for the store to echo.
+    return {
+      scope: "PORTFOLIO",
+      description: "Every centre in your portfolio",
+      ...(OPTIONS.portfolioCentreCount === undefined
+        ? {}
+        : { centreCount: OPTIONS.portfolioCentreCount }),
+    };
+  }
+  const names = selection.centreIds
+    .map((id) => OPTIONS.centres.find((centre) => centre.centreId === id)?.centreName)
+    .filter((name): name is string => Boolean(name));
+  return { scope: "CENTRES", description: names.join(", "), centreNames: names };
+}
+
+function summariseSchedule(selection: ScheduleSelection): ScheduleSummary {
+  return {
+    recurrence: selection.recurrence,
+    dueLocalTime: dueTimeLabel(selection.dueLocalTime),
+    opensLocalTime: dueTimeLabel(selection.opensLocalTime),
+    timeZoneNote: TIME_ZONE_NOTE,
+  };
+}
+
 function createStore() {
-  const versions = new Map<string, StoredVersion>();
-  let templateId: string | undefined;
+  let created = false;
   let templateName = "";
-  let counter = 0;
+  let draftBody: TemplateDraft = { name: "", purpose: "", sections: [] };
+  /**
+   * The template's optimistic-concurrency token.
+   *
+   * Every command that changes the template — save, publish, retire — sends the
+   * current one back and moves it on. A command still holding a token that has
+   * been used is refused rather than applied a second time, which is the whole
+   * mechanism behind two Area Managers not overwriting each other.
+   */
+  let lockVersion = 0;
+  let lastSavedLocalTime: string | undefined;
+  const published: PublishedVersionRecord[] = [];
   const publishCalls: unknown[] = [];
 
-  function nextVersion(body: TemplateDraft, ordinal: number): StoredVersion {
-    counter += 1;
+  function history(): VersionHistoryEntry[] {
+    return [
+      // The open draft is a row of its own kind: no version identifier to open,
+      // and it can never be the one a centre is being asked.
+      {
+        state: "DRAFT",
+        label: "Draft",
+        eventLabel: lastSavedLocalTime
+          ? `Last changed ${lastSavedLocalTime}`
+          : "Draft started 13 Aug 2026",
+        eventBy: "Test Area Manager",
+      },
+      ...[...published].reverse().map(
+        (version): VersionHistoryEntry => ({
+          state: "PUBLISHED",
+          versionId: version.versionId,
+          versionLabel: version.versionLabel,
+          eventLabel: `Published ${version.publishedLocalTime}`,
+          eventBy: "Test Area Manager",
+          // The newest published version is the one in operational use.
+          current: version.ordinal === published.length,
+        }),
+      ),
+    ];
+  }
+
+  /** The draft, carrying the token every command that changes it must send. */
+  function draftState(): TemplateVersion {
     return {
-      versionId: `version-${counter}`,
-      versionLabel: `Version ${ordinal}`,
-      ordinal,
       lifecycle: "DRAFT",
-      body,
+      versionLabel: "Draft",
+      draft: draftBody,
+      lockVersion,
+      canEdit: true,
+      canPublish: true,
+      ...(lastSavedLocalTime ? { lastSavedLocalTime } : {}),
     };
   }
 
-  function ordered(): StoredVersion[] {
-    return [...versions.values()].sort((a, b) => b.ordinal - a.ordinal);
-  }
-
-  function history(): VersionHistoryEntry[] {
-    return ordered().map((version) => ({
-      versionId: version.versionId,
-      versionLabel: version.versionLabel,
-      lifecycle: version.lifecycle,
-      eventLabel:
-        version.lifecycle === "DRAFT"
-          ? "Draft started 13 Aug 2026"
-          : `Published ${version.publishedLocalTime}`,
-      eventBy: "Test Area Manager",
-      current: version.lifecycle === "PUBLISHED",
-    }));
-  }
-
-  function present(version: StoredVersion): TemplateVersion {
-    if (version.lifecycle === "DRAFT") {
-      return {
-        versionId: version.versionId,
-        versionLabel: version.versionLabel,
-        lifecycle: "DRAFT",
-        draft: version.body,
-        canEdit: true,
-        canPublish: true,
-      };
-    }
-    // A published version carries no draft and no edit authority at all: the
-    // store cannot hand the UI something it could edit by mistake.
+  /**
+   * A published version carries no draft, no edit authority and no lock token,
+   * so the store cannot hand the UI something it could write to by mistake.
+   */
+  function publishedState(version: PublishedVersionRecord): TemplateVersion {
     return {
       versionId: version.versionId,
       versionLabel: version.versionLabel,
       lifecycle: "PUBLISHED",
-      content: version.body,
-      publishedLocalTime: version.publishedLocalTime ?? "",
+      content: version.content,
+      publishedLocalTime: version.publishedLocalTime,
       publishedBy: "Test Area Manager",
-      assignment: {
-        scope: "CENTRES",
-        description: version.assignmentDescription ?? "",
-        centreNames: [version.assignmentDescription ?? ""],
-      },
-      schedule: {
-        recurrence: "DAILY",
-        dueLocalTime: version.scheduleDueLocalTime ?? "",
-        timeZoneNote: TIME_ZONE_NOTE,
-      },
+      assignment: version.assignment,
+      schedule: version.schedule,
       canCreateDraft: true,
       canRetire: true,
     };
   }
 
-  function workspaceFor(version: StoredVersion): TemplateWorkspace {
+  function workspaceFor(version: TemplateVersion): TemplateWorkspace {
     return {
-      templateId: templateId!,
+      templateId: TEMPLATE_ID,
       templateName,
-      version: present(version),
+      version,
+      lockVersion,
       history: history(),
     };
   }
 
-  /** The version a bare template route opens on: the draft if one exists. */
-  function currentVersion(): StoredVersion {
-    return ordered().find((version) => version.lifecycle === "DRAFT") ?? ordered()[0]!;
+  function newest(): PublishedVersionRecord | undefined {
+    return published[published.length - 1];
   }
 
   function summary(): TemplateSummary {
-    const version = currentVersion();
+    const live = newest();
     return {
-      templateId: templateId!,
+      templateId: TEMPLATE_ID,
       name: templateName,
-      lifecycle: version.lifecycle,
-      versionLabel: version.versionLabel,
-      questionCount: countQuestions(version.body),
-      stateLabel:
-        version.lifecycle === "DRAFT"
-          ? "Draft started 13 Aug 2026"
-          : `Published ${version.publishedLocalTime}`,
-      ...(version.assignmentDescription
-        ? { assignmentDescription: version.assignmentDescription }
-        : {}),
-      ...(version.scheduleDueLocalTime
-        ? { scheduleDescription: `Every day by ${version.scheduleDueLocalTime}` }
+      purpose: draftBody.purpose,
+      lifecycle: live ? "PUBLISHED" : "DRAFT",
+      versionLabel: live ? live.versionLabel : "Draft",
+      questionCount: countQuestions(live ? live.content : draftBody),
+      stateLabel: live
+        ? `Published ${live.publishedLocalTime}`
+        : "Draft started 13 Aug 2026",
+      ...(live
+        ? {
+            assignmentDescription: live.assignment.description,
+            scheduleDescription: `Every day by ${live.schedule.dueLocalTime}`,
+          }
         : {}),
     };
   }
+
+  /** Setting where and when an already-published version runs. */
+  const assign = ({
+    versionId,
+    assignment,
+    schedule,
+  }: {
+    templateId: string;
+    versionId: string;
+    assignment: AssignmentSelection;
+    schedule: ScheduleSelection;
+  }): Promise<AssignResult> => {
+    const version = published.find((item) => item.versionId === versionId);
+    if (!version) {
+      return Promise.resolve({
+        outcome: "REFUSED",
+        reason: "That version could not be found.",
+      });
+    }
+    version.assignment = summariseAssignment(assignment);
+    version.schedule = summariseSchedule(schedule);
+    return Promise.resolve({
+      outcome: "ASSIGNED",
+      assignment: version.assignment,
+      schedule: version.schedule,
+    });
+  };
 
   const gateway: TemplateBuilderGateway = {
     loadLibrary: (): Promise<TemplateLibrary> =>
       Promise.resolve({
         status: "ready",
-        templates: templateId ? [summary()] : [],
+        templates: created ? [summary()] : [],
         canCreate: true,
       }),
 
-    createTemplate: ({ name }): Promise<CreateDraftResult> => {
-      templateId = "template-1";
+    createTemplate: ({ name, purpose }): Promise<CreateTemplateResult> => {
+      created = true;
       templateName = name;
-      const version = nextVersion({ name, sections: [] }, 1);
-      versions.set(version.versionId, version);
-      return Promise.resolve({ templateId, versionId: version.versionId });
+      // A template is created with the one persistent draft it keeps for the
+      // whole of its life.
+      draftBody = { name, purpose, sections: [] };
+      lockVersion = 1;
+      return Promise.resolve({ outcome: "CREATED", templateId: TEMPLATE_ID });
     },
 
-    loadTemplate: () => Promise.resolve(workspaceFor(currentVersion())),
+    loadTemplate: () => Promise.resolve(workspaceFor(draftState())),
 
-    loadVersion: (versionId) => {
-      const version = versions.get(versionId);
+    loadVersion: ({ versionId }) => {
+      const version = published.find((item) => item.versionId === versionId);
       return version
-        ? Promise.resolve(workspaceFor(version))
+        ? Promise.resolve(workspaceFor(publishedState(version)))
         : Promise.reject(new Error("unknown version"));
     },
 
-    saveDraft: ({ versionId, draft }): Promise<SaveDraftResult> => {
-      const version = versions.get(versionId);
-      if (!version) return Promise.reject(new Error("unknown version"));
-      // The rule the whole slice turns on. A published version is immutable,
-      // so the store refuses rather than trusting the UI to have hidden the
-      // control.
-      if (version.lifecycle !== "DRAFT") {
-        return Promise.reject(new Error("a published version cannot be changed"));
+    saveDraft: ({ lockVersion: token, draft }): Promise<SaveDraftResult> => {
+      // The rule the whole slice turns on, applied the way the backend applies
+      // it: a token that has been superseded — by another save, or by the
+      // publish that snapshotted this draft — is refused rather than written
+      // over whoever moved it.
+      if (token !== lockVersion) {
+        return Promise.reject(new Error("this draft has changed since you opened it"));
       }
-      version.body = draft;
+      draftBody = draft;
       templateName = draft.name;
-      return Promise.resolve({ lastSavedLocalTime: "2:14pm" });
+      lockVersion += 1;
+      lastSavedLocalTime = SAVED_AT;
+      return Promise.resolve({ lastSavedLocalTime: SAVED_AT, lockVersion });
     },
 
     loadAssignmentOptions: () => Promise.resolve(OPTIONS),
 
     publishVersion: (input): Promise<PublishResult> => {
       publishCalls.push(input);
-      const version = versions.get(input.versionId);
-      if (!version) return Promise.reject(new Error("unknown version"));
 
-      if (version.lifecycle !== "DRAFT") {
-        // The response-loss case: the version already went live, so a retry is
-        // a success, not a second publish.
+      if (input.lockVersion !== lockVersion) {
+        const live = newest();
+        if (live) {
+          // The response-loss case: the draft was already snapshotted into a
+          // version, so the retry is a success rather than a second publish.
+          return Promise.resolve({
+            outcome: "ALREADY_PUBLISHED",
+            versionId: live.versionId,
+            versionLabel: live.versionLabel,
+            publishedLocalTime: live.publishedLocalTime,
+          });
+        }
         return Promise.resolve({
-          outcome: "ALREADY_PUBLISHED",
-          versionId: version.versionId,
-          versionLabel: version.versionLabel,
-          publishedLocalTime: version.publishedLocalTime ?? "",
-          publishedByRequester: true,
+          outcome: "REFUSED",
+          reason: "This draft has changed since you opened it.",
         });
       }
 
-      const description =
-        input.assignment.scope === "PORTFOLIO"
-          ? "Every centre in your portfolio"
-          : input.assignment.centreIds
-              .map((id) => OPTIONS.centres.find((centre) => centre.centreId === id)?.centreName)
-              .filter(Boolean)
-              .join(", ");
-
-      // The portfolio branch carries no centre list back either: the count is
-      // the backend's, and there is nowhere for a client list to travel.
-      const assignment: AssignmentSummary =
-        input.assignment.scope === "PORTFOLIO"
-          ? { scope: "PORTFOLIO", description, centreCount: OPTIONS.portfolioCentreCount }
-          : { scope: "CENTRES", description, centreNames: [description] };
-
-      version.lifecycle = "PUBLISHED";
-      version.publishedLocalTime = "13 Aug 2026, 2:20pm";
-      version.assignmentDescription = description;
-      version.scheduleDueLocalTime = dueTimeLabel(input.schedule.dueTime);
+      const ordinal = published.length + 1;
+      const version: PublishedVersionRecord = {
+        versionId: `version-${ordinal}`,
+        versionLabel: `Version ${ordinal}`,
+        ordinal,
+        // A snapshot, not a hand-over. The draft survives publication and is
+        // edited on towards the next version, so the content here is deep
+        // copied out of reach of anything typed after this moment.
+        content: JSON.parse(JSON.stringify(draftBody)) as TemplateDraft,
+        publishedLocalTime: PUBLISHED_AT,
+        assignment: summariseAssignment(input.assignment),
+        schedule: summariseSchedule(input.schedule),
+      };
+      published.push(version);
+      lockVersion += 1;
 
       return Promise.resolve({
         outcome: "PUBLISHED",
         versionId: version.versionId,
         versionLabel: version.versionLabel,
         publishedLocalTime: version.publishedLocalTime,
-        assignment,
-        schedule: {
-          recurrence: "DAILY",
-          dueLocalTime: version.scheduleDueLocalTime,
-          timeZoneNote: TIME_ZONE_NOTE,
-        },
+        assignment: version.assignment,
+        schedule: version.schedule,
       });
     },
 
-    createDraftFrom: ({ versionId }): Promise<CreateDraftResult> => {
-      const source = versions.get(versionId);
-      if (!source) return Promise.reject(new Error("unknown version"));
-      // A copy. The source version is never touched, which is what keeps the
-      // lineage of anything already recorded against it stable.
-      const copy = nextVersion(
-        JSON.parse(JSON.stringify(source.body)) as TemplateDraft,
-        source.ordinal + 1,
-      );
-      versions.set(copy.versionId, copy);
-      return Promise.resolve({ templateId: templateId!, versionId: copy.versionId });
-    },
+    assignPublishedVersion: assign,
 
-    retireVersion: (): Promise<RetireResult> =>
-      Promise.resolve({ retiredLocalTime: "13 Aug 2026, 4:00pm" }),
+    createDraftFrom: (): Promise<CreateDraftResult> =>
+      // Creates nothing, despite the name: the template's persistent draft is
+      // already there, and the version the reader clicked is deliberately not
+      // copied over it — a draft that has moved on is somebody's real work.
+      Promise.resolve({ templateId: TEMPLATE_ID }),
+
+    retireTemplate: ({ lockVersion: token }): Promise<RetireResult> => {
+      if (token !== lockVersion) {
+        return Promise.reject(new Error("this template has changed since you opened it"));
+      }
+      lockVersion += 1;
+      return Promise.resolve({ lockVersion });
+    },
   };
 
-  return { gateway, publishCalls, versions, currentVersion };
+  return {
+    gateway,
+    publishCalls,
+    draft: () => draftBody,
+    publishedVersions: () => [...published],
+    lockVersion: () => lockVersion,
+  };
 }
 
 beforeEach(() => {
@@ -325,6 +429,11 @@ describe("create → publish → preview", () => {
     fireEvent.click(screen.getByRole("button", { name: "New template" }));
     fireEvent.change(screen.getByLabelText("Template name"), {
       target: { value: "Staging test template" },
+    });
+    // Both fields: the backend refuses a template that does not say what it is
+    // for, so a draft started without one could never be stored.
+    fireEvent.change(screen.getByLabelText("What it is for"), {
+      target: { value: "Test scaffolding, not a Bright Steps standard" },
     });
     fireEvent.click(screen.getByRole("button", { name: "Start draft" }));
 
@@ -391,8 +500,8 @@ describe("create → publish → preview", () => {
       expect(routerMocks.push).toHaveBeenCalledWith("/standards/templates/template-1/preview"),
     );
 
-    const saved = store.currentVersion();
-    expect(saved.body.sections[0]!.questions.map((item) => item.wording)).toEqual([
+    const saved = store.draft();
+    expect(saved.sections[0]!.questions.map((item) => item.wording)).toEqual([
       "Test question two — staging only",
       "Test question one — staging only",
     ]);
@@ -414,14 +523,19 @@ describe("create → publish → preview", () => {
 
     expect(screen.getByText("End of the preview")).toBeTruthy();
     expect(screen.getByText(/Nothing was recorded and no centre was contacted/)).toBeTruthy();
-    // A preview publishes nothing: the version is still a draft.
-    expect(store.currentVersion().lifecycle).toBe("DRAFT");
+    // A preview publishes nothing: no version exists yet at all.
+    expect(store.publishedVersions()).toHaveLength(0);
     preview.unmount();
 
     /* --- 7. Publishing to one authorised centre --------------------- */
 
     const publishing = render(<TemplateEditor templateId="template-1" gateway={gateway} />);
     await screen.findByRole("button", { name: "Publish" });
+    // The token the editor was just handed. Publishing has to send exactly this
+    // back: it is what the backend refuses a stale publish on, and there is no
+    // version identifier to key the command on because the version does not
+    // exist until the publish succeeds.
+    const tokenAtPublish = store.lockVersion();
     fireEvent.click(screen.getByRole("button", { name: "Publish" }));
 
     await screen.findByText("Ashgrove Quality Centre");
@@ -436,8 +550,15 @@ describe("create → publish → preview", () => {
     expect(screen.getByText(/can no longer be changed/)).toBeTruthy();
     expect(store.publishCalls).toHaveLength(1);
     expect(store.publishCalls[0]).toMatchObject({
+      templateId: "template-1",
+      lockVersion: tokenAtPublish,
       assignment: { scope: "CENTRES", centreIds: ["c-1"] },
-      schedule: { recurrence: "DAILY", dueTime: "07:30" },
+      schedule: {
+        recurrence: "DAILY",
+        opensLocalTime: "06:00",
+        dueLocalTime: "07:30",
+        effectiveFrom: localToday(),
+      },
     });
 
     /* --- 8. The published version is a record, not an editor -------- */
@@ -455,87 +576,118 @@ describe("create → publish → preview", () => {
     expect(screen.getByText("Ashgrove Quality Centre")).toBeTruthy();
     expect(screen.getByText(/7:30am · in each centre's own local time/)).toBeTruthy();
 
-    /* --- 9. Changing it means a new draft; version 1 stays put ------ */
+    /* --- 9. Changing it means the open draft; version 1 stays put --- */
 
-    fireEvent.click(screen.getByRole("button", { name: "Create a new draft" }));
+    // One template holds one open draft at a time. This template's draft
+    // survived its own publication, so the record offers to open that draft
+    // rather than to create a second one the backend would refuse — and the
+    // published version is not copied over it on the way in.
+    expect(screen.queryByRole("button", { name: "Create a new draft" })).toBeNull();
+    fireEvent.click(screen.getByRole("button", { name: "Open the draft" }));
     await screen.findByRole("button", { name: "Save draft" });
 
-    // The label appears in both the page heading and the history row.
-    expect(screen.getAllByText("Version 2").length).toBeGreaterThan(0);
+    // No Version 2 is minted. "Create a new draft" opens the template's one
+    // persistent draft; it neither copies the published version over it nor
+    // creates a version number nobody has published.
+    expect(screen.queryByText("Version 2")).toBeNull();
     // The published version is still there, still published, still in use.
-    // Read as rows: every label also appears in that row's own Open button
-    // ("Open Version 1"), so loose text would be ambiguous here.
+    // Read as rows: every version label also appears in that row's own Open
+    // button ("Open Version 1"), so loose text would be ambiguous here. The
+    // draft row is matched on its event wording rather than on the word
+    // "Draft", which is also the wording of its own state badge.
     const rows = within(
       screen.getByRole("region", { name: "Version history" }),
     ).getAllByRole("listitem");
     expect(rows.map((row) => row.textContent)).toEqual([
-      expect.stringContaining("Version 2"),
+      expect.stringContaining("Last changed 2:14pm"),
       expect.stringContaining("Version 1"),
     ]);
     expect(within(rows[1]!).getByText("In use")).toBeTruthy();
-    expect([...store.versions.values()].filter((v) => v.lifecycle === "PUBLISHED")).toHaveLength(1);
+    expect(store.publishedVersions()).toHaveLength(1);
+    // "Version 1 stays put" stated about the version itself, not just its row:
+    // it still holds exactly the questions that were published, in the order
+    // they were published in.
+    expect(
+      store.publishedVersions()[0]!.content.sections[0]!.questions.map((item) => item.wording),
+    ).toEqual(["Test question two — staging only", "Test question one — staging only"]);
 
     publishing.unmount();
   });
 
-  test("publishing the same version twice does not publish it twice", async () => {
+  test("publishing the same draft twice does not publish it twice", async () => {
     const store = createStore();
     const { gateway } = store;
 
-    await gateway.createTemplate({ name: "Staging test template" });
-    const versionId = store.currentVersion().versionId;
+    await gateway.createTemplate({
+      name: "Staging test template",
+      purpose: "Test scaffolding, not a Bright Steps standard",
+    });
     await gateway.saveDraft({
-      versionId,
-      draft: {
-        name: "Staging test template",
-        sections: [
-          {
-            sectionId: "s-1",
-            title: "Test section one",
-            questions: [
-              {
-                questionId: "q-1",
-                wording: "Test question one",
-                required: true,
-                type: "YES_NO",
-              },
-            ],
-          },
-        ],
-      },
+      templateId: TEMPLATE_ID,
+      lockVersion: store.lockVersion(),
+      draft: ONE_QUESTION,
     });
 
+    // The token the Area Manager's screen is holding when they press publish.
+    const tokenAtPublish = store.lockVersion();
     const first = await gateway.publishVersion({
-      versionId,
+      templateId: TEMPLATE_ID,
+      lockVersion: tokenAtPublish,
       assignment: { scope: "CENTRES", centreIds: ["c-1"] },
-      schedule: { recurrence: "DAILY", dueTime: "09:00" },
+      schedule: SCHEDULE,
     });
     expect(first.outcome).toBe("PUBLISHED");
 
-    // The retry an Area Manager makes when the first response is lost.
+    // The retry an Area Manager makes when the first response is lost. The
+    // screen is still holding the token from before the publish, which is what
+    // makes the second call recognisable as a retry of a request that already
+    // committed rather than as a second publish.
     const second = await gateway.publishVersion({
-      versionId,
+      templateId: TEMPLATE_ID,
+      lockVersion: tokenAtPublish,
       assignment: { scope: "CENTRES", centreIds: ["c-1"] },
-      schedule: { recurrence: "DAILY", dueTime: "09:00" },
+      schedule: SCHEDULE,
     });
     expect(second.outcome).toBe("ALREADY_PUBLISHED");
-    expect([...store.versions.values()].filter((v) => v.lifecycle === "PUBLISHED")).toHaveLength(1);
+    expect(store.publishedVersions()).toHaveLength(1);
   });
 
-  test("a published version refuses a save even if one is somehow attempted", async () => {
+  test("a published version cannot be written over, and a stale save is refused", async () => {
     const store = createStore();
     const { gateway } = store;
 
-    await gateway.createTemplate({ name: "Staging test template" });
-    const versionId = store.currentVersion().versionId;
+    await gateway.createTemplate({
+      name: "Staging test template",
+      purpose: "Test scaffolding, not a Bright Steps standard",
+    });
+    await gateway.saveDraft({
+      templateId: TEMPLATE_ID,
+      lockVersion: store.lockVersion(),
+      draft: ONE_QUESTION,
+    });
+    const tokenBeforePublish = store.lockVersion();
     await gateway.publishVersion({
-      versionId,
+      templateId: TEMPLATE_ID,
+      lockVersion: tokenBeforePublish,
       assignment: { scope: "PORTFOLIO" },
-      schedule: { recurrence: "DAILY", dueTime: "09:00" },
+      schedule: SCHEDULE,
     });
 
+    // "Save the published version" is now unrepresentable rather than merely
+    // refused: `saveDraft` carries no version identifier and only ever reaches
+    // the one persistent draft. What is still expressible is the case that
+    // matters — work typed against the pre-publish state must not land after it
+    // — so that is what is proved here, together with the immutability the test
+    // is named for.
     await expect(
-      gateway.saveDraft({ versionId, draft: { name: "Rewritten", sections: [] } }),
-    ).rejects.toThrow(/cannot be changed/);
+      gateway.saveDraft({
+        templateId: TEMPLATE_ID,
+        lockVersion: tokenBeforePublish,
+        draft: { name: "Rewritten", purpose: "Rewritten purpose", sections: [] },
+      }),
+    ).rejects.toThrow(/changed since you opened it/);
+
+    const [live] = store.publishedVersions();
+    expect(live!.content).toEqual(ONE_QUESTION);
   });
 });

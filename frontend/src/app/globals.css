@@ -2367,6 +2367,447 @@ textarea {
   .app-nav a[aria-current="page"]::after { background: Highlight; }
 }
 
+/* ---------------------------------------------------------------- *
+ * Centre Budgets
+ *
+ * Money is the one place in this product where a missing figure and a zero
+ * look identical if nobody stops them, so the treatment here separates them
+ * visually as well as in words: a real figure is set in tabular numerals at
+ * full weight, and a figure that does not exist is set as prose. A reader
+ * scanning a column can tell them apart without reading either.
+ * ---------------------------------------------------------------- */
+
+.budget-month {
+  display: inline-flex;
+  gap: var(--space-2);
+  align-items: center;
+  padding: var(--space-1);
+  background: var(--surface-subtle);
+  border: 1px solid var(--border-default);
+  border-radius: 999px;
+}
+
+.budget-month__step {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-inline-size: 3rem;
+  min-block-size: 3rem;
+  color: var(--focus-ring);
+  font-size: 1.25rem;
+  font-weight: 700;
+  line-height: 1;
+  cursor: pointer;
+  background: var(--surface-raised);
+  border: 1px solid var(--border-strong);
+  border-radius: 999px;
+}
+
+.budget-month__step:hover:not(:disabled) { background: var(--surface-sage); }
+
+.budget-month__step:disabled {
+  color: var(--text-secondary);
+  cursor: not-allowed;
+  opacity: 0.55;
+}
+
+.budget-month__label {
+  min-inline-size: 9rem;
+  padding-inline: var(--space-2);
+  font-weight: 720;
+  font-variant-numeric: tabular-nums;
+  text-align: center;
+}
+
+/* A real figure. Tabular numerals so columns line up down the page. Figures
+   may wrap outside the table, because a long amount must never be the thing
+   that pushes a narrow screen into a sideways scroll. */
+.budget-figure {
+  font-variant-numeric: tabular-nums;
+  font-weight: 700;
+  overflow-wrap: anywhere;
+}
+
+/* Inside the table the scroll container absorbs the width instead. */
+.budget-table .budget-figure { white-space: nowrap; }
+
+/* Not a figure at all. Set as prose, quieter and lighter, so it can never be
+   mistaken for a value — least of all for a zero. */
+.budget-figure[data-unknown="true"] {
+  color: var(--text-secondary);
+  font-size: var(--type-small);
+  font-weight: 620;
+  font-style: italic;
+  font-variant-numeric: normal;
+  white-space: normal;
+}
+
+.metric__value .budget-figure[data-unknown="true"] { font-size: 0.9375rem; }
+
+.budget-table-scroll {
+  overflow-x: auto;
+  background: var(--surface-raised);
+  border: 1px solid var(--border-default);
+  border-radius: var(--radius-medium);
+  box-shadow: var(--shadow-card);
+}
+
+.budget-table {
+  inline-size: 100%;
+  min-inline-size: 46rem;
+  border-collapse: collapse;
+  font-size: var(--type-small);
+}
+
+.budget-table th,
+.budget-table td {
+  padding: var(--space-3) var(--space-4);
+  text-align: left;
+  vertical-align: top;
+  border-bottom: 1px solid var(--border-default);
+}
+
+.budget-table thead th {
+  color: var(--text-secondary);
+  font-size: var(--type-label);
+  font-weight: 700;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  white-space: nowrap;
+  background: var(--surface-subtle);
+  border-bottom: 1px solid var(--border-strong);
+}
+
+.budget-table tbody tr:last-child th,
+.budget-table tbody tr:last-child td { border-bottom: 0; }
+
+.budget-table tbody th[scope="row"] {
+  min-inline-size: 14rem;
+  font-weight: 700;
+}
+
+.budget-row__head {
+  display: grid;
+  gap: var(--space-2);
+  justify-items: start;
+}
+
+/* The severity stripe is support for the badge and the sentence beside it,
+   never the only carrier of the state. */
+.budget-table tbody tr { border-left: 3px solid transparent; }
+.budget-table tbody tr[data-state="critical"] { border-left-color: var(--status-negative); }
+.budget-table tbody tr[data-state="warning"] { border-left-color: var(--status-warning); }
+.budget-table tbody tr[data-state="positive"] { border-left-color: var(--status-positive); }
+
+.budget-row__name {
+  font-size: var(--type-body);
+  font-weight: 740;
+}
+
+.budget-row__note {
+  display: block;
+  max-inline-size: 34ch;
+  color: var(--text-secondary);
+  font-size: var(--type-label);
+  font-weight: 600;
+  line-height: 1.45;
+  text-transform: none;
+  letter-spacing: 0;
+}
+
+.budget-row__action {
+  min-block-size: 2.75rem;
+  padding: var(--space-2) var(--space-4);
+  white-space: nowrap;
+}
+
+.budget-counts {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-2) var(--space-4);
+  margin: 0;
+  font-size: var(--type-small);
+}
+
+.budget-counts > div {
+  display: flex;
+  gap: var(--space-2);
+  align-items: baseline;
+}
+
+.budget-counts dt { color: var(--text-secondary); }
+
+.budget-counts dd {
+  margin: 0;
+  font-weight: 720;
+  font-variant-numeric: tabular-nums;
+}
+
+.budget-counts > div[data-attention="true"] dd { color: var(--status-warning); }
+
+.budget-summary-threshold {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-2) var(--space-3);
+  align-items: center;
+  margin: 0;
+}
+
+/* Same quiet register Centre Quality uses for a source it could not read. An
+   incomplete month is a fact the reader needs, not an incident. */
+.budget-coverage-note {
+  margin: 0;
+  padding: var(--space-3) var(--space-4);
+  color: var(--text-primary);
+  font-size: var(--type-small);
+  line-height: 1.5;
+  background: var(--color-info-bg);
+  border-left: 3px solid var(--color-info);
+  border-radius: var(--radius-small);
+}
+
+.budget-coverage-note__label {
+  display: block;
+  color: var(--color-info);
+  font-size: var(--type-label);
+  font-weight: 700;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+}
+
+.budget-hero {
+  display: grid;
+  gap: var(--space-4);
+  margin-bottom: var(--space-6);
+  padding: var(--space-5);
+  background: var(--surface-sage);
+  border: 1px solid var(--brand-mint);
+  border-radius: var(--radius-large);
+}
+
+.budget-hero h2 {
+  margin: 0;
+  font-size: var(--type-title);
+  font-weight: 750;
+}
+
+.budget-hero > p {
+  margin: 0;
+  max-width: 68ch;
+  color: var(--text-muted);
+}
+
+.budget-hero__figures {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: var(--space-3);
+  margin: 0;
+}
+
+.budget-hero__figures > div {
+  min-inline-size: 0;
+  padding: var(--space-3);
+  background: var(--surface-raised);
+  border-radius: var(--radius-small);
+}
+
+.budget-hero__figures dt {
+  color: var(--text-secondary);
+  font-size: var(--type-label);
+  font-weight: 700;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+}
+
+.budget-hero__figures dd {
+  margin: var(--space-1) 0 0;
+  font-size: 1.5rem;
+  font-weight: 740;
+  font-variant-numeric: tabular-nums;
+}
+
+.budget-hero__figures > div[data-emphasis="true"] {
+  background: var(--color-garden);
+}
+
+.budget-hero__figures > div[data-emphasis="true"] dt { color: var(--color-mint); }
+.budget-hero__figures > div[data-emphasis="true"] dd { color: #ffffff; }
+
+.budget-group { margin-bottom: var(--space-7); }
+
+.budget-group__header {
+  display: grid;
+  gap: var(--space-1);
+  margin-bottom: var(--space-4);
+  padding-bottom: var(--space-3);
+  border-bottom: 1px solid var(--border-default);
+}
+
+.budget-group__header h3 {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-2) var(--space-3);
+  align-items: baseline;
+  margin: 0;
+  font-size: var(--type-section);
+}
+
+.budget-group__header p {
+  margin: 0;
+  max-width: 68ch;
+  color: var(--text-secondary);
+  font-size: var(--type-small);
+}
+
+.budget-centre-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(min(100%, 20rem), 26rem));
+  gap: var(--space-4);
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.budget-centre-card {
+  display: grid;
+  gap: var(--space-3);
+  align-content: start;
+  padding: var(--space-5);
+  background: var(--surface-raised);
+  border: 1px solid var(--border-default);
+  border-left: 4px solid var(--border-strong);
+  border-radius: var(--radius-medium);
+  box-shadow: var(--shadow-card);
+}
+
+.budget-centre-card[data-focus="over-budget"] { border-left-color: var(--status-negative); }
+.budget-centre-card[data-focus="unbudgeted-spend"] { border-left-color: var(--status-warning); }
+.budget-centre-card[data-focus="not-complete"] { border-left-color: var(--color-info); }
+.budget-centre-card[data-focus="fully-recorded"] { border-left-color: var(--status-positive); }
+
+.budget-centre-card__head {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-2) var(--space-3);
+  align-items: baseline;
+  justify-content: space-between;
+}
+
+.budget-centre-card__head h4 {
+  margin: 0;
+  font-size: 1.125rem;
+  font-weight: 720;
+}
+
+.budget-centre-card__reason {
+  margin: 0;
+  color: var(--text-secondary);
+  font-size: var(--type-small);
+}
+
+.budget-centre-card__figures {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: var(--space-2) var(--space-3);
+  margin: 0;
+}
+
+.budget-centre-card__figures > div { min-inline-size: 0; }
+
+.budget-centre-card__figures dt {
+  color: var(--text-secondary);
+  font-size: var(--type-label);
+  font-weight: 700;
+  letter-spacing: 0.05em;
+  text-transform: uppercase;
+}
+
+.budget-centre-card__figures dd {
+  margin: var(--space-1) 0 0;
+  font-size: 1.0625rem;
+}
+
+.budget-centre-card__figures > div[data-attention="true"] .budget-figure {
+  color: var(--status-negative);
+}
+
+/* Entry ------------------------------------------------------------ */
+
+.budget-entry {
+  display: grid;
+  gap: var(--space-3);
+}
+
+.budget-entry__standing {
+  margin: 0;
+  padding: var(--space-3) var(--space-4);
+  font-size: var(--type-small);
+  background: var(--surface-subtle);
+  border-radius: var(--radius-small);
+}
+
+.budget-entry__field {
+  display: grid;
+  gap: var(--space-2);
+}
+
+.budget-entry__label {
+  font-size: var(--type-small);
+  font-weight: 700;
+}
+
+.budget-entry__field input,
+.budget-entry__field textarea {
+  inline-size: 100%;
+  padding: var(--space-3);
+  background: var(--surface-raised);
+  border: 1px solid var(--border-strong);
+  border-radius: var(--radius-small);
+}
+
+.budget-entry__field input {
+  font-size: 1.125rem;
+  font-variant-numeric: tabular-nums;
+}
+
+.budget-entry__field input[aria-invalid="true"] {
+  border-color: var(--status-negative);
+}
+
+/* The whole label is the target, so the hit area is a full 44px even though
+   the box itself is smaller. */
+.budget-entry__check {
+  display: flex;
+  gap: var(--space-3);
+  align-items: center;
+  min-block-size: 2.75rem;
+  padding: var(--space-2) var(--space-3);
+  font-weight: 700;
+  cursor: pointer;
+  background: var(--surface-subtle);
+  border-radius: var(--radius-small);
+}
+
+.budget-entry__check input {
+  inline-size: 1.375rem;
+  block-size: 1.375rem;
+  min-block-size: 1.375rem;
+  accent-color: var(--color-garden);
+}
+
+/* The one completion action on this surface carries the extra height. */
+.budget-submit { min-block-size: 3.5rem; }
+
+@media (min-width: 48rem) {
+  .budget-hero__figures { grid-template-columns: repeat(4, minmax(0, 1fr)); }
+}
+
+@media (max-width: 35rem) {
+  .budget-month { display: flex; width: 100%; justify-content: space-between; }
+  .budget-month__label { flex: 1 1 auto; }
+  .budget-row__action { width: 100%; }
+}
+
 /* ============================================================
    Centre Standards
    A focused completion surface. Everything here is built for a
@@ -3495,208 +3936,6 @@ textarea {
 .version-history__label { font-weight: 700; }
 
 .version-history__current {
-/* ---------------------------------------------------------------- *
- * Centre Budgets
- *
- * Money is the one place in this product where a missing figure and a zero
- * look identical if nobody stops them, so the treatment here separates them
- * visually as well as in words: a real figure is set in tabular numerals at
- * full weight, and a figure that does not exist is set as prose. A reader
- * scanning a column can tell them apart without reading either.
- * ---------------------------------------------------------------- */
-
-.budget-month {
-  display: inline-flex;
-  gap: var(--space-2);
-  align-items: center;
-  padding: var(--space-1);
-  background: var(--surface-subtle);
-  border: 1px solid var(--border-default);
-  border-radius: 999px;
-}
-
-.budget-month__step {
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  min-inline-size: 3rem;
-  min-block-size: 3rem;
-  color: var(--focus-ring);
-  font-size: 1.25rem;
-  font-weight: 700;
-  line-height: 1;
-  cursor: pointer;
-  background: var(--surface-raised);
-  border: 1px solid var(--border-strong);
-  border-radius: 999px;
-}
-
-.budget-month__step:hover:not(:disabled) { background: var(--surface-sage); }
-
-.budget-month__step:disabled {
-  color: var(--text-secondary);
-  cursor: not-allowed;
-  opacity: 0.55;
-}
-
-.budget-month__label {
-  min-inline-size: 9rem;
-  padding-inline: var(--space-2);
-  font-weight: 720;
-  font-variant-numeric: tabular-nums;
-  text-align: center;
-}
-
-/* A real figure. Tabular numerals so columns line up down the page. Figures
-   may wrap outside the table, because a long amount must never be the thing
-   that pushes a narrow screen into a sideways scroll. */
-.budget-figure {
-  font-variant-numeric: tabular-nums;
-  font-weight: 700;
-  overflow-wrap: anywhere;
-}
-
-/* Inside the table the scroll container absorbs the width instead. */
-.budget-table .budget-figure { white-space: nowrap; }
-
-/* Not a figure at all. Set as prose, quieter and lighter, so it can never be
-   mistaken for a value — least of all for a zero. */
-.budget-figure[data-unknown="true"] {
-  color: var(--text-secondary);
-  font-size: var(--type-small);
-  font-weight: 620;
-  font-style: italic;
-  font-variant-numeric: normal;
-  white-space: normal;
-}
-
-.metric__value .budget-figure[data-unknown="true"] { font-size: 0.9375rem; }
-
-.budget-table-scroll {
-  overflow-x: auto;
-  background: var(--surface-raised);
-  border: 1px solid var(--border-default);
-  border-radius: var(--radius-medium);
-  box-shadow: var(--shadow-card);
-}
-
-.budget-table {
-  inline-size: 100%;
-  min-inline-size: 46rem;
-  border-collapse: collapse;
-  font-size: var(--type-small);
-}
-
-.budget-table th,
-.budget-table td {
-  padding: var(--space-3) var(--space-4);
-  text-align: left;
-  vertical-align: top;
-  border-bottom: 1px solid var(--border-default);
-}
-
-.budget-table thead th {
-  color: var(--text-secondary);
-  font-size: var(--type-label);
-  font-weight: 700;
-  letter-spacing: 0.06em;
-  text-transform: uppercase;
-  white-space: nowrap;
-  background: var(--surface-subtle);
-  border-bottom: 1px solid var(--border-strong);
-}
-
-.budget-table tbody tr:last-child th,
-.budget-table tbody tr:last-child td { border-bottom: 0; }
-
-.budget-table tbody th[scope="row"] {
-  min-inline-size: 14rem;
-  font-weight: 700;
-}
-
-.budget-row__head {
-  display: grid;
-  gap: var(--space-2);
-  justify-items: start;
-}
-
-/* The severity stripe is support for the badge and the sentence beside it,
-   never the only carrier of the state. */
-.budget-table tbody tr { border-left: 3px solid transparent; }
-.budget-table tbody tr[data-state="critical"] { border-left-color: var(--status-negative); }
-.budget-table tbody tr[data-state="warning"] { border-left-color: var(--status-warning); }
-.budget-table tbody tr[data-state="positive"] { border-left-color: var(--status-positive); }
-
-.budget-row__name {
-  font-size: var(--type-body);
-  font-weight: 740;
-}
-
-.budget-row__note {
-  display: block;
-  max-inline-size: 34ch;
-  color: var(--text-secondary);
-  font-size: var(--type-label);
-  font-weight: 600;
-  line-height: 1.45;
-  text-transform: none;
-  letter-spacing: 0;
-}
-
-.budget-row__action {
-  min-block-size: 2.75rem;
-  padding: var(--space-2) var(--space-4);
-  white-space: nowrap;
-}
-
-.budget-counts {
-  display: flex;
-  flex-wrap: wrap;
-  gap: var(--space-2) var(--space-4);
-  margin: 0;
-  font-size: var(--type-small);
-}
-
-.budget-counts > div {
-  display: flex;
-  gap: var(--space-2);
-  align-items: baseline;
-}
-
-.budget-counts dt { color: var(--text-secondary); }
-
-.budget-counts dd {
-  margin: 0;
-  font-weight: 720;
-  font-variant-numeric: tabular-nums;
-}
-
-.budget-counts > div[data-attention="true"] dd { color: var(--status-warning); }
-
-.budget-summary-threshold {
-  display: flex;
-  flex-wrap: wrap;
-  gap: var(--space-2) var(--space-3);
-  align-items: center;
-  margin: 0;
-}
-
-/* Same quiet register Centre Quality uses for a source it could not read. An
-   incomplete month is a fact the reader needs, not an incident. */
-.budget-coverage-note {
-  margin: 0;
-  padding: var(--space-3) var(--space-4);
-  color: var(--text-primary);
-  font-size: var(--type-small);
-  line-height: 1.5;
-  background: var(--color-info-bg);
-  border-left: 3px solid var(--color-info);
-  border-radius: var(--radius-small);
-}
-
-.budget-coverage-note__label {
-  display: block;
-  color: var(--color-info);
   font-size: var(--type-label);
   font-weight: 700;
   letter-spacing: 0.08em;
@@ -3785,88 +4024,6 @@ textarea {
 
 .assignment-picker__empty {
   margin: 0;
-}
-
-.budget-hero {
-  display: grid;
-  gap: var(--space-4);
-  margin-bottom: var(--space-6);
-  padding: var(--space-5);
-  background: var(--surface-sage);
-  border: 1px solid var(--brand-mint);
-  border-radius: var(--radius-large);
-}
-
-.budget-hero h2 {
-  margin: 0;
-  font-size: var(--type-title);
-  font-weight: 750;
-}
-
-.budget-hero > p {
-  margin: 0;
-  max-width: 68ch;
-  color: var(--text-muted);
-}
-
-.budget-hero__figures {
-  display: grid;
-  grid-template-columns: repeat(2, minmax(0, 1fr));
-  gap: var(--space-3);
-  margin: 0;
-}
-
-.budget-hero__figures > div {
-  min-inline-size: 0;
-  padding: var(--space-3);
-  background: var(--surface-raised);
-  border-radius: var(--radius-small);
-}
-
-.budget-hero__figures dt {
-  color: var(--text-secondary);
-  font-size: var(--type-label);
-  font-weight: 700;
-  letter-spacing: 0.06em;
-  text-transform: uppercase;
-}
-
-.budget-hero__figures dd {
-  margin: var(--space-1) 0 0;
-  font-size: 1.5rem;
-  font-weight: 740;
-  font-variant-numeric: tabular-nums;
-}
-
-.budget-hero__figures > div[data-emphasis="true"] {
-  background: var(--color-garden);
-}
-
-.budget-hero__figures > div[data-emphasis="true"] dt { color: var(--color-mint); }
-.budget-hero__figures > div[data-emphasis="true"] dd { color: #ffffff; }
-
-.budget-group { margin-bottom: var(--space-7); }
-
-.budget-group__header {
-  display: grid;
-  gap: var(--space-1);
-  margin-bottom: var(--space-4);
-  padding-bottom: var(--space-3);
-  border-bottom: 1px solid var(--border-default);
-}
-
-.budget-group__header h3 {
-  display: flex;
-  flex-wrap: wrap;
-  gap: var(--space-2) var(--space-3);
-  align-items: baseline;
-  margin: 0;
-  font-size: var(--type-section);
-}
-
-.budget-group__header p {
-  margin: 0;
-  max-width: 68ch;
   color: var(--text-secondary);
   font-size: var(--type-small);
 }
@@ -3876,11 +4033,6 @@ textarea {
   grid-template-columns: minmax(0, 1fr);
   gap: var(--space-2);
   margin: 0 0 0 var(--space-5);
-.budget-centre-grid {
-  display: grid;
-  grid-template-columns: repeat(auto-fit, minmax(min(100%, 20rem), 26rem));
-  gap: var(--space-4);
-  margin: 0;
   padding: 0;
   list-style: none;
 }
@@ -3927,38 +4079,6 @@ textarea {
 
 .schedule-picker__recurrence,
 .schedule-picker__zone {
-.budget-centre-card {
-  display: grid;
-  gap: var(--space-3);
-  align-content: start;
-  padding: var(--space-5);
-  background: var(--surface-raised);
-  border: 1px solid var(--border-default);
-  border-left: 4px solid var(--border-strong);
-  border-radius: var(--radius-medium);
-  box-shadow: var(--shadow-card);
-}
-
-.budget-centre-card[data-focus="over-budget"] { border-left-color: var(--status-negative); }
-.budget-centre-card[data-focus="unbudgeted-spend"] { border-left-color: var(--status-warning); }
-.budget-centre-card[data-focus="not-complete"] { border-left-color: var(--color-info); }
-.budget-centre-card[data-focus="fully-recorded"] { border-left-color: var(--status-positive); }
-
-.budget-centre-card__head {
-  display: flex;
-  flex-wrap: wrap;
-  gap: var(--space-2) var(--space-3);
-  align-items: baseline;
-  justify-content: space-between;
-}
-
-.budget-centre-card__head h4 {
-  margin: 0;
-  font-size: 1.125rem;
-  font-weight: 720;
-}
-
-.budget-centre-card__reason {
   margin: 0;
   color: var(--text-secondary);
   font-size: var(--type-small);
@@ -4220,105 +4340,4 @@ textarea {
     border-color: GrayText;
     color: GrayText;
   }
-.budget-centre-card__figures {
-  display: grid;
-  grid-template-columns: repeat(2, minmax(0, 1fr));
-  gap: var(--space-2) var(--space-3);
-  margin: 0;
-}
-
-.budget-centre-card__figures > div { min-inline-size: 0; }
-
-.budget-centre-card__figures dt {
-  color: var(--text-secondary);
-  font-size: var(--type-label);
-  font-weight: 700;
-  letter-spacing: 0.05em;
-  text-transform: uppercase;
-}
-
-.budget-centre-card__figures dd {
-  margin: var(--space-1) 0 0;
-  font-size: 1.0625rem;
-}
-
-.budget-centre-card__figures > div[data-attention="true"] .budget-figure {
-  color: var(--status-negative);
-}
-
-/* Entry ------------------------------------------------------------ */
-
-.budget-entry {
-  display: grid;
-  gap: var(--space-3);
-}
-
-.budget-entry__standing {
-  margin: 0;
-  padding: var(--space-3) var(--space-4);
-  font-size: var(--type-small);
-  background: var(--surface-subtle);
-  border-radius: var(--radius-small);
-}
-
-.budget-entry__field {
-  display: grid;
-  gap: var(--space-2);
-}
-
-.budget-entry__label {
-  font-size: var(--type-small);
-  font-weight: 700;
-}
-
-.budget-entry__field input,
-.budget-entry__field textarea {
-  inline-size: 100%;
-  padding: var(--space-3);
-  background: var(--surface-raised);
-  border: 1px solid var(--border-strong);
-  border-radius: var(--radius-small);
-}
-
-.budget-entry__field input {
-  font-size: 1.125rem;
-  font-variant-numeric: tabular-nums;
-}
-
-.budget-entry__field input[aria-invalid="true"] {
-  border-color: var(--status-negative);
-}
-
-/* The whole label is the target, so the hit area is a full 44px even though
-   the box itself is smaller. */
-.budget-entry__check {
-  display: flex;
-  gap: var(--space-3);
-  align-items: center;
-  min-block-size: 2.75rem;
-  padding: var(--space-2) var(--space-3);
-  font-weight: 700;
-  cursor: pointer;
-  background: var(--surface-subtle);
-  border-radius: var(--radius-small);
-}
-
-.budget-entry__check input {
-  inline-size: 1.375rem;
-  block-size: 1.375rem;
-  min-block-size: 1.375rem;
-  accent-color: var(--color-garden);
-}
-
-/* The one completion action on this surface carries the extra height. */
-.budget-submit { min-block-size: 3.5rem; }
-
-@media (min-width: 48rem) {
-  .budget-hero__figures { grid-template-columns: repeat(4, minmax(0, 1fr)); }
-}
-
-@media (max-width: 35rem) {
-  .budget-month { display: flex; width: 100%; justify-content: space-between; }
-  .budget-month__label { flex: 1 1 auto; }
-  .budget-row__action { width: 100%; }
 }
