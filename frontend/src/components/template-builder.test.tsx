@@ -911,6 +911,8 @@ describe("publishing", () => {
           versionId: PUBLISHED_VERSION,
           versionLabel: "Version 2",
           publishedLocalTime: "2:20pm",
+          // The publish that committed was this reader's own.
+          publishedByRequester: true,
         }),
     });
 
@@ -919,29 +921,16 @@ describe("publishing", () => {
     fireEvent.click(screen.getByRole("button", { name: "Publish" }));
 
     expect(await screen.findByText("Already published")).toBeTruthy();
+    // Told in the second person, because the press that worked was theirs.
+    expect(screen.getByText(/^You published Version 2 at 2:20pm\./)).toBeTruthy();
     expect(screen.getByText(/It was not published twice/)).toBeTruthy();
+    // Still told what did not happen. Publishing and assigning are two
+    // commands and the lost response never reached the second, so silence here
+    // would leave them believing the check is scheduled at Ashgrove.
+    expect(screen.getByText("The settings on this screen were not applied.")).toBeTruthy();
   });
 
-  test("an already-published version says these settings were not applied", async () => {
-    // KNOWN REGRESSION, recorded rather than papered over.
-    //
-    // This test and the one above it were a matched pair. `ALREADY_PUBLISHED`
-    // carried `publishedByRequester`, and the dialog branched on it: the person
-    // whose own response was lost was told "You published Version 2 at 2:20pm.
-    // It was not published twice." and was NOT shown the disclaimer, because
-    // their settings were the ones applied. Anyone else was told the version was
-    // already published, and that the settings on their screen were not.
-    //
-    // The rewire onto the generated client dropped the field and made both
-    // strings unconditional, so a retrying Area Manager is now told their own
-    // settings were not applied. The distinction is no longer representable, so
-    // neither fixture can express it and this test can only pin the disclaimer.
-    //
-    // It is not a backend limitation: `OperationalTemplateVersionSummary`
-    // carries `authorId`, and the gateway already resolves the current
-    // principal and exposes `owns(authorId)` for exactly this kind of question.
-    // Restoring the branch is a product decision about wording, so it is raised
-    // rather than taken here.
+  test("someone else's publish says so, and that these settings were not applied", async () => {
     renderDialog({
       publishVersion: () =>
         Promise.resolve({
@@ -949,6 +938,8 @@ describe("publishing", () => {
           versionId: PUBLISHED_VERSION,
           versionLabel: "Version 2",
           publishedLocalTime: "2:20pm",
+          // Another Area Manager got there first.
+          publishedByRequester: false,
         }),
     });
 
@@ -957,7 +948,11 @@ describe("publishing", () => {
     fireEvent.click(screen.getByRole("button", { name: "Publish" }));
 
     expect(await screen.findByText("Already published")).toBeTruthy();
+    expect(screen.getByText("Version 2 was already published at 2:20pm.")).toBeTruthy();
     expect(screen.getByText("The settings on this screen were not applied.")).toBeTruthy();
+    // Never reassured about a publish they did not make.
+    expect(screen.queryByText(/It was not published twice/)).toBeNull();
+    expect(screen.queryByText(/You published/)).toBeNull();
   });
 
   test("a refusal shows the backend's own wording and is not an outage", async () => {

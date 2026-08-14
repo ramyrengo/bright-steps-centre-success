@@ -197,7 +197,21 @@ export function PublishDialog({
             kind: "published",
             versionId: result.versionId,
             title: "Already published",
-            message: `${result.versionLabel} was already published at ${result.publishedLocalTime}. It was not published twice.`,
+            // Who published it decides the sentence. Someone whose own publish
+            // committed and lost its response needs to hear that their press
+            // worked and that nothing was duplicated. Someone who has just been
+            // beaten to it needs to hear that what is live is not theirs, and
+            // "it was not published twice" would be a reassurance about a
+            // publish they never made.
+            message: result.publishedByRequester
+              ? `You published ${result.versionLabel} at ${result.publishedLocalTime}. It was not published twice.`
+              : `${result.versionLabel} was already published at ${result.publishedLocalTime}.`,
+            // Said to both, because it is true for both. Publishing and
+            // assigning are two commands, and a publish that lost its response
+            // never reached the second — so the version is live with nothing
+            // set. Told only that their own publish worked, an Area Manager
+            // would leave believing a daily check is running at the centres on
+            // this screen when none was ever assigned.
             detail: "The settings on this screen were not applied.",
           });
           return;

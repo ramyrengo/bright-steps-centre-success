@@ -343,6 +343,9 @@ function createStore() {
             versionId: live.versionId,
             versionLabel: live.versionLabel,
             publishedLocalTime: live.publishedLocalTime,
+            // One Area Manager throughout this store, so the version that is
+            // live is always the one they published.
+            publishedByRequester: true,
           });
         }
         return Promise.resolve({

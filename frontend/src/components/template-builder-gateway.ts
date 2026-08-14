@@ -373,7 +373,12 @@ function historyFrom(
 interface Authority {
   /** The backend keeps draft mutation, preview, publication and retirement
    *  with the draft's creator. Matching that rule here means the builder does
-   *  not offer a control the backend is going to refuse. */
+   *  not offer a control the backend is going to refuse.
+   *
+   *  Both ids the backend calls `authorId` are answered by this one check, and
+   *  they are not the same fact: on a draft it is whoever started it, on a
+   *  version it is whoever published it. Asked with a version's id this settles
+   *  who published, which is a question about wording rather than a control. */
   owns: (authorId: string | undefined) => boolean;
 }
 
@@ -774,11 +779,20 @@ export function createTemplateBuilderGateway(
           const after = await loadWorkspace(templateId).catch(() => undefined);
           const newest = after?.versions[0];
           if (newest) {
+            // `authorId` on a version summary is the principal who published
+            // that version, not whoever drafted it — the backend stores
+            // publication attribution separately from draft authorship. So this
+            // answers "was that publish mine?", which is the question the
+            // dialog's wording turns on. Where the principal could not be
+            // established it answers no, and the reader gets the wording that
+            // claims least.
+            const who = await authority();
             return {
               outcome: "ALREADY_PUBLISHED",
               versionId: newest.versionId,
               versionLabel: versionLabel(newest.versionNumber),
               publishedLocalTime: timestampLabel(newest.publishedAt) ?? "",
+              publishedByRequester: who.owns(newest.authorId),
             };
           }
         }

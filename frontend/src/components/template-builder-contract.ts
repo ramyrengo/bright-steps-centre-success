@@ -496,6 +496,17 @@ export type PublishResult =
       versionId: string;
       versionLabel: string;
       publishedLocalTime: string;
+      /**
+       * Whether the version that is already live was published by the person
+       * reading this. "You published this" and "someone else got there first"
+       * lead to different next moves, so they are not told in one sentence.
+       *
+       * The backend attributes publication: a version summary's `authorId` is
+       * the principal who published it, not whoever drafted it. Where the
+       * current principal could not be established this is false, because an
+       * ownership claim that was not established is not one worth making.
+       */
+      publishedByRequester: boolean;
     }
   | { outcome: "REFUSED"; reason: string };
 
