@@ -19,7 +19,11 @@
     "lint": "npm --prefix frontend run lint",
     "identity:link:local": "encore exec -- npx --no-install tsx scripts/link-entra-identity.ts",
     "identity:bootstrap:local": "encore exec -- npx --no-install tsx scripts/bootstrap-local-system-administrator.ts",
-    "quarterly-review:seed:local": "encore exec -- npx --no-install tsx scripts/seed-quarterly-review-development.ts"
+    "quarterly-review:seed:local": "encore exec -- npx --no-install tsx scripts/seed-quarterly-review-development.ts",
+    "organisation:load:dry-run": "encore exec -- npx --no-install tsx scripts/load-bright-steps-organisation.ts",
+    "organisation:load:apply": "encore exec -- npx --no-install tsx scripts/load-bright-steps-organisation.ts --apply",
+    "admin:bootstrap:dry-run": "encore exec -- npx --no-install tsx scripts/bootstrap-first-administrator.ts",
+    "admin:bootstrap:apply": "encore exec -- npx --no-install tsx scripts/bootstrap-first-administrator.ts --apply"
   },
   "devDependencies": {
     "@types/node": "^20.5.7",

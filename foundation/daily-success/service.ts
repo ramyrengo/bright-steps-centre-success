@@ -35,6 +35,12 @@ const DAILY_CENTRE_CAPABILITIES = [
   FOUNDATION_CAPABILITIES.quarterlyAuditConduct,
   FOUNDATION_CAPABILITIES.quarterlyAuditFinalise,
   FOUNDATION_CAPABILITIES.quarterlyAuditAcknowledge,
+  // Contributes no Daily Success item or perspective. It is evaluated here
+  // only because `deriveWorkspaceLinks` reads it, and Daily Success and the
+  // `/navigation` projection must never offer different destinations for the
+  // same principal. Evaluation is in memory over centres already loaded, so
+  // this costs no additional query.
+  FOUNDATION_CAPABILITIES.budgetPositionRead,
 ] as const;
 
 const DAILY_ORGANISATION_CAPABILITIES = [
@@ -45,12 +51,8 @@ const DAILY_ORGANISATION_CAPABILITIES = [
   FOUNDATION_CAPABILITIES.principalRead,
 ] as const;
 
-interface PrincipalRow {
-  id: string;
-  status: "pending" | "active" | "suspended" | "revoked";
-}
-
-interface OrganisationRow {
+interface PrincipalOrganisationRow {
+  principal_id: string;
   id: string;
   name: string;
   default_timezone: string;
@@ -244,15 +246,25 @@ export async function buildDailySuccess(
   const decisionAt = dependencies.now();
   try {
     await executor.exec`SET TRANSACTION ISOLATION LEVEL REPEATABLE READ READ ONLY`;
-    const principal = await executor.queryRow<PrincipalRow>`
-      SELECT id, status FROM principals WHERE id = ${input.principalId}
-    `;
-    if (!principal || principal.status !== "active") throw new DailySuccessError("access_denied");
-    const organisations = await executor.queryAll<OrganisationRow>`
-      SELECT DISTINCT organisation.id, organisation.name, organisation.default_timezone
-      FROM organisation_memberships AS membership
+    // The principal's existence and active status are enforced by joining
+    // `principals` here rather than by reading that row separately: the
+    // authorisation context loader reads the identical row moments later inside
+    // this same `REPEATABLE READ` snapshot, where it is guaranteed unchanged, so
+    // a standalone lookup would only be a second trip for an answer already
+    // coming. A missing principal, an inactive one, and a principal without
+    // exactly one active organisation all still fail closed as `access_denied`.
+    const organisations = await executor.queryAll<PrincipalOrganisationRow>`
+      SELECT DISTINCT
+        principal.id AS principal_id,
+        organisation.id,
+        organisation.name,
+        organisation.default_timezone
+      FROM principals AS principal
+      JOIN organisation_memberships AS membership
+        ON membership.principal_id = principal.id
       JOIN organisations AS organisation ON organisation.id = membership.organisation_id
-      WHERE membership.principal_id = ${principal.id}
+      WHERE principal.id = ${input.principalId}
+        AND principal.status = 'active'
         AND membership.status = 'active'
         AND membership.effective_from <= ${decisionAt}
         AND (membership.effective_to IS NULL OR membership.effective_to > ${decisionAt})
@@ -261,9 +273,12 @@ export async function buildDailySuccess(
     `;
     if (organisations.length !== 1) throw new DailySuccessError("access_denied");
     const organisation = organisations[0];
+    // The canonical identifier as PostgreSQL stores it, which is what the
+    // per-row ownership comparisons in the daily sources are matched against.
+    const resolvedPrincipalId = organisation.principal_id;
     requireIanaTimezone(organisation.default_timezone);
     const context = await loadPrincipalAuthorisationContextFromSnapshot(executor, {
-      principalId: principal.id,
+      principalId: resolvedPrincipalId,
       activeOrganisationId: organisation.id,
       at: decisionAt,
     });
@@ -313,7 +328,7 @@ export async function buildDailySuccess(
       );
     }
     const authorisation: DailyAuthorisationView = {
-      principalId: principal.id,
+      principalId: resolvedPrincipalId,
       organisationId: organisation.id,
       decisionAt,
       centres,
