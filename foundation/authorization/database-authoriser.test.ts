@@ -3,7 +3,10 @@ import { describe, expect, test, vi } from "vitest";
 import { centreSuccessDB } from "../db";
 import { FOUNDATION_CAPABILITIES as capability } from "./capabilities";
 import { loadPrincipalAuthorisationContext } from "./context-loader";
-import { authoriseCentreFromDatabase } from "./database-authoriser";
+import {
+  authoriseCentreFromDatabase,
+  authoriseCentresFromDatabase,
+} from "./database-authoriser";
 import {
   loadCentreAuthorisationResource,
 } from "./hierarchy";
@@ -933,5 +936,195 @@ describe("database-backed foundation authorization", () => {
         at: AUGUST,
       }),
     ).toEqual({ allowed: false, reason: "capability_missing" });
+  });
+});
+
+/**
+ * The set-wise authoriser exists to remove one snapshot per candidate from the
+ * multi-record list boundaries. The risk it carries is not performance but
+ * divergence: a batch path that answers even slightly differently from the
+ * single-centre path is an authorization bug wearing an optimisation's clothes.
+ * These tests are therefore weighted towards equivalence and towards the ways
+ * it must fail closed.
+ */
+describe("set-wise centre authorization", () => {
+  async function assignedPrincipal(label: string) {
+    const organisationId = await addOrganisation(`${label} organisation`);
+    const assigned = await addSimpleCentreTree(organisationId, `${label} assigned`);
+    const other = await addSimpleCentreTree(organisationId, `${label} other`);
+    const principalId = await addPrincipal(`${label} director`);
+    const membershipId = await addMembership(organisationId, principalId);
+    await addAssignment({
+      organisationId,
+      membershipId,
+      roleKey: "centre_director",
+      scopes: [{ scope: { type: "centre", centreId: assigned.centre } }],
+    });
+    return { organisationId, principalId, assigned: assigned.centre, other: other.centre };
+  }
+
+  test("returns the assigned centre and omits the unassigned one", async () => {
+    const fixture = await assignedPrincipal("Batch basic");
+
+    const allowed = await authoriseCentresFromDatabase({
+      principalId: fixture.principalId,
+      activeOrganisationId: fixture.organisationId,
+      centreIds: [fixture.assigned, fixture.other],
+      capability: capability.centreRead,
+      at: AUGUST,
+    });
+
+    expect([...allowed]).toEqual([fixture.assigned]);
+  });
+
+  test("agrees with the single-centre authoriser on every candidate", async () => {
+    // The property that actually matters. Whatever the per-centre path decides,
+    // the batch path decides the same, or this refactor changed who can see what.
+    const fixture = await assignedPrincipal("Batch equivalence");
+    const foreignOrganisation = await addOrganisation("Batch foreign organisation");
+    const foreign = await addSimpleCentreTree(foreignOrganisation, "Batch foreign");
+    const candidates = [fixture.assigned, fixture.other, foreign.centre, randomUUID()];
+
+    for (const requested of [capability.centreRead, capability.quarterlyAuditConduct]) {
+      const individually: string[] = [];
+      for (const centreId of candidates) {
+        const decision = await authoriseCentreFromDatabase({
+          principalId: fixture.principalId,
+          activeOrganisationId: fixture.organisationId,
+          centreId,
+          capability: requested,
+          at: AUGUST,
+        });
+        if (decision.allowed) individually.push(centreId);
+      }
+
+      const batched = await authoriseCentresFromDatabase({
+        principalId: fixture.principalId,
+        activeOrganisationId: fixture.organisationId,
+        centreIds: candidates,
+        capability: requested,
+        at: AUGUST,
+      });
+
+      expect([...batched].sort()).toEqual(individually.sort());
+    }
+  });
+
+  test("never returns a centre belonging to another organisation", async () => {
+    const fixture = await assignedPrincipal("Batch tenant");
+    const foreignOrganisation = await addOrganisation("Batch tenant foreign");
+    const foreign = await addSimpleCentreTree(foreignOrganisation, "Batch tenant foreign");
+
+    const allowed = await authoriseCentresFromDatabase({
+      principalId: fixture.principalId,
+      activeOrganisationId: fixture.organisationId,
+      centreIds: [foreign.centre, fixture.assigned],
+      capability: capability.centreRead,
+      at: AUGUST,
+    });
+
+    expect(allowed.has(foreign.centre)).toBe(false);
+    expect(allowed.has(fixture.assigned)).toBe(true);
+  });
+
+  test("denies an unknown identifier without failing the whole request", async () => {
+    // A caller that passes a stale identifier alongside good ones must still get
+    // an answer for the good ones, and must not learn anything from the bad one.
+    const fixture = await assignedPrincipal("Batch unknown");
+
+    const allowed = await authoriseCentresFromDatabase({
+      principalId: fixture.principalId,
+      activeOrganisationId: fixture.organisationId,
+      centreIds: [randomUUID(), fixture.assigned],
+      capability: capability.centreRead,
+      at: AUGUST,
+    });
+
+    expect([...allowed]).toEqual([fixture.assigned]);
+  });
+
+  test("denies an inactive centre", async () => {
+    const fixture = await assignedPrincipal("Batch inactive");
+    await centreSuccessDB.exec`
+      UPDATE centres SET status = 'inactive' WHERE id = ${fixture.assigned}
+    `;
+
+    const allowed = await authoriseCentresFromDatabase({
+      principalId: fixture.principalId,
+      activeOrganisationId: fixture.organisationId,
+      centreIds: [fixture.assigned],
+      capability: capability.centreRead,
+      at: AUGUST,
+    });
+
+    expect(allowed.size).toBe(0);
+  });
+
+  test("denies every centre when the principal context cannot be established", async () => {
+    // Partial results here would be the dangerous failure: a principal whose
+    // context is unavailable has no authority anywhere, not merely less of it.
+    const fixture = await assignedPrincipal("Batch context");
+    const stranger = await addPrincipal("Batch context stranger");
+
+    const allowed = await authoriseCentresFromDatabase({
+      principalId: stranger,
+      activeOrganisationId: fixture.organisationId,
+      centreIds: [fixture.assigned, fixture.other],
+      capability: capability.centreRead,
+      at: AUGUST,
+    });
+
+    expect(allowed.size).toBe(0);
+  });
+
+  test("honours the decision time it is given", async () => {
+    const organisationId = await addOrganisation("Batch window organisation");
+    const tree = await addSimpleCentreTree(organisationId, "Batch window");
+    const principalId = await addPrincipal("Batch window director");
+    const membershipId = await addMembership(organisationId, principalId);
+    await addAssignment({
+      organisationId,
+      membershipId,
+      roleKey: "centre_director",
+      scopes: [
+        {
+          scope: { type: "centre", centreId: tree.centre },
+          effectiveFrom: JUNE,
+          effectiveTo: JULY,
+        },
+      ],
+    });
+
+    const inside = await authoriseCentresFromDatabase({
+      principalId,
+      activeOrganisationId: organisationId,
+      centreIds: [tree.centre],
+      capability: capability.centreRead,
+      at: JUNE,
+    });
+    const outside = await authoriseCentresFromDatabase({
+      principalId,
+      activeOrganisationId: organisationId,
+      centreIds: [tree.centre],
+      capability: capability.centreRead,
+      at: OCTOBER,
+    });
+
+    expect(inside.has(tree.centre)).toBe(true);
+    expect(outside.size).toBe(0);
+  });
+
+  test("returns an empty set for an empty request", async () => {
+    const fixture = await assignedPrincipal("Batch empty");
+
+    const allowed = await authoriseCentresFromDatabase({
+      principalId: fixture.principalId,
+      activeOrganisationId: fixture.organisationId,
+      centreIds: [],
+      capability: capability.centreRead,
+      at: AUGUST,
+    });
+
+    expect(allowed.size).toBe(0);
   });
 });
