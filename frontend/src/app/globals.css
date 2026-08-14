@@ -2961,3 +2961,941 @@ textarea {
     border: 1px solid CanvasText;
   }
 }
+
+/* ============================================================ *
+ * Area Manager Template & Form Builder
+ *
+ * The authoring side of Centre Standards. It reuses the completion
+ * primitives wholesale — `.answer-control`, `.answer-option`,
+ * `.check-progress`, `.check-actions` — so the phone preview is the
+ * real control at the real size rather than a drawing of one.
+ *
+ * Everything here is phone-first: single-column by default, wide
+ * layouts added at a breakpoint, never the other way round.
+ * ============================================================ */
+
+/* A fixed bottom bar covers the end of the page, so the page has to end
+   above it. Without this the last control sits under the bar and cannot
+   be reached at all on a phone. */
+.app-main:has(.sticky-action-bar) {
+  padding-bottom: 9rem;
+}
+
+/* --- library ------------------------------------------------ */
+
+.builder-toolbar {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr);
+  gap: var(--space-3);
+  align-items: center;
+  margin-bottom: var(--space-5);
+  min-width: 0;
+}
+
+.builder-toolbar__count {
+  margin: 0;
+  color: var(--text-secondary);
+  font-size: var(--type-small);
+}
+
+.template-list {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr);
+  gap: var(--space-4);
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.template-card {
+  display: grid;
+  gap: var(--space-3);
+  padding: var(--space-5);
+  background: var(--surface-raised);
+  border: 1px solid var(--border-default);
+  border-inline-start: 0.3125rem solid var(--border-strong);
+  border-radius: var(--radius-medium);
+  box-shadow: var(--shadow-card);
+  min-width: 0;
+}
+
+.template-card[data-lifecycle="PUBLISHED"] { border-inline-start-color: var(--status-positive); }
+.template-card[data-lifecycle="RETIRED"] { border-inline-start-color: var(--status-informational); }
+
+.template-card__head {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--space-2) var(--space-3);
+  min-width: 0;
+}
+
+.template-card__title {
+  margin: 0;
+  font-size: 1.0625rem;
+  font-weight: 700;
+  min-width: 0;
+}
+
+.template-card__purpose,
+.template-card__meta {
+  margin: 0;
+  color: var(--text-secondary);
+  font-size: var(--type-small);
+}
+
+.template-card__facts {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr);
+  gap: var(--space-2);
+  margin: 0;
+}
+
+.template-card__facts > div { min-width: 0; }
+
+.template-card__facts dt {
+  color: var(--text-secondary);
+  font-size: var(--type-label);
+  font-weight: 700;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+}
+
+.template-card__facts dd { margin: 0; font-size: var(--type-small); }
+
+.template-card .button {
+  min-height: 3rem;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  justify-self: start;
+}
+
+.template-card--skeleton { gap: var(--space-3); }
+
+.template-dialog__hint {
+  margin: 0;
+  color: var(--text-secondary);
+  font-size: var(--type-small);
+}
+
+/* --- draft editor ------------------------------------------- */
+
+.builder {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr);
+  gap: var(--space-6);
+  min-width: 0;
+}
+
+.builder-card,
+.builder-section,
+.builder-question {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr);
+  gap: var(--space-4);
+  padding: var(--space-5);
+  background: var(--surface-raised);
+  border: 1px solid var(--border-default);
+  border-radius: var(--radius-medium);
+  min-width: 0;
+}
+
+.builder-section-list,
+.builder-question-list {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr);
+  gap: var(--space-4);
+  margin: 0 0 var(--space-4);
+  padding: 0;
+  list-style: none;
+}
+
+/* A question sits inside a section, so it is a quiet inset rather than a
+   second card. The design system forbids nesting a card in a card, and two
+   raised frames read as competing panels. */
+.builder-question {
+  background: var(--surface-subtle);
+  box-shadow: none;
+}
+
+.builder-section__head {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr);
+  gap: var(--space-3);
+  align-items: end;
+  min-width: 0;
+}
+
+.builder-section__title { min-width: 0; }
+
+.builder-section__empty {
+  margin: 0;
+  color: var(--text-secondary);
+  font-size: var(--type-small);
+}
+
+.builder-question__head {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr);
+  gap: var(--space-3);
+  min-width: 0;
+}
+
+.builder-question__body {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr);
+  gap: var(--space-4);
+  min-width: 0;
+}
+
+/* --- fields -------------------------------------------------- */
+
+.builder-field {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr);
+  gap: var(--space-2);
+  min-width: 0;
+}
+
+.builder-field__label {
+  font-size: var(--type-label);
+  font-weight: 700;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--text-secondary);
+}
+
+.builder-field__hint {
+  margin: 0;
+  color: var(--text-secondary);
+  font-size: var(--type-small);
+}
+
+.builder-field input,
+.builder-field select,
+.builder-field textarea,
+.builder-choice input {
+  width: 100%;
+  min-height: 2.75rem;
+  padding: var(--space-3);
+  background: var(--surface-raised);
+  color: var(--text-primary);
+  border: 1px solid var(--border-strong);
+  border-radius: var(--radius-small);
+}
+
+.builder-field-row {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr);
+  gap: var(--space-4);
+  align-items: end;
+  min-width: 0;
+}
+
+/* A checkbox and its words are one target, sized for a thumb. */
+.builder-toggle {
+  display: flex;
+  align-items: center;
+  gap: var(--space-3);
+  min-height: 2.75rem;
+  padding: var(--space-2) var(--space-3);
+  background: var(--surface-raised);
+  border: 1px solid var(--border-default);
+  border-radius: var(--radius-small);
+  cursor: pointer;
+  min-width: 0;
+}
+
+.builder-toggle input {
+  width: 1.375rem;
+  height: 1.375rem;
+  min-block-size: auto;
+  accent-color: var(--color-garden);
+  flex: none;
+}
+
+.builder-toggle:has(input:focus-visible) {
+  outline: 2px solid var(--focus-ring);
+  outline-offset: 2px;
+}
+
+/* --- choices ------------------------------------------------- */
+
+.builder-choices {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr);
+  gap: var(--space-2);
+  min-width: 0;
+}
+
+.builder-choices__list {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr);
+  gap: var(--space-2);
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.builder-choice {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  gap: var(--space-2);
+  align-items: center;
+  min-width: 0;
+}
+
+.builder-choice__remove {
+  min-width: 2.75rem;
+  min-height: 2.75rem;
+  background: transparent;
+  color: var(--text-secondary);
+  border: 1px solid var(--border-default);
+  border-radius: var(--radius-small);
+  font-size: 1.25rem;
+  line-height: 1;
+  cursor: pointer;
+}
+
+.builder-choice__remove:disabled {
+  opacity: 0.4;
+  cursor: default;
+}
+
+.builder-choices__add { justify-self: start; min-height: 2.75rem; }
+
+.builder-remove {
+  justify-self: start;
+  min-height: 2.75rem;
+  padding: 0 var(--space-3);
+  background: transparent;
+  color: var(--status-negative);
+  border: 1px solid transparent;
+  border-radius: var(--radius-small);
+  font-weight: 650;
+  cursor: pointer;
+}
+
+.builder-remove:hover { border-color: var(--status-negative); }
+
+/* --- ordering ------------------------------------------------ */
+
+/* Move up / move down, not drag and drop. A drag surface needs a parallel
+   keyboard path before it is usable at all, and a thumb on a phone hits a
+   button far more reliably than it holds a gesture. */
+.order-controls {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  justify-self: start;
+}
+
+.order-controls__button {
+  width: 2.75rem;
+  height: 2.75rem;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  background: var(--surface-raised);
+  color: var(--color-garden);
+  border: 1px solid var(--border-strong);
+  border-radius: var(--radius-small);
+  font-size: 1rem;
+  cursor: pointer;
+}
+
+.order-controls__button:disabled {
+  opacity: 0.35;
+  cursor: default;
+}
+
+.order-controls__position {
+  min-width: 1.5rem;
+  text-align: center;
+  font-variant-numeric: tabular-nums;
+  font-weight: 700;
+  color: var(--text-secondary);
+}
+
+/* --- readiness and saving ------------------------------------ */
+
+.builder-readiness {
+  padding: var(--space-4) var(--space-5);
+  background: var(--surface-warning);
+  border: 1px solid color-mix(in srgb, var(--status-warning) 35%, transparent);
+  border-radius: var(--radius-medium);
+  min-width: 0;
+}
+
+.builder-readiness h2 {
+  margin: 0 0 var(--space-2);
+  font-size: 1rem;
+  font-weight: 700;
+}
+
+.builder-readiness ul {
+  margin: 0;
+  padding-left: var(--space-5);
+  color: var(--text-primary);
+  font-size: var(--type-small);
+}
+
+.builder-save-state {
+  margin: 0;
+  flex: 1 1 auto;
+  min-width: 0;
+  color: var(--text-secondary);
+  font-size: var(--type-small);
+}
+
+.sticky-action-bar .button {
+  min-height: 3rem;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.builder-skeleton {
+  display: grid;
+  gap: var(--space-4);
+}
+
+.builder-skeleton__block {
+  height: 8rem;
+  border-radius: var(--radius-medium);
+  background: var(--color-line-soft);
+  border: 1px solid var(--border-default);
+}
+
+/* --- immutable record ---------------------------------------- */
+
+.builder-facts {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr);
+  gap: var(--space-3);
+  margin: 0;
+  padding: var(--space-5);
+  background: var(--surface-raised);
+  border: 1px solid var(--border-default);
+  border-radius: var(--radius-medium);
+  min-width: 0;
+}
+
+.builder-facts > div { min-width: 0; }
+
+.builder-facts dt {
+  color: var(--text-secondary);
+  font-size: var(--type-label);
+  font-weight: 700;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+}
+
+.builder-facts dd { margin: 0; }
+
+.record-section + .record-section { margin-top: var(--space-5); }
+
+.record-section__title {
+  margin: 0 0 var(--space-3);
+  font-size: 1rem;
+  font-weight: 700;
+}
+
+.question-record-list {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr);
+  gap: var(--space-3);
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.question-record {
+  display: grid;
+  gap: var(--space-1);
+  padding: var(--space-4);
+  background: var(--surface-raised);
+  border: 1px solid var(--border-default);
+  border-radius: var(--radius-medium);
+  min-width: 0;
+}
+
+.question-record__wording {
+  margin: 0;
+  font-weight: 600;
+  color: var(--text-primary);
+}
+
+.question-record__number {
+  color: var(--text-secondary);
+  margin-inline-end: var(--space-2);
+}
+
+.question-record__guidance,
+.question-record__meta {
+  margin: 0;
+  color: var(--text-secondary);
+  font-size: var(--type-small);
+}
+
+.question-record__choices {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-2);
+  margin: var(--space-1) 0 0;
+  padding: 0;
+  list-style: none;
+  min-width: 0;
+}
+
+.question-record__choices li {
+  padding: var(--space-1) var(--space-3);
+  background: var(--surface-subtle);
+  border: 1px solid var(--border-default);
+  border-radius: 999px;
+  font-size: var(--type-small);
+}
+
+/* --- version history ----------------------------------------- */
+
+.version-history {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr);
+  gap: var(--space-3);
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.version-history__row {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr);
+  gap: var(--space-2);
+  padding: var(--space-4);
+  background: var(--surface-raised);
+  border: 1px solid var(--border-default);
+  border-inline-start: 0.3125rem solid var(--border-strong);
+  border-radius: var(--radius-medium);
+  min-width: 0;
+}
+
+.version-history__row[data-lifecycle="PUBLISHED"] { border-inline-start-color: var(--status-positive); }
+.version-history__row[data-lifecycle="RETIRED"] { border-inline-start-color: var(--status-informational); }
+
+.version-history__primary {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--space-2) var(--space-3);
+  min-width: 0;
+}
+
+.version-history__label { font-weight: 700; }
+
+.version-history__current {
+  font-size: var(--type-label);
+  font-weight: 700;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--status-positive);
+}
+
+.version-history__event {
+  margin: 0;
+  color: var(--text-secondary);
+  font-size: var(--type-small);
+}
+
+.version-history__here {
+  color: var(--text-secondary);
+  font-size: var(--type-small);
+  font-style: italic;
+}
+
+.version-history .button {
+  min-height: 2.75rem;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  justify-self: start;
+}
+
+/* --- assignment and schedule --------------------------------- */
+
+.assignment-picker,
+.schedule-picker {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr);
+  gap: var(--space-3);
+  margin: 0;
+  padding: var(--space-4);
+  border: 1px solid var(--border-default);
+  border-radius: var(--radius-medium);
+  min-width: 0;
+}
+
+.assignment-picker legend,
+.schedule-picker legend {
+  padding: 0 var(--space-2);
+  font-size: var(--type-label);
+  font-weight: 700;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--text-secondary);
+}
+
+.assignment-picker__option {
+  display: grid;
+  grid-template-columns: 1.375rem minmax(0, 1fr);
+  gap: var(--space-3);
+  align-items: start;
+  min-height: 2.75rem;
+  padding: var(--space-2);
+  cursor: pointer;
+  min-width: 0;
+}
+
+.assignment-picker__option input {
+  width: 1.375rem;
+  height: 1.375rem;
+  min-block-size: auto;
+  accent-color: var(--color-garden);
+}
+
+.assignment-picker__option:has(input:focus-visible) {
+  outline: 2px solid var(--focus-ring);
+  outline-offset: 2px;
+}
+
+.assignment-picker__label {
+  display: block;
+  font-weight: 650;
+  color: var(--text-primary);
+}
+
+.assignment-picker__hint {
+  display: block;
+  color: var(--text-secondary);
+  font-size: var(--type-small);
+}
+
+.assignment-picker__empty {
+  margin: 0;
+  color: var(--text-secondary);
+  font-size: var(--type-small);
+}
+
+.centre-checklist {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr);
+  gap: var(--space-2);
+  margin: 0 0 0 var(--space-5);
+  padding: 0;
+  list-style: none;
+}
+
+.centre-checklist__item {
+  display: grid;
+  grid-template-columns: 1.375rem minmax(0, 1fr);
+  gap: var(--space-3);
+  align-items: center;
+  min-height: 2.75rem;
+  padding: var(--space-2) var(--space-3);
+  background: var(--surface-raised);
+  border: 1px solid var(--border-default);
+  border-radius: var(--radius-small);
+  cursor: pointer;
+  min-width: 0;
+}
+
+.centre-checklist__item input {
+  width: 1.375rem;
+  height: 1.375rem;
+  min-block-size: auto;
+  accent-color: var(--color-garden);
+}
+
+.centre-checklist__item:has(input:checked) {
+  border-color: var(--color-garden);
+  background: var(--color-tint);
+}
+
+.centre-checklist__item:has(input:focus-visible) {
+  outline: 2px solid var(--focus-ring);
+  outline-offset: 2px;
+}
+
+.centre-checklist__body { display: grid; min-width: 0; }
+
+.centre-checklist__name { font-weight: 600; }
+
+.centre-checklist__zone {
+  color: var(--text-secondary);
+  font-size: var(--type-small);
+}
+
+.schedule-picker__recurrence,
+.schedule-picker__zone {
+  margin: 0;
+  color: var(--text-secondary);
+  font-size: var(--type-small);
+}
+
+.publish-summary {
+  padding: var(--space-4);
+  background: var(--surface-subtle);
+  border-radius: var(--radius-medium);
+  min-width: 0;
+}
+
+.publish-summary h3 {
+  margin: 0 0 var(--space-3);
+  font-size: 1rem;
+  font-weight: 700;
+}
+
+.publish-summary dl {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr);
+  gap: var(--space-2);
+  margin: 0 0 var(--space-3);
+}
+
+.publish-summary dl > div { min-width: 0; }
+
+.publish-summary dt {
+  color: var(--text-secondary);
+  font-size: var(--type-label);
+  font-weight: 700;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+}
+
+.publish-summary dd { margin: 0; }
+
+.publish-summary__detail {
+  margin: 0 0 var(--space-2);
+  color: var(--text-secondary);
+  font-size: var(--type-small);
+}
+
+/* --- typed answers (text, number, date) ---------------------- */
+
+.entry-control {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr);
+  gap: var(--space-3);
+  min-width: 0;
+}
+
+.entry-control__label {
+  font-size: 1.375rem;
+  font-weight: 700;
+  line-height: 1.3;
+  color: var(--text-primary);
+  text-wrap: balance;
+}
+
+.entry-control__instructions {
+  margin: 0;
+  color: var(--text-secondary);
+  font-size: var(--type-small);
+}
+
+.entry-control__field {
+  display: flex;
+  align-items: center;
+  gap: var(--space-3);
+  min-width: 0;
+}
+
+.entry-control__field input,
+.entry-control__field textarea {
+  flex: 1 1 auto;
+  width: 100%;
+  min-width: 0;
+  /* 56px, matching the primary answer target. This is the same screen, used
+     standing up and one-handed, so a typed answer is no smaller a target
+     than a chosen one. */
+  min-height: 3.5rem;
+  padding: var(--space-4);
+  background: var(--surface-raised);
+  color: var(--text-primary);
+  border: 1px solid var(--border-strong);
+  border-radius: var(--radius-medium);
+  font-size: 1.0625rem;
+}
+
+.entry-control__field textarea { min-height: 7rem; }
+
+.entry-control__suffix {
+  flex: none;
+  color: var(--text-secondary);
+  font-size: var(--type-small);
+}
+
+/* A checkbox answer is square where a radio is round, so "any that apply"
+   and "exactly one" are distinguishable without reading the legend. */
+.answer-option--multi .answer-option__mark {
+  border-radius: 6px;
+}
+
+/* --- phone preview ------------------------------------------- */
+
+.phone-frame {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr);
+  justify-items: center;
+  min-width: 0;
+}
+
+.phone-frame__device { display: none; }
+
+.phone-frame__screen {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr);
+  gap: var(--space-5);
+  width: 100%;
+  padding: var(--space-5);
+  background: var(--surface-raised);
+  border: 1px solid var(--border-default);
+  border-radius: var(--radius-medium);
+  min-width: 0;
+}
+
+/* On a phone the preview is simply the page: framing it inside a smaller
+   phone would be a picture of a phone shown on a phone. From tablet up it
+   becomes a real 375px column, so what is being previewed is unmistakable. */
+@media (min-width: 48rem) {
+  .phone-frame__screen {
+    width: 23.4375rem;
+    border-radius: var(--radius-large);
+    box-shadow: var(--shadow-lifted);
+  }
+}
+
+.phone-preview {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr);
+  gap: var(--space-5);
+  min-width: 0;
+}
+
+.phone-preview--finished { justify-items: center; text-align: center; }
+
+.phone-preview__header {
+  display: grid;
+  gap: var(--space-1);
+  min-width: 0;
+}
+
+.phone-preview__eyebrow {
+  margin: 0;
+  font-size: var(--type-label);
+  font-weight: 700;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+  color: var(--text-secondary);
+}
+
+.phone-preview__title {
+  margin: 0;
+  font-size: 1.125rem;
+  font-weight: 700;
+  line-height: 1.3;
+  letter-spacing: 0;
+}
+
+.phone-preview__due,
+.phone-preview__message,
+.phone-preview__empty {
+  margin: 0;
+  color: var(--text-secondary);
+  font-size: var(--type-small);
+}
+
+.phone-preview__mark {
+  display: grid;
+  place-items: center;
+  width: 3rem;
+  height: 3rem;
+  border-radius: 50%;
+  background: var(--surface-positive);
+  color: var(--status-positive);
+  font-size: 1.5rem;
+}
+
+.phone-preview .button {
+  min-height: 3rem;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+}
+
+/* --- wide layouts, added rather than assumed ----------------- */
+
+@media (min-width: 48rem) {
+  .template-list {
+    grid-template-columns: repeat(auto-fit, minmax(min(100%, 22rem), 26rem));
+  }
+
+  .builder-toolbar {
+    grid-template-columns: minmax(0, 1fr) auto;
+  }
+
+  .builder-field-row {
+    grid-template-columns: minmax(0, 1fr) auto;
+  }
+
+  .builder-section__head {
+    grid-template-columns: auto minmax(0, 1fr) auto;
+  }
+
+  .builder-question__head {
+    grid-template-columns: auto minmax(0, 1fr);
+    align-items: start;
+  }
+
+  .builder-facts,
+  .template-card__facts,
+  .publish-summary dl {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
+  .version-history__row {
+    grid-template-columns: minmax(0, 1fr) auto;
+    align-items: center;
+  }
+
+  .version-history__event { grid-column: 1; }
+}
+
+@media (forced-colors: active) {
+  .template-card,
+  .builder-card,
+  .builder-section,
+  .builder-question,
+  .builder-toggle,
+  .centre-checklist__item,
+  .question-record,
+  .version-history__row,
+  .phone-frame__screen,
+  .order-controls__button,
+  .entry-control__field input,
+  .entry-control__field textarea {
+    border: 1px solid CanvasText;
+  }
+
+  .centre-checklist__item:has(input:checked) {
+    border: 2px solid Highlight;
+  }
+
+  /* A disabled ordering control is conveyed by opacity, which forced-colors
+     discards. The border and text go grey so the boundary stays visible
+     without claiming an active control. */
+  .order-controls__button:disabled {
+    border-color: GrayText;
+    color: GrayText;
+  }
+}
