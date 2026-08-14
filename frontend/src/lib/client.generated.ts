@@ -125,7 +125,6 @@ export namespace foundation {
             this.completeStandardsOccurrence = this.completeStandardsOccurrence.bind(this)
             this.createInvitation = this.createInvitation.bind(this)
             this.createOperationalTemplate = this.createOperationalTemplate.bind(this)
-            this.createOperationalTemplateDraftFromVersionRoute = this.createOperationalTemplateDraftFromVersionRoute.bind(this)
             this.finaliseQuarterlyAudit = this.finaliseQuarterlyAudit.bind(this)
             this.getAuditPreparation = this.getAuditPreparation.bind(this)
             this.getAuthorisedNavigationEndpoint = this.getAuthorisedNavigationEndpoint.bind(this)
@@ -231,12 +230,6 @@ export namespace foundation {
         public async createOperationalTemplate(params: operational_templates.CreateOperationalTemplateRequest): Promise<operational_templates.OperationalTemplateDraft> {
             // Now make the actual call to the API
             const resp = await this.baseClient.callTypedAPI("POST", `/standards/templates`, JSON.stringify(params))
-            return await resp.json() as operational_templates.OperationalTemplateDraft
-        }
-
-        public async createOperationalTemplateDraftFromVersionRoute(templateId: string, params: operational_templates.CreateDraftFromVersionRequest): Promise<operational_templates.OperationalTemplateDraft> {
-            // Now make the actual call to the API
-            const resp = await this.baseClient.callTypedAPI("POST", `/standards/templates/${encodeURIComponent(templateId)}/draft-from-version`, JSON.stringify(params))
             return await resp.json() as operational_templates.OperationalTemplateDraft
         }
 
@@ -1197,16 +1190,6 @@ export namespace operational_templates {
     export interface AssignableCentre {
         centreId: string
         centreName: string
-    }
-
-    /**
-     * Starts a new editable draft from a published or retired version. The source
-     * version is never modified; publishing the resulting draft creates the next
-     * version. This is what makes an edit to a published template produce a new
-     * version rather than silently changing history.
-     */
-    export interface CreateDraftFromVersionRequest {
-        versionId: string
     }
 
     export interface CreateOperationalTemplateRequest {

@@ -6,6 +6,8 @@ import {
   assignOperationalTemplate,
   createOperationalTemplateDraft,
   getOperationalTemplateVersion,
+  getOperationalTemplateWorkspace,
+  listOperationalTemplateAssignmentOptions,
   listOperationalTemplates,
   previewOperationalTemplateDraft,
   publishOperationalTemplate,
@@ -365,5 +367,76 @@ describe.sequential("Area Manager operational template builder", () => {
       WHERE organisation_id = ${ORGANISATION}
         AND template_version_id = ${versionId}
     `).rejects.toThrow(/cannot be reactivated/u);
+  });
+
+  test("opens one template as a workspace carrying its draft and permanent version history", async () => {
+    const workspace = await getOperationalTemplateWorkspace({
+      principalId: AREA_MANAGER,
+      templateId,
+    });
+    expect(workspace).toMatchObject({
+      templateId,
+      lifecycle: "RETIRED",
+      versions: [
+        expect.objectContaining({
+          versionId,
+          versionNumber: 1,
+          lifecycle: "PUBLISHED",
+          authorId: AREA_MANAGER,
+        }),
+      ],
+    });
+    // Retiring the template must not erase the version that produced its
+    // historical occurrences.
+    expect(workspace.draft).toBeDefined();
+    await expect(getOperationalTemplateWorkspace({
+      principalId: SYSTEM_ADMINISTRATOR,
+      templateId,
+    })).rejects.toMatchObject({ code: "access_denied" });
+  });
+
+  test("offers only the centres the backend authorises, and omits the notice when the list is complete", async () => {
+    const options = await listOperationalTemplateAssignmentOptions({
+      principalId: AREA_MANAGER,
+    });
+    // Exact equality also proves `incompleteNotice` is absent rather than
+    // empty: a complete list must never carry a doubt marker, and an
+    // incomplete one must never read as complete.
+    expect(options).toEqual({
+      centres: [{ centreId: CENTRE, centreName: "Template Sydney Centre" }],
+      portfolioAvailable: true,
+      portfolioCentreCount: 1,
+    });
+    expect(options.centres).not.toContainEqual(
+      expect.objectContaining({ centreId: OTHER_CENTRE }),
+    );
+    await expect(listOperationalTemplateAssignmentOptions({
+      principalId: SYSTEM_ADMINISTRATOR,
+    })).rejects.toMatchObject({ code: "access_denied" });
+  });
+
+  test("keeps the editable draft after publication, so the next version starts from it", async () => {
+    const workspace = await getOperationalTemplateWorkspace({
+      principalId: AREA_MANAGER,
+      templateId,
+    });
+    // Publishing snapshots the draft into an immutable version; it does not
+    // consume it. Editing a published template updates this same draft, and
+    // publishing again produces the next version. That is why the database
+    // refuses to delete a draft outright, and why no separate
+    // "start a draft from a version" operation is needed.
+    expect(workspace.draft).toMatchObject({
+      templateId,
+      lockVersion: expect.any(Number),
+    });
+    await expect(centreSuccessDB.exec`
+      DELETE FROM operational_template_drafts
+      WHERE organisation_id = ${ORGANISATION} AND template_id = ${templateId}
+    `).rejects.toThrow(/drafts cannot be deleted/u);
+    await expect(getOperationalTemplateVersion({
+      principalId: AREA_MANAGER,
+      templateId,
+      versionId,
+    })).resolves.toMatchObject({ versionNumber: 1, lifecycle: "RETIRED" });
   });
 });

@@ -4,7 +4,6 @@ import type { CentreSuccessAuthData } from "../authentication/auth-handler";
 import type {
   AssignOperationalTemplateRequest,
   AssignOperationalTemplateResponse,
-  CreateDraftFromVersionRequest,
   CreateOperationalTemplateRequest,
   ListOperationalTemplatesRequest,
   ListOperationalTemplatesResponse,
@@ -23,7 +22,6 @@ import type {
 import {
   assignOperationalTemplate,
   createOperationalTemplateDraft,
-  createOperationalTemplateDraftFromVersion,
   getOperationalTemplateVersion,
   getOperationalTemplateWorkspace,
   listOperationalTemplateAssignmentOptions,
@@ -47,7 +45,6 @@ export interface OperationalTemplateApiDependencies {
   retire: typeof retireOperationalTemplate;
   getWorkspace: typeof getOperationalTemplateWorkspace;
   assignmentOptions: typeof listOperationalTemplateAssignmentOptions;
-  createDraftFromVersion: typeof createOperationalTemplateDraftFromVersion;
 }
 
 const runtimeDependencies: OperationalTemplateApiDependencies = {
@@ -62,7 +59,6 @@ const runtimeDependencies: OperationalTemplateApiDependencies = {
   retire: retireOperationalTemplate,
   getWorkspace: getOperationalTemplateWorkspace,
   assignmentOptions: listOperationalTemplateAssignmentOptions,
-  createDraftFromVersion: createOperationalTemplateDraftFromVersion,
 };
 
 function requirePrincipalId(dependencies: OperationalTemplateApiDependencies): string {
@@ -241,21 +237,6 @@ export async function listOperationalTemplateAssignmentOptionsEndpoint(
   }
 }
 
-/** @internal Testable authenticated boundary. */
-export async function createOperationalTemplateDraftFromVersionEndpoint(
-  request: CreateDraftFromVersionRequest,
-  dependencies: OperationalTemplateApiDependencies = runtimeDependencies,
-): Promise<OperationalTemplateDraft> {
-  try {
-    return await dependencies.createDraftFromVersion({
-      principalId: requirePrincipalId(dependencies),
-      request,
-    });
-  } catch (error) {
-    return toApiError(error);
-  }
-}
-
 export const createOperationalTemplate = api(
   { expose: true, auth: true, method: "POST", path: "/standards/templates" },
   (request: CreateOperationalTemplateRequest): Promise<OperationalTemplateDraft> =>
@@ -329,15 +310,4 @@ export const listOperationalTemplateAssignmentOptionsRoute = api(
   { expose: true, auth: true, method: "GET", path: "/standards/template-assignment-options" },
   (): Promise<OperationalTemplateAssignmentOptions> =>
     listOperationalTemplateAssignmentOptionsEndpoint(),
-);
-
-export const createOperationalTemplateDraftFromVersionRoute = api(
-  {
-    expose: true,
-    auth: true,
-    method: "POST",
-    path: "/standards/templates/:templateId/draft-from-version",
-  },
-  (request: CreateDraftFromVersionRequest): Promise<OperationalTemplateDraft> =>
-    createOperationalTemplateDraftFromVersionEndpoint(request),
 );

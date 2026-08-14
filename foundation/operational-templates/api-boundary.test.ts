@@ -60,7 +60,6 @@ function dependencies(
       portfolioAvailable: false,
       portfolioCentreCount: 0,
     })),
-    createDraftFromVersion: vi.fn(async () => draft),
     assign: vi.fn(async () => ({
       assignmentId: VERSION,
       templateId: TEMPLATE,

@@ -240,17 +240,6 @@ export interface OperationalTemplateAssignmentOptions {
   incompleteNotice?: string;
 }
 
-/**
- * Starts a new editable draft from a published or retired version. The source
- * version is never modified; publishing the resulting draft creates the next
- * version. This is what makes an edit to a published template produce a new
- * version rather than silently changing history.
- */
-export interface CreateDraftFromVersionRequest
-  extends OperationalTemplateIdRequest {
-  versionId: string;
-}
-
 export interface AssignOperationalTemplateResponse {
   assignmentId: string;
   templateId: string;
