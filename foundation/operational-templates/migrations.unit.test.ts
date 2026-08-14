@@ -113,3 +113,69 @@ describe("operational template builder migrations", () => {
     expect(grant).not.toContain("INSERT INTO canonical_role_templates");
   });
 });
+
+describe("operational template capability backfill", () => {
+  const read = (file: string) =>
+    readFileSync(new URL(`../migrations/${file}`, import.meta.url), "utf8");
+
+  const CODES = ["template.read", "template.create", "template.publish", "template.assign"] as const;
+
+  test("registers every code 030 grants", () => {
+    // `main` carried 001-019 and then jumped to 026-029; 020-025 were merged
+    // afterwards, below a version staging had already passed. golang-migrate
+    // applies only versions above its watermark, so on that database 024 never
+    // runs and 030 hits the `capabilities(code)` foreign key. 032 registers the
+    // vocabulary independently of 024 so reaching version 32 by any route leaves
+    // the four codes present.
+    const backfill = read("032_operational_template_capability_backfill.up.sql");
+    for (const code of CODES) {
+      expect(backfill).toContain(`('${code}'`);
+    }
+  });
+
+  test("is idempotent, because a fresh database already ran 024", () => {
+    const backfill = read("032_operational_template_capability_backfill.up.sql");
+    // Without the conflict clause this migration would break every database that
+    // did apply 024 -- which is every database created from scratch.
+    expect(backfill).toContain("ON CONFLICT (code) DO NOTHING");
+    expect(backfill).not.toMatch(/DELETE\s+FROM\s+capabilities/iu);
+    expect(backfill).not.toMatch(/UPDATE\s+capabilities/iu);
+  });
+
+  test("holds its descriptions identical to 024 so the two paths cannot drift", () => {
+    // A database repaired through 032 and one built through 024 must end up with
+    // the same rows, not merely the same codes.
+    const registration = read("024_operational_template_capabilities.up.sql");
+    const backfill = read("032_operational_template_capability_backfill.up.sql");
+    const descriptions = (source: string) =>
+      Object.fromEntries(
+        [...source.matchAll(/\('(template\.[a-z]+)',\s*'([^']+)'\)/gu)].map(
+          ([, code, description]) => [code, description],
+        ),
+      );
+    const registered = descriptions(registration);
+    expect(Object.keys(registered).sort()).toEqual([...CODES].sort());
+    expect(descriptions(backfill)).toEqual(registered);
+  });
+
+  test("registers the vocabulary and nothing else", () => {
+    // 030 owns the grant and the canonical version it folds into. 032 must not
+    // acquire a second copy of either: on a repaired database 030 still runs.
+    const backfill = read("032_operational_template_capability_backfill.up.sql");
+    expect(backfill).not.toContain("INSERT INTO canonical_role_templates");
+    expect(backfill).not.toContain("INSERT INTO canonical_role_template_capabilities");
+    expect(backfill).not.toContain("provision_canonical_role_definitions");
+    // Fail closed instead of leaving a later grant to find the gap by foreign key.
+    expect(backfill).toMatch(/IF registered <> 4 THEN\s+RAISE EXCEPTION/u);
+  });
+
+  test("does not pretend to unblock a migration numbered below it", () => {
+    // golang-migrate reaches 030 before 032, so nothing numbered above 031 can
+    // repair a database still sitting at version 29 -- the deploy stops at 030
+    // first. The file has to say so, or the next reader will assume this closed
+    // the staging failure on its own.
+    const backfill = read("032_operational_template_capability_backfill.up.sql");
+    expect(backfill).toContain("cannot unblock");
+    expect(backfill).toContain("scripts/simulate-migration");
+  });
+});
