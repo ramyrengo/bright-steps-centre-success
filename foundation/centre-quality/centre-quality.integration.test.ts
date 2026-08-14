@@ -837,11 +837,19 @@ describe("Centre Quality & Performance authorised projection", () => {
     );
     expect(large.response.centres).toHaveLength(20);
     // Authorization is evaluated in memory, so no centre adds a query.
+    //
+    // The thirteen are, in order: the snapshot isolation statement; the
+    // principal's single active organisation, which joins `principals` so the
+    // existence and active-status check costs no separate round-trip; the
+    // authorisation context loader's four (principal, organisation, membership,
+    // role assignments); one set-wise centre authorisation facts load; then the
+    // two savepointed sources, each costing its SAVEPOINT, its one query and its
+    // RELEASE. A fourteenth is a regression, not a feature.
     expect([
       single.diagnostics.queryCount,
       portfolio.diagnostics.queryCount,
       large.diagnostics.queryCount,
-    ]).toEqual([14, 14, 14]);
+    ]).toEqual([13, 13, 13]);
   });
 
   test("keeps the organisation view constant after widening its centre universe", async () => {
@@ -859,7 +867,7 @@ describe("Centre Quality & Performance authorised projection", () => {
     );
     expect(large.response.centres).toHaveLength(20);
     expect(small.diagnostics.queryCount).toBe(large.diagnostics.queryCount);
-    expect(small.diagnostics.queryCount).toBe(14);
+    expect(small.diagnostics.queryCount).toBe(13);
   });
 
   test("keeps the centre detail query count constant regardless of portfolio size", async () => {
@@ -873,8 +881,8 @@ describe("Centre Quality & Performance authorised projection", () => {
       { now },
     );
     expect(small.diagnostics.queryCount).toBe(large.diagnostics.queryCount);
-    // 14 workspace queries plus the three centre-detail list queries.
-    expect(small.diagnostics.queryCount).toBe(17);
+    // 13 workspace queries plus the three centre-detail list queries.
+    expect(small.diagnostics.queryCount).toBe(16);
   });
 
   test("orders centres and focus groups deterministically across repeated requests", async () => {
@@ -1204,7 +1212,11 @@ describe("authorised navigation is derived from current capability and scope", (
       { now },
     );
     expect(large.diagnostics.queryCount).toBe(result.diagnostics.queryCount);
-    expect(result.diagnostics.queryCount).toBe(8);
+    // The seven are: the snapshot isolation statement; the principal's single
+    // active organisation, which joins `principals` so the existence and
+    // active-status check costs no separate round-trip; the authorisation
+    // context loader's four; and one set-wise centre authorisation facts load.
+    expect(result.diagnostics.queryCount).toBe(7);
   });
 });
 

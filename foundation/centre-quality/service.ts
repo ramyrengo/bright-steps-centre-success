@@ -64,12 +64,8 @@ export class CentreQualityError extends Error {
   }
 }
 
-interface PrincipalRow {
-  id: string;
-  status: "pending" | "active" | "suspended" | "revoked";
-}
-
-interface OrganisationRow {
+interface PrincipalOrganisationRow {
+  principal_id: string;
   id: string;
   name: string;
   default_timezone: string;
@@ -118,17 +114,25 @@ async function loadAuthorisation(
   principalId: string,
   decisionAt: Date,
 ): Promise<CentreQualityAuthorisationView> {
-  const principal = await executor.queryRow<PrincipalRow>`
-    SELECT id, status FROM principals WHERE id = ${principalId}
-  `;
-  if (!principal || principal.status !== "active") {
-    throw new CentreQualityError("access_denied");
-  }
-  const organisations = await executor.queryAll<OrganisationRow>`
-    SELECT DISTINCT organisation.id, organisation.name, organisation.default_timezone
-    FROM organisation_memberships AS membership
+  // The principal's existence and active status are enforced by joining
+  // `principals` here rather than by reading that row separately: the
+  // authorisation context loader reads the identical row moments later inside
+  // the same `REPEATABLE READ` snapshot, where it is guaranteed unchanged, so a
+  // standalone lookup would only be a second trip for an answer already coming.
+  // A missing principal, an inactive one, and a principal without exactly one
+  // active organisation all still fail closed as `access_denied`.
+  const organisations = await executor.queryAll<PrincipalOrganisationRow>`
+    SELECT DISTINCT
+      principal.id AS principal_id,
+      organisation.id,
+      organisation.name,
+      organisation.default_timezone
+    FROM principals AS principal
+    JOIN organisation_memberships AS membership
+      ON membership.principal_id = principal.id
     JOIN organisations AS organisation ON organisation.id = membership.organisation_id
-    WHERE membership.principal_id = ${principal.id}
+    WHERE principal.id = ${principalId}
+      AND principal.status = 'active'
       AND membership.status = 'active'
       AND membership.effective_from <= ${decisionAt}
       AND (membership.effective_to IS NULL OR membership.effective_to > ${decisionAt})
@@ -137,11 +141,14 @@ async function loadAuthorisation(
   `;
   if (organisations.length !== 1) throw new CentreQualityError("access_denied");
   const organisation = organisations[0];
+  // The canonical identifier as PostgreSQL stores it, which is what the
+  // per-row ownership comparisons downstream are matched against.
+  const resolvedPrincipalId = organisation.principal_id;
   requireIanaTimezone(organisation.default_timezone);
 
   const context: PrincipalAuthorisationContext =
     await loadPrincipalAuthorisationContextFromSnapshot(executor, {
-      principalId: principal.id,
+      principalId: resolvedPrincipalId,
       activeOrganisationId: organisation.id,
       at: decisionAt,
     });
@@ -188,7 +195,7 @@ async function loadAuthorisation(
   }
 
   return {
-    principalId: principal.id,
+    principalId: resolvedPrincipalId,
     organisationId: organisation.id,
     organisationName: organisation.name,
     organisationTimezone: organisation.default_timezone,
