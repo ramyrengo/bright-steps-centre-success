@@ -179,6 +179,14 @@ That is what is built. The coordinator's work order named `short_text`,
   Due-time configuration lives on the schedule, in `E`, which is where the ADR
   puts it.
 
+> **This paragraph no longer describes what is built.** The backend shipped a
+> `time` question type in migration 023 and this contract later followed it, so
+> the builder now offers one. The reasoning above is left standing because it is
+> the record of what ADR-0020 authorises, and the discrepancy is open with the
+> Product Owner as [ADR-0023](adr/0023-operational-template-time-question-type.md).
+> `date`, named in the same paragraph, was the other half of the same
+> discrepancy and is being closed forward — it was authorised all along.
+
 ---
 
 ## D. Assignment

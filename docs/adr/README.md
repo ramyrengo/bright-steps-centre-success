@@ -43,3 +43,4 @@ no longer governs the current architecture; its replacement record is normative.
 - [ADR-0008: Production CORS, deployment, and security operations](0008-production-cors-and-deployment.md)
 - [ADR-0009: Break-glass and support impersonation](0009-break-glass-and-support-access.md)
 - [ADR-0010: Authoritative hierarchy and assignment source](0010-authoritative-hierarchy-and-assignment-source.md)
+- [ADR-0023: Operational template `time` question type](0023-operational-template-time-question-type.md) — raises a question about the ADR-0020 type list; `time` is implemented but not authorised
