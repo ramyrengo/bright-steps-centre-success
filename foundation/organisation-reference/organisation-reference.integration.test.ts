@@ -770,23 +770,24 @@ describe("the chain from the loaded organisation to the first administrator", ()
   const SYSTEM_ADMINISTRATOR = canonicalRoleBundle("system_administrator");
 
   /**
-   * `now` is pinned into the past rather than left to the real clock.
+   * No clock is injected, deliberately — the ceremony has no seam to inject one
+   * through any more, and that is the point.
    *
-   * The ceremony stamps `effective_from` from the APPLICATION clock, before it
-   * opens its transaction. Migration 017's reachability function then compares
-   * that stamp against the DATABASE clock — `now()`, fixed at BEGIN. Those are
-   * two different clocks with no margin between them, so a database even a
-   * millisecond behind the application makes the ceremony refuse
-   * `exactly_one_violated`. On the machine this was written on the skew was
-   * −2 ms, and that was enough: the first run of this test failed on it.
+   * These tests first ran while the ceremony stamped `effective_from` from the
+   * APPLICATION clock, before opening its transaction, leaving migration 017 to
+   * compare it against the DATABASE clock fixed at BEGIN. Two clocks, no margin:
+   * the −2 ms skew on the machine this was written on was enough to make the
+   * ceremony reach nobody and refuse `exactly_one_violated`, and the very first
+   * run below failed exactly that way. Every ceremony test at the time pinned a
+   * fixed past instant, so none of them could meet it.
    *
-   * Pinning a past instant keeps these two tests about the CHAIN rather than
-   * about clock skew. The sensitivity itself is a live finding against the
-   * ceremony, pinned as its own test below; nothing here fixes it.
+   * `effective_from` now comes from `now()` inside the transaction, so these run
+   * against the real production path with no clock of their own. That makes the
+   * first test the regression test for it: on this machine it fails without the
+   * fix and passes with it.
    */
   function rehearseCeremony(
     overrides: Partial<FirstAdministratorCeremonyInput> = {},
-    now: () => Date = () => new Date(Date.now() - 60_000),
   ) {
     return runFirstAdministratorCeremony(
       {
@@ -799,7 +800,7 @@ describe("the chain from the loaded organisation to the first administrator", ()
         apply: false,
         ...overrides,
       },
-      { environment: STAGING, configuredTenantId: CEREMONY_TENANT_ID, now },
+      { environment: STAGING, configuredTenantId: CEREMONY_TENANT_ID },
     );
   }
 
@@ -840,19 +841,27 @@ describe("the chain from the loaded organisation to the first administrator", ()
     expect(after.reachableSystemAdministrators).toBe(0);
   });
 
-  test("an effective_from later than the database clock makes the ceremony refuse", async () => {
-    // The mechanism behind the skew sensitivity described above, pinned
-    // deterministically instead of left to whatever the container clock is
-    // doing. Migration 017 reaches an administrator only while
-    // `effective_from <= now()` holds on the membership, the assignment AND the
-    // scope, so a stamp the database considers to be in the future reaches
-    // nobody. The ceremony then rolls back rather than committing an
-    // administrator who cannot act — correct, and the reason a production run
-    // can refuse for no better reason than two clocks disagreeing.
-    await expect(
-      rehearseCeremony({}, () => new Date(Date.now() + 60_000)),
-    ).rejects.toMatchObject({ code: "exactly_one_violated" });
+  test("the reported instant is the database's, not the application's", async () => {
+    const databaseClock = async (): Promise<number> => {
+      const row = await centreSuccessDB.queryRow<{
+        at: Date;
+      }>`SELECT now() AS at`;
+      if (row === null) throw new Error("clock query returned no row");
+      return row.at.getTime();
+    };
 
-    expect(await referenceCounts()).toEqual(LOADED);
+    const before = await databaseClock();
+    const report = await rehearseCeremony();
+    const after = await databaseClock();
+
+    expect(new Date(report.occurredAt).getTime()).toBeGreaterThanOrEqual(before);
+    expect(new Date(report.occurredAt).getTime()).toBeLessThanOrEqual(after);
+
+    // Honest about its own reach: this is a real property but not a sharp one.
+    // On a machine whose clocks agree, an application-clock stamp would fall
+    // inside this window too. What stops that stamp being reintroduced is the
+    // structural guard in `first-administrator-ceremony.unit.test.ts`, which is
+    // the right tool precisely because no behavioural test can be relied on to
+    // fail on a well-synchronised machine.
   });
 });

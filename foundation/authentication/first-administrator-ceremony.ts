@@ -164,7 +164,6 @@ export interface FirstAdministratorCeremonyDependencies {
    * runtime configuration, not directory discovery.
    */
   configuredTenantId: string;
-  now?: () => Date;
 }
 
 export interface CeremonyEnvironmentReport {
@@ -699,11 +698,6 @@ export async function runFirstAdministratorCeremony(
   assertEnvironmentGate(input, dependencies.environment, apply);
   const validated = validateInput(input, dependencies.configuredTenantId);
 
-  // Captured before the transaction starts so that effective_from is at or
-  // before the transaction clock. Postgres now() is transaction-start time, and
-  // the reachability guard compares against it.
-  const occurredAt = (dependencies.now ?? (() => new Date()))();
-
   const principalId = randomUUID();
   const membershipId = randomUUID();
   const assignmentId = randomUUID();
@@ -718,6 +712,34 @@ export async function runFirstAdministratorCeremony(
     await transaction.exec`
       SELECT pg_advisory_xact_lock(${ADVISORY_LOCK_KEY_HIGH}, ${ADVISORY_LOCK_KEY_LOW})
     `;
+
+    // effective_from is taken from the DATABASE, inside this transaction, and
+    // never from the application clock.
+    //
+    // Migration 017's reachability guard requires effective_from <= now() on the
+    // membership, the assignment AND the scope, where now() is this
+    // transaction's start time. Stamping those rows from the application clock
+    // made that a comparison between two different clocks with no margin
+    // between them: a database a few milliseconds behind the application yielded
+    // effective_from > now(), so the ceremony reached nobody and refused
+    // exactly_one_violated. Measured at −2 ms locally, which was enough. That
+    // failed closed and committed nothing, but an operator running a one-shot,
+    // human-approved production ceremony would have read it as a serious
+    // invariant breach.
+    //
+    // Reading now() here makes effective_from the very instant the guard
+    // compares it against, so the two cannot disagree. It is deliberately not
+    // injectable: a test that supplied its own clock would restore exactly the
+    // blindness that hid this, since every existing ceremony test pinned a fixed
+    // past instant and none of them could meet the real behaviour.
+    const clock = await transaction.queryRow<{ at: Date }>`SELECT now() AS at`;
+    if (clock === null) {
+      throw new FirstAdministratorCeremonyError(
+        "exactly_one_violated",
+        "the database clock query returned no row",
+      );
+    }
+    const occurredAt = clock.at;
 
     const organisation = await loadOrganisation(
       transaction,

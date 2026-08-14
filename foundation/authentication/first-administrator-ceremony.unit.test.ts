@@ -147,6 +147,40 @@ describe("first-administrator ceremony — no API surface", () => {
     expect(transactionIndex).toBeGreaterThan(-1);
     expect(gateIndex).toBeLessThan(transactionIndex);
   });
+
+  /**
+   * Exactly the kind of property this file exists for: it would be lost by an
+   * edit, not by a failing call.
+   *
+   * `effective_from` was once stamped from the application clock before the
+   * transaction opened, while migration 017's reachability guard compared it
+   * against the database clock fixed at BEGIN. Two clocks with no margin, so a
+   * database milliseconds behind the application made the ceremony reach nobody
+   * and refuse `exactly_one_violated` — fail-closed, but indistinguishable to an
+   * operator from a serious invariant breach, on a ceremony that will not run
+   * twice. It was found only by running the load and the ceremony in sequence
+   * against a real database with a −2 ms skew.
+   *
+   * No behavioural test can be trusted to protect it. On a machine whose clocks
+   * agree, an application-clock stamp passes every time. So assert the source.
+   */
+  test("effective_from is taken from the database clock, inside the transaction", () => {
+    expect(normalise(ceremonySource)).toContain(
+      "const clock = await transaction.queryRow<{ at: Date }>`SELECT now() AS at`;",
+    );
+    expect(normalise(ceremonySource)).toContain("const occurredAt = clock.at;");
+
+    // Read after BEGIN, so it is this transaction's clock and not another's.
+    const beginIndex = ceremonySource.indexOf("await centreSuccessDB.begin()");
+    const clockIndex = ceremonySource.indexOf("SELECT now() AS at");
+    expect(clockIndex).toBeGreaterThan(beginIndex);
+
+    // No application clock, and no seam to inject one back through. A test that
+    // supplied its own clock would restore the blindness that hid this.
+    expect(ceremonySource).not.toContain("new Date(");
+    expect(ceremonySource).not.toContain("Date.now(");
+    expect(ceremonySource).not.toMatch(/\bnow\?:\s*\(\)\s*=>\s*Date/);
+  });
 });
 
 describe("the local-only guards are intact — ADR-0021 D5", () => {

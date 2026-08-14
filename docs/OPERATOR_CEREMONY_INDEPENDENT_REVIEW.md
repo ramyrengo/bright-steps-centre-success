@@ -13,9 +13,9 @@
 
 **Both ceremonies are soundly built. No finding says the design is wrong.**
 
-One finding is a real defect that will bite a production operator (R-1), and one gap has been closed by this review (R-2). The rest are hardening.
+One finding was a real defect that would have bitten a production operator (R-1) and one was a coverage gap (R-2). Both have since been closed — R-2 by this review, R-1 by the fix recorded under it. The rest are hardening.
 
-Neither ceremony's `--apply` should be run against a deployed environment until R-1 is resolved, because R-1 causes a refusal that reads like a serious invariant violation on a ceremony that deliberately refuses to run twice.
+The findings below are written as they stood at `bd22bf9`, with resolutions appended. That order is deliberate: what the review found is as much a part of the record as what remains.
 
 ---
 
@@ -53,7 +53,11 @@ Two different clocks, with no margin between them. If the database clock is behi
 
 **Impact.** Fails closed: nothing incorrect is committed, and the transaction rolls back cleanly. The cost is operational, not correctness. An operator running a one-shot, human-approved production ceremony receives a refusal indistinguishable from a genuine invariant breach, with no indication that the cause is clock skew.
 
-**Suggested direction — not applied.** Derive `effective_from` from the database inside the transaction, so one clock governs both the write and the check. This is the most privileged code path in the system and a change to its timestamp semantics warrants its own review, so this review does not make it.
+**RESOLVED** on `fix/ceremony-database-clock`. `effective_from` is now read from `now()` inside the transaction, so the value written and the value the guard compares against are the same instant and cannot disagree. `dependencies.now` was removed rather than repointed: an injectable clock would restore precisely the blindness that hid this, since every ceremony test pinned a fixed past instant and none could meet the real behaviour.
+
+Two tests carry it. The chain tests in §5 no longer inject a clock, so they run the production path — on this machine the first of them fails without the fix and passes with it. And because no behavioural test can be relied on to fail where the clocks agree, a structural guard in `first-administrator-ceremony.unit.test.ts` asserts the source reads the database clock after `BEGIN` and that no application clock or injection seam remains.
+
+One existing test needed a consequential change: *"grants the canonical System Administrator bundle and no business content"* evaluated the new grant at a fixture instant hours before the now-real `effective_from`, and correctly answered that the administrator could not yet act. It now evaluates just after the real one.
 
 ### R-2 — Nothing tested the two tools in sequence. *(Was Medium. Closed by this review.)*
 
@@ -119,13 +123,13 @@ The ceremony rehearses rather than applies, deliberately: a dry run exercises th
 
 **`foundation/authentication/first-administrator-ceremony.unit.test.ts`** — the "no service module imports the ceremony" guard pinned an exact one-entry allow-list of importers, which the new test broke. The allow-list was widened by one test file and **strengthened**: it now also asserts that every importer is a `.test.ts` file, so admitting a future importer cannot quietly admit something on a request path.
 
-**Gates after the change:** `typecheck` ✅ · `test:unit` **367/367** ✅ · `test:integration` **251/251** ✅ (248 before) · `git diff --check` ✅.
+**Gates after the change:** `typecheck` ✅ · `test:unit` **368/368** ✅ (367 before) · `test:integration` **251/251** ✅ (248 before) · `git diff --check` ✅.
 
 ---
 
 ## 6. Conditions before either ceremony is run
 
-1. **Resolve R-1.** It is the only finding that produces a confusing failure during the real operation.
-2. R-3, R-4 and R-5 are hardening and can land in the same pass. R-6 needs a decision, not necessarily a change.
+1. ~~Resolve R-1.~~ Done — see R-1. It was the only finding that produced a confusing failure during the real operation.
+2. R-3, R-4 and R-5 are hardening and remain open. R-6 needs a decision, not necessarily a change.
 3. Neither tool has ever run against a deployed environment. Their staging and production paths are proven by integration tests that simulate those environments — which is proper engineering, and is not the same as having run.
 4. This review does not grant production-release authority, which the Product Owner has not delegated.
