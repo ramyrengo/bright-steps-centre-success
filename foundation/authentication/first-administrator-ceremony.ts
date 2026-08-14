@@ -9,6 +9,10 @@ import {
   REVIEWED_APPLY_ENVIRONMENT_NAMES,
   REVIEWED_CONFIRMATION_ENVIRONMENT_NAMES,
 } from "../operations/reviewed-environment-gate";
+import {
+  REVIEWED_OPERATOR_LOCK_KEY_HIGH,
+  REVIEWED_OPERATOR_LOCK_KEY_LOW,
+} from "../operations/reviewed-operator-lock";
 import { canonicaliseEntraGuid } from "./entra-identifiers";
 import { microsoftEntraProviderKey } from "./external-identity";
 
@@ -43,9 +47,6 @@ import { microsoftEntraProviderKey } from "./external-identity";
  * environment. Nothing here widens them; this is a separate ceremony, as D5
  * requires.
  */
-
-const ADVISORY_LOCK_KEY_HIGH = 1112691796;
-const ADVISORY_LOCK_KEY_LOW = 20260815;
 
 const CEREMONY_VERSION = 1;
 
@@ -164,7 +165,6 @@ export interface FirstAdministratorCeremonyDependencies {
    * runtime configuration, not directory discovery.
    */
   configuredTenantId: string;
-  now?: () => Date;
 }
 
 export interface CeremonyEnvironmentReport {
@@ -283,7 +283,7 @@ interface AssignmentRow {
  */
 function assertEnvironmentGate(
   input: FirstAdministratorCeremonyInput,
-  environment: Pick<EnvironmentMeta, "cloud" | "name" | "type">,
+  environment: Pick<EnvironmentMeta, "name" | "type">,
   apply: boolean,
 ): void {
   const refusal = evaluateReviewedEnvironmentGate(
@@ -554,7 +554,18 @@ async function loadCanonicalSystemAdministratorRole(
     ["definition", definitionCapabilities],
     ["template", templateCapabilities],
   ] as const) {
-    const codes = rows.map(({ capability_code }) => capability_code);
+    // Sorted HERE, by the same comparator that ordered
+    // SYSTEM_ADMINISTRATOR_CAPABILITIES, rather than relying on the ORDER BY
+    // above to agree with it. Those are two different sorts: JavaScript orders
+    // by UTF-16 code unit, while Postgres orders by the database's collation,
+    // and glibc's en_US.UTF-8 ignores `.` and `_` at the primary level where C
+    // does not. The eleven current codes happen to sort identically either way —
+    // every adjacent pair is decided by a letter before punctuation matters — so
+    // this was correct but only by luck. Add a code like `system_health.read`
+    // beside `system.health.read` and the two orders diverge, and a correct role
+    // starts failing this check in production. The comparison is a set
+    // comparison; it should not depend on a collation at all.
+    const codes = rows.map(({ capability_code }) => capability_code).sort();
     if (
       codes.length !== SYSTEM_ADMINISTRATOR_CAPABILITIES.length ||
       codes.some(
@@ -699,11 +710,6 @@ export async function runFirstAdministratorCeremony(
   assertEnvironmentGate(input, dependencies.environment, apply);
   const validated = validateInput(input, dependencies.configuredTenantId);
 
-  // Captured before the transaction starts so that effective_from is at or
-  // before the transaction clock. Postgres now() is transaction-start time, and
-  // the reachability guard compares against it.
-  const occurredAt = (dependencies.now ?? (() => new Date()))();
-
   const principalId = randomUUID();
   const membershipId = randomUUID();
   const assignmentId = randomUUID();
@@ -716,8 +722,36 @@ export async function runFirstAdministratorCeremony(
   try {
     await transaction.exec`SET TRANSACTION ISOLATION LEVEL SERIALIZABLE`;
     await transaction.exec`
-      SELECT pg_advisory_xact_lock(${ADVISORY_LOCK_KEY_HIGH}, ${ADVISORY_LOCK_KEY_LOW})
+      SELECT pg_advisory_xact_lock(${REVIEWED_OPERATOR_LOCK_KEY_HIGH}, ${REVIEWED_OPERATOR_LOCK_KEY_LOW})
     `;
+
+    // effective_from is taken from the DATABASE, inside this transaction, and
+    // never from the application clock.
+    //
+    // Migration 017's reachability guard requires effective_from <= now() on the
+    // membership, the assignment AND the scope, where now() is this
+    // transaction's start time. Stamping those rows from the application clock
+    // made that a comparison between two different clocks with no margin
+    // between them: a database a few milliseconds behind the application yielded
+    // effective_from > now(), so the ceremony reached nobody and refused
+    // exactly_one_violated. Measured at −2 ms locally, which was enough. That
+    // failed closed and committed nothing, but an operator running a one-shot,
+    // human-approved production ceremony would have read it as a serious
+    // invariant breach.
+    //
+    // Reading now() here makes effective_from the very instant the guard
+    // compares it against, so the two cannot disagree. It is deliberately not
+    // injectable: a test that supplied its own clock would restore exactly the
+    // blindness that hid this, since every existing ceremony test pinned a fixed
+    // past instant and none of them could meet the real behaviour.
+    const clock = await transaction.queryRow<{ at: Date }>`SELECT now() AS at`;
+    if (clock === null) {
+      throw new FirstAdministratorCeremonyError(
+        "exactly_one_violated",
+        "the database clock query returned no row",
+      );
+    }
+    const occurredAt = clock.at;
 
     const organisation = await loadOrganisation(
       transaction,
@@ -936,7 +970,18 @@ export async function runFirstAdministratorCeremony(
     };
   } catch (error) {
     if (!committed) {
-      await transaction.rollback();
+      // The rollback must not be able to replace the error being handled. If
+      // commit() itself threw, `committed` is still false and this runs against
+      // a transaction that may already be unusable — so a throwing rollback
+      // would surface a connection-level message in place of the refusal the
+      // operator actually needs to read. On a ceremony that refuses to run
+      // twice, the first error is the one that explains what happened.
+      try {
+        await transaction.rollback();
+      } catch {
+        // Deliberately swallowed. A rollback that fails here has nothing to
+        // tell the operator that `error` does not already tell them better.
+      }
     }
     throw error;
   }

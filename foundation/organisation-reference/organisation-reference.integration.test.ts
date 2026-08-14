@@ -2,7 +2,14 @@ import { randomUUID } from "node:crypto";
 import type { EnvironmentMeta } from "encore.dev";
 import { describe, expect, test } from "vitest";
 import { centreSuccessDB } from "../db";
-import { CANONICAL_ROLE_BUNDLES } from "../authorization/roles";
+import {
+  runFirstAdministratorCeremony,
+  type FirstAdministratorCeremonyInput,
+} from "../authentication/first-administrator-ceremony";
+import {
+  CANONICAL_ROLE_BUNDLES,
+  canonicalRoleBundle,
+} from "../authorization/roles";
 import {
   BRIGHT_STEPS_ORGANISATION_ID,
   BRIGHT_STEPS_ORGANISATION_NAME,
@@ -727,5 +734,134 @@ describe("reviewed organisation reference load — the deployed environments", (
     expect(report.environment.confirmationRequired).toBe(true);
     expect(report.reachableSystemAdministrators).toBe(0);
     expect(await referenceCounts()).toEqual(LOADED);
+  });
+});
+
+/**
+ * The seam between the two reviewed operator tools — the one place neither
+ * tool's own tests can reach, because each is otherwise proven against an
+ * organisation its own fixtures built.
+ *
+ * Production runs them in sequence: this load creates the organisation, then
+ * the ADR-0021 D5 ceremony creates the first administrator inside it. The two
+ * do not agree on what a canonical role has to look like. This load checks that
+ * each canonical role KEY is present. The ceremony additionally checks the
+ * definition's name, description, version and template linkage, and the exact
+ * capability set on BOTH `role_capabilities` and
+ * `canonical_role_template_capabilities`. The ceremony is strictly stricter, so
+ * a load that reports success can still be followed by a ceremony that refuses
+ * `canonical_role_unavailable` — with the organisation already committed, and
+ * the ceremony refusing to run a second time to repair it.
+ *
+ * That the stricter check bites is proven where it belongs, in
+ * `first-administrator-ceremony.test.ts`. What is proven here is the other
+ * half: that the roles THIS load actually leaves behind pass it.
+ *
+ * The ceremony rehearses rather than applies, deliberately. A dry run is a real
+ * rehearsal — the canonical-role check, every insert, `SET CONSTRAINTS ALL
+ * IMMEDIATE`, the exactly-one count and the reachability guard all run against
+ * the committed organisation before the transaction rolls back — and it covers
+ * the whole of the disagreement above. Applying would write a membership and an
+ * append-only bootstrap audit event into the shared test organisation, and
+ * `system_audit_events` refuses DELETE, so no later test could undo it.
+ */
+describe("the chain from the loaded organisation to the first administrator", () => {
+  const CEREMONY_TENANT_ID = "22222222-2222-4222-8222-222222222222";
+  const SYSTEM_ADMINISTRATOR = canonicalRoleBundle("system_administrator");
+
+  /**
+   * No clock is injected, deliberately — the ceremony has no seam to inject one
+   * through any more, and that is the point.
+   *
+   * These tests first ran while the ceremony stamped `effective_from` from the
+   * APPLICATION clock, before opening its transaction, leaving migration 017 to
+   * compare it against the DATABASE clock fixed at BEGIN. Two clocks, no margin:
+   * the −2 ms skew on the machine this was written on was enough to make the
+   * ceremony reach nobody and refuse `exactly_one_violated`, and the very first
+   * run below failed exactly that way. Every ceremony test at the time pinned a
+   * fixed past instant, so none of them could meet it.
+   *
+   * `effective_from` now comes from `now()` inside the transaction, so these run
+   * against the real production path with no clock of their own. That makes the
+   * first test the regression test for it: on this machine it fails without the
+   * fix and passes with it.
+   */
+  function rehearseCeremony(
+    overrides: Partial<FirstAdministratorCeremonyInput> = {},
+  ) {
+    return runFirstAdministratorCeremony(
+      {
+        declaredEnvironment: "staging",
+        organisationId: BRIGHT_STEPS_ORGANISATION_ID,
+        tenantId: CEREMONY_TENANT_ID,
+        oid: randomUUID(),
+        displayName: "Operator-supplied administrator name",
+        reason: "Rehearsal over the organisation this load committed.",
+        apply: false,
+        ...overrides,
+      },
+      { environment: STAGING, configuredTenantId: CEREMONY_TENANT_ID },
+    );
+  }
+
+  test("the roles this load leaves behind satisfy the ceremony's stricter check", async () => {
+    // Resolving at all is the assertion: every one of the ceremony's refusals
+    // throws, so a returned report means the loaded organisation was accepted.
+    const report = await rehearseCeremony();
+
+    expect(report.organisationId).toBe(BRIGHT_STEPS_ORGANISATION_ID);
+    expect(report.organisationName).toBe(BRIGHT_STEPS_ORGANISATION_NAME);
+    expect(report.roleKey).toBe(SYSTEM_ADMINISTRATOR.key);
+    expect(report.roleVersion).toBe(SYSTEM_ADMINISTRATOR.version);
+    expect([...report.capabilities]).toEqual(
+      [...SYSTEM_ADMINISTRATOR.capabilities].sort(),
+    );
+    // Migration 017 reachability, evaluated after the deferred guard was forced:
+    // the administrator this ceremony would create is genuinely able to act.
+    expect(report.reachableSystemAdministrators).toBe(1);
+  });
+
+  test("the rehearsal leaves the loaded organisation exactly as it found it", async () => {
+    const before = await referenceCounts();
+
+    const report = await rehearseCeremony();
+    expect(report.mode).toBe("dry_run");
+    expect(report.committed).toBe(false);
+    expect(await referenceCounts()).toEqual(before);
+
+    // Nobody survived the rollback. Had a membership persisted, this load would
+    // stand down with organisation_already_populated instead of reporting a
+    // fully loaded, empty organisation.
+    const after = await load();
+    expect(after.counts).toEqual({
+      create: 0,
+      unchanged: EXPECTED_CREATES,
+      conflict: 0,
+    });
+    expect(after.reachableSystemAdministrators).toBe(0);
+  });
+
+  test("the reported instant is the database's, not the application's", async () => {
+    const databaseClock = async (): Promise<number> => {
+      const row = await centreSuccessDB.queryRow<{
+        at: Date;
+      }>`SELECT now() AS at`;
+      if (row === null) throw new Error("clock query returned no row");
+      return row.at.getTime();
+    };
+
+    const before = await databaseClock();
+    const report = await rehearseCeremony();
+    const after = await databaseClock();
+
+    expect(new Date(report.occurredAt).getTime()).toBeGreaterThanOrEqual(before);
+    expect(new Date(report.occurredAt).getTime()).toBeLessThanOrEqual(after);
+
+    // Honest about its own reach: this is a real property but not a sharp one.
+    // On a machine whose clocks agree, an application-clock stamp would fall
+    // inside this window too. What stops that stamp being reintroduced is the
+    // structural guard in `first-administrator-ceremony.unit.test.ts`, which is
+    // the right tool precisely because no behavioural test can be relied on to
+    // fail on a well-synchronised machine.
   });
 });

@@ -12,6 +12,10 @@ import {
   REVIEWED_CONFIRMATION_ENVIRONMENT_NAMES,
 } from "../operations/reviewed-environment-gate";
 import {
+  REVIEWED_OPERATOR_LOCK_KEY_HIGH,
+  REVIEWED_OPERATOR_LOCK_KEY_LOW,
+} from "../operations/reviewed-operator-lock";
+import {
   BRIGHT_STEPS_DATASET_APPROVED_ON,
   BRIGHT_STEPS_DATASET_VERSION,
   BRIGHT_STEPS_NON_TRADING_CENTRES,
@@ -41,9 +45,6 @@ import {
  * D5 first-administrator ceremony passes — plus the unchanged local assertion
  * below. See `assertEnvironmentGate`.
  */
-
-const ADVISORY_LOCK_KEY_HIGH = 1112691796;
-const ADVISORY_LOCK_KEY_LOW = 20260814;
 
 /**
  * The closed set of environments this load may **apply** in: the two reviewed
@@ -741,7 +742,7 @@ export async function loadBrightStepsOrganisationReference(
   try {
     await transaction.exec`SET TRANSACTION ISOLATION LEVEL SERIALIZABLE`;
     await transaction.exec`
-      SELECT pg_advisory_xact_lock(${ADVISORY_LOCK_KEY_HIGH}, ${ADVISORY_LOCK_KEY_LOW})
+      SELECT pg_advisory_xact_lock(${REVIEWED_OPERATOR_LOCK_KEY_HIGH}, ${REVIEWED_OPERATOR_LOCK_KEY_LOW})
     `;
 
     await assertOrganisationUnpopulated(transaction);
@@ -819,7 +820,17 @@ export async function loadBrightStepsOrganisationReference(
     };
   } catch (error) {
     if (!committed) {
-      await transaction.rollback();
+      // The rollback must not be able to replace the error being handled. If
+      // commit() itself threw, `committed` is still false and this runs against
+      // a transaction that may already be unusable — so a throwing rollback
+      // would surface a connection-level message in place of the refusal the
+      // operator actually needs to read. The original error always wins.
+      try {
+        await transaction.rollback();
+      } catch {
+        // Deliberately swallowed. A rollback that fails here has nothing to
+        // tell the operator that `error` does not already tell them better.
+      }
     }
     throw error;
   }

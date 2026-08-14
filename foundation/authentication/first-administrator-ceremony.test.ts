@@ -45,7 +45,6 @@ function dependencies(
   return {
     environment,
     configuredTenantId: TENANT_ID,
-    now: () => AT,
   };
 }
 
@@ -624,13 +623,17 @@ describe("first-administrator ceremony — apply", () => {
       [...canonicalRoleBundle("system_administrator").capabilities].sort(),
     );
 
+    // The ceremony stamps effective_from from the database clock rather than a
+    // fixture instant, so evaluate the grant just after the real one. Asking
+    // relative to AT would ask whether the administrator could act hours before
+    // they were created, and the answer to that is correctly no.
+    const at = new Date(Date.now() + 60_000);
     const context = await loadPrincipalAuthorisationContext({
       principalId,
       activeOrganisationId: organisationId,
-      at: new Date(AT.getTime() + 60_000),
+      at,
     });
     const resource = { kind: "organisation", organisationId } as const;
-    const at = new Date(AT.getTime() + 60_000);
 
     expect(
       authorise({
