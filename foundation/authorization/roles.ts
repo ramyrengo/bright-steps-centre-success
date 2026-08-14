@@ -26,7 +26,7 @@ export const CANONICAL_ROLE_BUNDLES = [
   {
     key: "centre_director",
     name: "Centre Director",
-    version: 2,
+    version: 3,
     capabilities: [
       capability.centreRead,
       capability.centreManage,
@@ -37,12 +37,14 @@ export const CANONICAL_ROLE_BUNDLES = [
       capability.correctiveActionRemediate,
       capability.evidenceRead,
       capability.evidenceUpload,
+      capability.budgetPositionRead,
+      capability.budgetActualEnter,
     ],
   },
   {
     key: "area_manager",
     name: "Area Manager",
-    version: 2,
+    version: 3,
     capabilities: [
       capability.centreRead,
       capability.quarterlyAuditRead,
@@ -52,6 +54,7 @@ export const CANONICAL_ROLE_BUNDLES = [
       capability.correctiveActionRead,
       capability.correctiveActionVerify,
       capability.evidenceRead,
+      capability.budgetPositionRead,
     ],
   },
   {
