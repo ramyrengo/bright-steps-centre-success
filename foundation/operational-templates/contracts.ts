@@ -4,7 +4,8 @@ export type OperationalQuestionType =
   | "single_choice"
   | "multiple_choice"
   | "numeric"
-  | "time";
+  | "time"
+  | "date";
 
 export type OperationalTemplateLifecycle = "DRAFT" | "PUBLISHED" | "RETIRED";
 
@@ -49,7 +50,16 @@ export type OperationalQuestionInput =
     })
   | (OperationalQuestionInputBase & {
       type: "time";
+      /** Local time of day, `HH:MM`. */
       earliest?: string;
+      /** Local time of day, `HH:MM`. */
+      latest?: string;
+    })
+  | (OperationalQuestionInputBase & {
+      type: "date";
+      /** Calendar date, `YYYY-MM-DD`. No time and no timezone. */
+      earliest?: string;
+      /** Calendar date, `YYYY-MM-DD`. No time and no timezone. */
       latest?: string;
     });
 
@@ -121,7 +131,9 @@ export interface OperationalTemplateQuestion {
   maxSelections?: number;
   minimum?: number;
   maximum?: number;
+  /** Lower bound: `HH:MM` on a time question, `YYYY-MM-DD` on a date question. */
   earliest?: string;
+  /** Upper bound: `HH:MM` on a time question, `YYYY-MM-DD` on a date question. */
   latest?: string;
 }
 

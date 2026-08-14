@@ -40,6 +40,50 @@ describe("operational template builder migrations", () => {
     expect(lifecycleState).toContain("operational template lifecycle state cannot be null");
   });
 
+  test("admits a date question at every boundary that enumerates question types", () => {
+    // The scope gap this closes was a schema one: 023 wrote two CHECK
+    // constraints and both stop at `time`. Neither may be edited — they are
+    // applied, and golang-migrate tracks version numbers only — so 031 replaces
+    // them. If a third boundary ever enumerates the types, this test is where
+    // the omission should surface.
+    const source = readFileSync(
+      new URL("../migrations/023_area_manager_template_builder.up.sql", import.meta.url),
+      "utf8",
+    );
+    const enumerations = source.match(
+      /'short_text',\s*'long_text',\s*'single_choice',?\s*\n?\s*'multiple_choice',\s*'numeric',\s*'time'/gu,
+    );
+    expect(enumerations).toHaveLength(2);
+
+    const dateQuestion = readFileSync(
+      new URL("../migrations/031_operational_template_date_question.up.sql", import.meta.url),
+      "utf8",
+    );
+    // Forward-only. 023 keeps its six; 031 supplies the seventh.
+    expect(source).not.toContain("'date'");
+    for (const table of ["operational_template_draft_questions", "audit_template_items"]) {
+      expect(dateQuestion).toContain(`ALTER TABLE ${table}`);
+      expect(dateQuestion).toContain(`WHERE conrelid = '${table}'::regclass`);
+      expect(dateQuestion).toContain(`ADD CONSTRAINT ${table}_question_type_check`);
+    }
+    // Located by what it constrains, never by a generated name.
+    expect(dateQuestion).toContain("pg_get_constraintdef(oid) LIKE '%question_type%'");
+    // A silent zero-drop would widen the contract over a schema that still
+    // refuses the type, so the migration counts what it dropped.
+    expect(dateQuestion).toMatch(/IF dropped <> 1 THEN\s+RAISE EXCEPTION/u);
+    // Every previously supported type survives alongside the new one.
+    for (const type of ["short_text", "long_text", "single_choice", "multiple_choice",
+                        "numeric", "time", "date"]) {
+      expect(dateQuestion).toContain(`'${type}'`);
+    }
+    // Quarterly review items share `audit_template_items` and carry no question
+    // type, so the published-side CHECK has to stay nullable.
+    expect(dateQuestion).toContain("question_type IS NULL OR question_type IN");
+    // A plain calendar date. No timezone machinery is reused for it.
+    expect(dateQuestion).not.toContain("centre_timezone TEXT");
+    expect(dateQuestion).not.toContain("TIMESTAMPTZ");
+  });
+
   test("grants the operational template bundle to Area Manager v3 only", () => {
     // Centre Budgets claims `area_manager` version 3 in migration 026, which is
     // released and immutable. 024 therefore only registers the capability codes

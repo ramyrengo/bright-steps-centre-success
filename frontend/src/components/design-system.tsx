@@ -581,6 +581,8 @@ export function EntryControl({
   disabled = false,
   instructions,
   suffix,
+  min,
+  max,
   takeFocus = false,
 }: Readonly<{
   label: string;
@@ -592,6 +594,14 @@ export function EntryControl({
   instructions?: string;
   /** A unit shown beside a number, e.g. "children". Never part of the value. */
   suffix?: string;
+  /**
+   * Bounds for a date, time or number entry, in that entry's own format. The
+   * platform picker enforces them, which is what makes an out-of-range value
+   * hard to enter rather than merely refused afterwards. A paragraph ignores
+   * them — there is no such thing as a bounded paragraph.
+   */
+  min?: string;
+  max?: string;
   takeFocus?: boolean;
 }>) {
   const instructionsId = useId();
@@ -646,6 +656,8 @@ export function EntryControl({
                     : "text"
             }
             {...(entry === "number" ? { inputMode: "decimal" as const } : {})}
+            {...(min !== undefined ? { min } : {})}
+            {...(max !== undefined ? { max } : {})}
             value={value}
             disabled={disabled}
             onChange={(event) => onChange(event.target.value)}

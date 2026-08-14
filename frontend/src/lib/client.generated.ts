@@ -1716,11 +1716,34 @@ export namespace operational_templates {
         order: number
         required: boolean
         type: "time"
+        /**
+         * Local time of day, `HH:MM`.
+         */
         earliest?: string
+
+        /**
+         * Local time of day, `HH:MM`.
+         */
+        latest?: string
+    } | {
+        id?: string
+        label: string
+        instructions?: string
+        order: number
+        required: boolean
+        type: "date"
+        /**
+         * Calendar date, `YYYY-MM-DD`. No time and no timezone.
+         */
+        earliest?: string
+
+        /**
+         * Calendar date, `YYYY-MM-DD`. No time and no timezone.
+         */
         latest?: string
     }
 
-    export type OperationalQuestionType = "short_text" | "long_text" | "single_choice" | "multiple_choice" | "numeric" | "time"
+    export type OperationalQuestionType = "short_text" | "long_text" | "single_choice" | "multiple_choice" | "numeric" | "time" | "date"
 
     export interface OperationalSectionInput {
         id?: string
@@ -1779,7 +1802,14 @@ export namespace operational_templates {
         maxSelections?: number
         minimum?: number
         maximum?: number
+        /**
+         * Lower bound: `HH:MM` on a time question, `YYYY-MM-DD` on a date question.
+         */
         earliest?: string
+
+        /**
+         * Upper bound: `HH:MM` on a time question, `YYYY-MM-DD` on a date question.
+         */
         latest?: string
     }
 

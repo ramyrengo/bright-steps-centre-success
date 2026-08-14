@@ -38,7 +38,7 @@
  * ------------------------------------------------------------------ */
 
 /**
- * The six question types the builder can author.
+ * The seven question types the builder can author.
  *
  * These are presentation discriminators chosen by this lane and are never
  * rendered: every surface reads its wording from `QUESTION_TYPE_LABEL`, so no
@@ -50,6 +50,11 @@
  * `YES_NO` is the one piece of sugar. It is stored as a two-option choice
  * question, which is what it has always been on screen; the mapping is
  * deterministic in both directions.
+ *
+ * `DATE` closed a real scope gap rather than a fixture one: the approved Form
+ * Builder scope always listed a date question, but the schema only began
+ * admitting `date` at migration 031, so until then the builder correctly
+ * refused to offer it.
  */
 export type QuestionType =
   | "YES_NO"
@@ -57,7 +62,8 @@ export type QuestionType =
   | "MULTI_SELECT"
   | "TEXT"
   | "NUMBER"
-  | "TIME";
+  | "TIME"
+  | "DATE";
 
 export const QUESTION_TYPE_LABEL: Record<QuestionType, string> = {
   YES_NO: "Yes or no",
@@ -66,6 +72,7 @@ export const QUESTION_TYPE_LABEL: Record<QuestionType, string> = {
   TEXT: "Written answer",
   NUMBER: "Number",
   TIME: "Time of day",
+  DATE: "Date",
 };
 
 /** A one-line description of what the person answering will see. */
@@ -76,6 +83,7 @@ export const QUESTION_TYPE_HINT: Record<QuestionType, string> = {
   TEXT: "A box to write in.",
   NUMBER: "A number entry.",
   TIME: "A time of day, such as 9:00am.",
+  DATE: "A calendar date, such as 3 September 2026.",
 };
 
 /** One offered option on a choice question. */
@@ -98,7 +106,12 @@ export type QuestionShape =
   | { type: "MULTI_SELECT"; choices: DraftChoice[] }
   | { type: "TEXT"; multiline: boolean }
   | { type: "NUMBER" }
-  | { type: "TIME" };
+  | { type: "TIME" }
+  // The bounds are plain calendar dates, `YYYY-MM-DD`, with no time and no
+  // timezone attached. A centre's timezone decides when a form opens and is
+  // due; it has no bearing on which day an answer may name, so it is not
+  // consulted here.
+  | { type: "DATE"; earliest?: string; latest?: string };
 
 export type ChoiceQuestionShape = Extract<
   QuestionShape,
@@ -679,6 +692,33 @@ export function dateLabel(iso: string): string | undefined {
   const at = new Date(iso);
   if (Number.isNaN(at.getTime())) return undefined;
   return `${at.getDate()} ${MONTHS[at.getMonth()]} ${at.getFullYear()}`;
+}
+
+/**
+ * A plain calendar date — `YYYY-MM-DD` — as a reader sees it, e.g. "3 Sep 2026".
+ *
+ * Deliberately not `dateLabel`. That one parses an instant and then reads the
+ * host's local calendar off it, which is right for a backend timestamp and
+ * wrong here: a date question's bounds carry no time and no zone, so passing
+ * one through `Date` would let a reader west of UTC see the day before the one
+ * the Area Manager chose. The parts are read straight out of the string
+ * instead, so the day shown is the day stored, everywhere.
+ *
+ * Returns `undefined` for anything that is not a real calendar date, so a
+ * malformed bound is an absent fact rather than "Invalid Date" on screen.
+ */
+export function calendarDateLabel(value: string): string | undefined {
+  const match = /^(\d{4})-(\d{2})-(\d{2})$/u.exec(value);
+  if (!match) return undefined;
+  const [, year, month, day] = match;
+  const monthIndex = Number(month) - 1;
+  const name = MONTHS[monthIndex];
+  if (!name) return undefined;
+  const dayNumber = Number(day);
+  // The month's own length, so 31 Sep and 30 Feb are refused rather than shown.
+  const daysInMonth = new Date(Date.UTC(Number(year), monthIndex + 1, 0)).getUTCDate();
+  if (dayNumber < 1 || dayNumber > daysInMonth) return undefined;
+  return `${dayNumber} ${name} ${Number(year)}`;
 }
 
 /** Today in the reader's own local calendar, as `YYYY-MM-DD`. */

@@ -217,6 +217,13 @@ function questionFromBackend(
       return { ...base, type: "NUMBER" };
     case "time":
       return { ...base, type: "TIME" };
+    case "date":
+      return {
+        ...base,
+        type: "DATE",
+        ...(question.earliest ? { earliest: question.earliest } : {}),
+        ...(question.latest ? { latest: question.latest } : {}),
+      };
   }
 }
 
@@ -255,6 +262,17 @@ function questionToBackend(
       return { ...base, type: "numeric" };
     case "TIME":
       return { ...base, type: "time" };
+    case "DATE":
+      // Bounds are carried in both directions rather than dropped on read, so
+      // reopening a draft and saving it cannot quietly erase a bound the author
+      // set. An empty field is absent, not an empty string: the backend refuses
+      // "" as a malformed date, and it means "no bound" here anyway.
+      return {
+        ...base,
+        type: "date",
+        ...(question.earliest ? { earliest: question.earliest } : {}),
+        ...(question.latest ? { latest: question.latest } : {}),
+      };
   }
 }
 

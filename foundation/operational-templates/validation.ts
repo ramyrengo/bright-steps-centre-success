@@ -10,6 +10,7 @@ import { OperationalTemplateError, requireOperationalTemplateUuid } from "./type
 const CONTROL_CHARACTER = /[\u0000-\u0008\u000B\u000C\u000E-\u001F\u007F]/u;
 const OPTION_VALUE = /^[a-z0-9][a-z0-9_.-]{0,99}$/u;
 const LOCAL_TIME = /^(?:[01]\d|2[0-3]):[0-5]\d$/u;
+const CALENDAR_DATE = /^\d{4}-\d{2}-\d{2}$/u;
 
 function requiredText(value: unknown, field: string, maximum: number): string {
   if (typeof value !== "string") {
@@ -96,6 +97,28 @@ function optionalTime(value: unknown, field: string): string | undefined {
   return value;
 }
 
+/**
+ * A plain calendar date, with no time and no timezone.
+ *
+ * The shape test alone would admit 2026-02-30 and 2026-13-01, which are
+ * well-formed and do not exist. Rounding the parsed value back to YYYY-MM-DD
+ * and requiring it to match is what rejects them: JavaScript rolls an
+ * out-of-range component forward, so an impossible date never survives the
+ * trip. Parsing at UTC midnight keeps the comparison a pure string operation
+ * and keeps the host's own zone out of a value that has none.
+ */
+function optionalDate(value: unknown, field: string): string | undefined {
+  if (value === undefined) return undefined;
+  if (typeof value !== "string" || !CALENDAR_DATE.test(value)) {
+    throw new OperationalTemplateError("invalid_input", `${field} must use YYYY-MM-DD`);
+  }
+  const parsed = new Date(`${value}T00:00:00.000Z`);
+  if (Number.isNaN(parsed.getTime()) || parsed.toISOString().slice(0, 10) !== value) {
+    throw new OperationalTemplateError("invalid_input", `${field} is not a real date`);
+  }
+  return value;
+}
+
 function validateQuestion(
   input: OperationalQuestionInput,
   sectionIndex: number,
@@ -151,6 +174,17 @@ function validateQuestion(
       const latest = optionalTime(input.latest, `${field}.latest`);
       if (earliest && latest && earliest >= latest) {
         throw new OperationalTemplateError("invalid_input", `${field} time range is invalid`);
+      }
+      return { ...base, type: input.type, ...(earliest ? { earliest } : {}), ...(latest ? { latest } : {}) };
+    }
+    case "date": {
+      const earliest = optionalDate(input.earliest, `${field}.earliest`);
+      const latest = optionalDate(input.latest, `${field}.latest`);
+      // A time range spans one day and so cannot be a single instant; a date
+      // range legitimately can, when the answer must fall on one named day.
+      // Equal bounds are therefore accepted here and refused above.
+      if (earliest && latest && earliest > latest) {
+        throw new OperationalTemplateError("invalid_input", `${field} date range is invalid`);
       }
       return { ...base, type: input.type, ...(earliest ? { earliest } : {}), ...(latest ? { latest } : {}) };
     }

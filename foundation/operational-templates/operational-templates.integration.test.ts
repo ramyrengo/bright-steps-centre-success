@@ -54,6 +54,18 @@ const content: OperationalTemplateContentInput = {
       },
       { label: "Rooms ready", order: 5, required: true, type: "numeric", minimum: 0, maximum: 20 },
       { label: "Check time", order: 6, required: true, type: "time", earliest: "06:00", latest: "10:00" },
+      // A plain calendar date. The bounds are deliberately a year apart and in
+      // a different year from DECISION_AT, so a value that had been coerced
+      // through a timestamp or shifted by a zone would be visible rather than
+      // hidden behind a same-day comparison.
+      {
+        label: "Compliance certificate expiry",
+        order: 7,
+        required: false,
+        type: "date",
+        earliest: "2026-01-01",
+        latest: "2027-12-31",
+      },
     ],
   }],
 };
@@ -128,7 +140,7 @@ describe.sequential("Area Manager operational template builder", () => {
     }, dependencies);
     templateId = created.templateId;
     expect(created.lifecycle).toBe("DRAFT");
-    expect(created.sections[0].questions).toHaveLength(6);
+    expect(created.sections[0].questions).toHaveLength(7);
 
     const updated = await updateOperationalTemplateDraft({
       principalId: AREA_MANAGER,
@@ -174,6 +186,7 @@ describe.sequential("Area Manager operational template builder", () => {
       "multiple_choice",
       "numeric",
       "time",
+      "date",
     ]);
     const publishedState = await centreSuccessDB.queryRow<{
       template_status: string;
@@ -233,6 +246,124 @@ describe.sequential("Area Manager operational template builder", () => {
     await expect(centreSuccessDB.exec`
       DELETE FROM audit_template_items WHERE id = ${item!.id}
     `).rejects.toThrow(/released audit template content is immutable/u);
+  });
+
+  test("carries a date question's bounds through the draft into the immutable version", async () => {
+    const source = content.sections[0].questions.find((question) => question.type === "date")!;
+
+    // The draft side stored it, unchanged, as a plain calendar date.
+    const draftRow = await centreSuccessDB.queryRow<{
+      question_type: string;
+      answer_configuration: { earliest?: unknown; latest?: unknown };
+    }>`
+      SELECT question_type, answer_configuration
+      FROM operational_template_draft_questions
+      WHERE organisation_id = ${ORGANISATION}
+        AND template_id = ${templateId}
+        AND question_type = 'date'
+    `;
+    expect(draftRow?.question_type).toBe("date");
+    expect(draftRow?.answer_configuration).toEqual({ earliest: "2026-01-01", latest: "2027-12-31" });
+
+    // So did the published side, which is a different table with its own CHECK.
+    const publishedRow = await centreSuccessDB.queryRow<{
+      question_type: string | null;
+      answer_configuration: { earliest?: unknown; latest?: unknown };
+    }>`
+      SELECT question_type, answer_configuration
+      FROM audit_template_items
+      WHERE template_version_id = ${versionId}
+        AND question_type = 'date'
+    `;
+    expect(publishedRow?.question_type).toBe("date");
+    expect(publishedRow?.answer_configuration)
+      .toEqual({ earliest: "2026-01-01", latest: "2027-12-31" });
+
+    // And the read path returns the bounds as strings, not as instants a zone
+    // could have shifted off the day the Area Manager chose.
+    const version = await getOperationalTemplateVersion({
+      principalId: AREA_MANAGER,
+      templateId,
+      versionId,
+    });
+    const question = version.sections[0].questions.find((candidate) => candidate.type === "date");
+    expect(question).toMatchObject({
+      label: source.label,
+      required: false,
+      type: "date",
+      earliest: "2026-01-01",
+      latest: "2027-12-31",
+    });
+
+    // The version is immutable, so the bounds it published cannot be edited
+    // afterwards — the same protection every other published question has.
+    await expect(centreSuccessDB.exec`
+      UPDATE audit_template_items
+      SET answer_configuration = '{"earliest":"2000-01-01"}'::jsonb
+      WHERE template_version_id = ${versionId}
+        AND question_type = 'date'
+    `).rejects.toThrow(/released audit template content is immutable/u);
+  });
+
+  test("permits a date question type at both boundaries and still refuses an unknown one", async () => {
+    // Migration 031 replaced two CHECK constraints. Widening one and missing
+    // the other would leave a template that saves as a draft and then fails at
+    // publication, which is why both are exercised, and why an unknown type is
+    // exercised alongside them: a constraint that lost its enumeration would
+    // otherwise look exactly like one that gained a member.
+    const sectionId = await centreSuccessDB.queryRow<{ id: string }>`
+      SELECT id FROM operational_template_draft_sections
+      WHERE organisation_id = ${ORGANISATION} AND template_id = ${templateId}
+      LIMIT 1
+    `;
+    const draftQuestion = randomUUID();
+    await expect(centreSuccessDB.exec`
+      INSERT INTO operational_template_draft_questions (
+        id, organisation_id, template_id, section_id, lineage_key,
+        label, sort_order, question_type, required, answer_configuration
+      ) VALUES (
+        ${draftQuestion}, ${ORGANISATION}, ${templateId}, ${sectionId!.id},
+        'question_constraint_probe', 'Constraint probe', 9001,
+        'calendar_date', false, '{}'::jsonb
+      )
+    `).rejects.toThrow(/violates check constraint/u);
+
+    // The same insert with the type this slice added is accepted, so the
+    // refusal above is about the value and not about the row.
+    await centreSuccessDB.exec`
+      INSERT INTO operational_template_draft_questions (
+        id, organisation_id, template_id, section_id, lineage_key,
+        label, sort_order, question_type, required, answer_configuration
+      ) VALUES (
+        ${draftQuestion}, ${ORGANISATION}, ${templateId}, ${sectionId!.id},
+        'question_constraint_probe', 'Constraint probe', 9001,
+        'date', false, '{}'::jsonb
+      )
+    `;
+    await centreSuccessDB.exec`
+      DELETE FROM operational_template_draft_questions WHERE id = ${draftQuestion}
+    `;
+
+    // The published side cannot be probed the same way: released content is
+    // immutable, so an UPDATE there is refused by the trigger before the CHECK
+    // is ever consulted, and a passing assertion would prove nothing about the
+    // constraint. Its live definition is read instead, from the same catalogue
+    // migration 031 located it in.
+    const publishedCheck = await centreSuccessDB.queryRow<{ definition: string }>`
+      SELECT pg_get_constraintdef(oid) AS definition
+      FROM pg_constraint
+      WHERE conrelid = 'audit_template_items'::regclass
+        AND conname = 'audit_template_items_question_type_check'
+    `;
+    expect(publishedCheck?.definition).toContain("'date'");
+    expect(publishedCheck?.definition).not.toContain("'calendar_date'");
+    // Still nullable: quarterly review items share this table and carry no
+    // question type at all.
+    expect(publishedCheck?.definition).toContain("IS NULL");
+    for (const type of ["short_text", "long_text", "single_choice", "multiple_choice",
+                        "numeric", "time"]) {
+      expect(publishedCheck?.definition).toContain(`'${type}'`);
+    }
   });
 
   test("assigns DAILY scheduling only to an authorised centre and pins its timezone", async () => {

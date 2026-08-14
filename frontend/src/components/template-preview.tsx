@@ -164,6 +164,24 @@ export function PreviewQuestion({
           {...(guidance ? { instructions: guidance } : {})}
         />
       );
+    case "DATE":
+      // The bounds are handed to the native picker, so the preview refuses an
+      // out-of-window date exactly where the author set the window. They are
+      // plain `YYYY-MM-DD` values passed straight through — the control does
+      // not interpret them as instants, so no timezone enters the preview.
+      return (
+        <EntryControl
+          label={legend}
+          name={question.questionId}
+          entry="date"
+          value={typeof value === "string" ? value : ""}
+          onChange={onChange}
+          takeFocus={takeFocus}
+          {...(question.earliest ? { min: question.earliest } : {})}
+          {...(question.latest ? { max: question.latest } : {})}
+          {...(guidance ? { instructions: guidance } : {})}
+        />
+      );
   }
 }
 

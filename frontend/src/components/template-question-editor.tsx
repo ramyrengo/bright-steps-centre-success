@@ -5,6 +5,7 @@ import { useCallback, useId } from "react";
 import {
   QUESTION_TYPE_HINT,
   QUESTION_TYPE_LABEL,
+  calendarDateLabel,
   isChoiceQuestion,
   type DraftChoice,
   type DraftQuestion,
@@ -29,6 +30,7 @@ export const QUESTION_TYPES: readonly QuestionType[] = [
   "TEXT",
   "NUMBER",
   "TIME",
+  "DATE",
 ];
 
 /**
@@ -58,6 +60,11 @@ export function questionWithType(question: DraftQuestion, type: QuestionType): D
       return { ...base, type: "YES_NO" };
     case "TIME":
       return { ...base, type: "TIME" };
+    case "DATE":
+      // Bounds are not carried over from another type. Nothing else in the
+      // union holds a calendar date, so there is nothing to preserve, and
+      // inventing one would put a bound on the question the author never set.
+      return { ...base, type: "DATE" };
     case "TEXT":
       return { ...base, type: "TEXT", multiline: false };
     case "NUMBER":
@@ -82,6 +89,29 @@ function withChoices(question: DraftQuestion, choices: DraftChoice[]): DraftQues
   if (question.type === "SINGLE_SELECT") return { ...question, choices };
   if (question.type === "MULTI_SELECT") return { ...question, choices };
   return question;
+}
+
+/**
+ * The same date question with different bounds.
+ *
+ * Rebuilt rather than spread over the old question: a cleared bound has to
+ * disappear, and `{ ...question, ...(next ? { earliest: next } : {}) }` would
+ * leave the old value standing whenever the author emptied the field.
+ */
+function withDateBounds(
+  question: DraftQuestion,
+  bounds: { earliest?: string; latest?: string },
+): DraftQuestion {
+  if (question.type !== "DATE") return question;
+  return {
+    questionId: question.questionId,
+    wording: question.wording,
+    required: question.required,
+    ...(question.guidance ? { guidance: question.guidance } : {}),
+    type: "DATE",
+    ...(bounds.earliest ? { earliest: bounds.earliest } : {}),
+    ...(bounds.latest ? { latest: bounds.latest } : {}),
+  };
 }
 
 let choiceCounter = 0;
@@ -222,6 +252,67 @@ function ChoiceEditor({
 }
 
 /**
+ * The optional window a date answer must fall inside.
+ *
+ * Both bounds are optional and independent — an author who only cares that the
+ * date is not in the past sets the earliest and leaves the latest alone. Native
+ * `date` inputs are used rather than a hand-built calendar so the platform's own
+ * picker, keyboard handling and locale formatting are inherited; the value they
+ * carry is `YYYY-MM-DD`, which is exactly what the backend stores.
+ *
+ * Clearing a field removes the bound rather than sending an empty string, so a
+ * bound an author deleted is genuinely gone.
+ */
+function DateBoundsEditor({
+  earliest,
+  latest,
+  onChange,
+  fieldPrefix,
+  questionName,
+}: Readonly<{
+  earliest?: string;
+  latest?: string;
+  onChange: (next: { earliest?: string; latest?: string }) => void;
+  fieldPrefix: string;
+  questionName: string;
+}>) {
+  return (
+    <div className="builder-field-row">
+      <label className="builder-field" htmlFor={`${fieldPrefix}-earliest`}>
+        <span className="builder-field__label">
+          Earliest date allowed (optional)
+          <span className="visually-hidden"> — {questionName}</span>
+        </span>
+        <input
+          id={`${fieldPrefix}-earliest`}
+          type="date"
+          value={earliest ?? ""}
+          max={latest}
+          onChange={(event) =>
+            onChange({ earliest: event.target.value || undefined, latest })
+          }
+        />
+      </label>
+      <label className="builder-field" htmlFor={`${fieldPrefix}-latest`}>
+        <span className="builder-field__label">
+          Latest date allowed (optional)
+          <span className="visually-hidden"> — {questionName}</span>
+        </span>
+        <input
+          id={`${fieldPrefix}-latest`}
+          type="date"
+          value={latest ?? ""}
+          min={earliest}
+          onChange={(event) =>
+            onChange({ earliest, latest: event.target.value || undefined })
+          }
+        />
+      </label>
+    </div>
+  );
+}
+
+/**
  * One question in the draft editor.
  *
  * The type picker is a native `<select>`. It has six options, it is used once
@@ -324,6 +415,16 @@ export function QuestionEditor({
               would vanish the next time they opened the draft. Where a unit
               matters it belongs in the guidance below, which is stored. */}
 
+          {question.type === "DATE" ? (
+            <DateBoundsEditor
+              earliest={question.earliest}
+              latest={question.latest}
+              fieldPrefix={field}
+              questionName={name}
+              onChange={(bounds) => onChange(withDateBounds(question, bounds))}
+            />
+          ) : null}
+
           {isChoiceQuestion(question) ? (
             <ChoiceEditor
               choices={question.choices}
@@ -358,6 +459,23 @@ export function QuestionEditor({
   );
 }
 
+/**
+ * The window a date answer must fall inside, in words.
+ *
+ * Absent when neither bound is set, and honest about a one-sided window rather
+ * than inventing the other end. An unreadable bound yields no phrase at all, so
+ * a malformed stored value never reaches a reader as "Invalid Date".
+ */
+export function dateBoundsLabel(question: DraftQuestion): string | undefined {
+  if (question.type !== "DATE") return undefined;
+  const from = question.earliest ? calendarDateLabel(question.earliest) : undefined;
+  const to = question.latest ? calendarDateLabel(question.latest) : undefined;
+  if (from && to) return `${from} to ${to}`;
+  if (from) return `From ${from}`;
+  if (to) return `Until ${to}`;
+  return undefined;
+}
+
 /** A question as a published, immutable version shows it. */
 export function QuestionRecord({
   question,
@@ -378,6 +496,15 @@ export function QuestionRecord({
         {QUESTION_TYPE_LABEL[question.type]}
         {" · "}
         {question.required ? "Must be answered" : "Optional"}
+        {/* A bound is part of what was published, so the permanent record
+            states it. Omitted entirely when there is none, rather than shown
+            as an open-ended range the author never set. */}
+        {question.type === "DATE" && dateBoundsLabel(question) ? (
+          <>
+            {" · "}
+            {dateBoundsLabel(question)}
+          </>
+        ) : null}
       </p>
       {isChoiceQuestion(question) ? (
         <ul className="question-record__choices" role="list">

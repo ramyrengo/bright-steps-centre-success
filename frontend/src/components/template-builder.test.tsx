@@ -67,17 +67,16 @@ const NEXT_LOCK_VERSION = 8;
  * and the tests would then be proving something about a shape the product
  * cannot produce.
  *
- * SCOPE GAP, recorded here because these fixtures are where it surfaced: there
- * is no date question. `QuestionType` offers YES_NO, SINGLE_SELECT,
- * MULTI_SELECT, TEXT, NUMBER and TIME, which map one-for-one onto the six the
- * backend can store — migration 023 constrains `question_type` to
- * `short_text, long_text, single_choice, multiple_choice, numeric, time`, with
- * no `date` among them. The fixtures below previously asked for a DATE question
- * because this contract began as a UX-lane placeholder written before the
- * transport existed. They now ask for TIME, which is what the product can
- * actually author. If a date question is in approved scope it is a backend gap
- * to close in the schema, not a fixture to rewrite — so nothing here pretends
- * DATE and TIME were ever the same question.
+ * SCOPE GAP, now closed, recorded here because these fixtures are where it
+ * surfaced: there used to be no date question. Migration 023 constrained
+ * `question_type` to `short_text, long_text, single_choice, multiple_choice,
+ * numeric, time`, so the builder correctly refused to offer a seventh type the
+ * backend would reject, and the fixtures below were changed to ask for TIME
+ * rather than pretend DATE and TIME were ever the same question. It was closed
+ * where it lived — migration 031 widened both `question_type` CHECK constraints
+ * — so `QuestionType` now offers DATE too, and it maps one-for-one onto backend
+ * `date` like every other member. Nothing here was rewritten to make a fixture
+ * pass.
  */
 function yesNo(questionId: string, wording: string, required = true): DraftQuestion {
   return { questionId, wording, required, type: "YES_NO" };
@@ -204,7 +203,7 @@ function gateway(overrides: Partial<TemplateBuilderGateway> = {}): TemplateBuild
  * see, and `PUBLISHED` is the token they never are.
  */
 const FORBIDDEN_TOKENS =
-  /\bYES_NO\b|\bSINGLE_SELECT\b|\bMULTI_SELECT\b|\bAD_HOC\b|\bPORTFOLIO\b|\bCENTRES\b|\bDRAFT\b|\bPUBLISHED\b|\bRETIRED\b|\bOPERATIONAL_CHECK\b|\bQUARTERLY_AUDIT\b/;
+  /\bYES_NO\b|\bSINGLE_SELECT\b|\bMULTI_SELECT\b|\bDATE\b|\bTIME\b|\bTEXT\b|\bNUMBER\b|\bAD_HOC\b|\bPORTFOLIO\b|\bCENTRES\b|\bDRAFT\b|\bPUBLISHED\b|\bRETIRED\b|\bOPERATIONAL_CHECK\b|\bQUARTERLY_AUDIT\b/;
 
 /** Storage and source-family vocabulary that must not reach any reader. */
 const FORBIDDEN_WORDS = /occurrence|template_version|source family|due_days/i;
@@ -551,6 +550,83 @@ describe("draft editor", () => {
     expect(container.textContent ?? "").not.toMatch(FORBIDDEN_WORDS);
     // The type picker shows written labels, not the discriminators behind them.
     expect(screen.getAllByText(QUESTION_TYPE_LABEL.YES_NO).length).toBeGreaterThan(0);
+  });
+
+  test("a date question is offered, and offers its own optional bounds", () => {
+    renderEditor();
+    const type = screen.getAllByLabelText("Answer type")[0]!;
+    // Offered at all: the option exists under written wording, not the token.
+    expect(
+      within(type).getByRole("option", { name: QUESTION_TYPE_LABEL.DATE }),
+    ).toBeTruthy();
+    // Bounds belong to a date question and nothing else, so they are absent
+    // until one is chosen and gone again when it is not.
+    expect(screen.queryByLabelText(/Earliest date allowed/i)).toBeNull();
+
+    fireEvent.change(type, { target: { value: "DATE" } });
+    const earliest = screen.getByLabelText(/Earliest date allowed/i) as HTMLInputElement;
+    const latest = screen.getByLabelText(/Latest date allowed/i) as HTMLInputElement;
+    // A native date picker, not a text box an author can type anything into.
+    expect(earliest.type).toBe("date");
+    expect(latest.type).toBe("date");
+    // Both optional, so both start empty rather than at a plausible default the
+    // author never chose.
+    expect(earliest.value).toBe("");
+    expect(latest.value).toBe("");
+
+    fireEvent.change(type, { target: { value: "NUMBER" } });
+    expect(screen.queryByLabelText(/Earliest date allowed/i)).toBeNull();
+  });
+
+  test("a date question's bounds survive editing, and clearing one removes it", async () => {
+    // Typed against the gateway rather than inferred, so the saved draft this
+    // test reads back off the mock is the real command payload.
+    const saveDraft = vi.fn<TemplateBuilderGateway["saveDraft"]>(() =>
+      Promise.resolve({ lastSavedLocalTime: "2:14pm", lockVersion: NEXT_LOCK_VERSION }),
+    );
+    renderEditor(draftWorkspace(), { saveDraft });
+
+    fireEvent.change(screen.getAllByLabelText("Answer type")[0]!, { target: { value: "DATE" } });
+    fireEvent.change(screen.getByLabelText(/Earliest date allowed/i), {
+      target: { value: "2026-01-01" },
+    });
+    fireEvent.change(screen.getByLabelText(/Latest date allowed/i), {
+      target: { value: "2026-12-31" },
+    });
+    // Held in the editor, not merely accepted by the input.
+    expect((screen.getByLabelText(/Earliest date allowed/i) as HTMLInputElement).value)
+      .toBe("2026-01-01");
+
+    fireEvent.click(screen.getByRole("button", { name: "Save draft" }));
+    await waitFor(() => expect(saveDraft).toHaveBeenCalled());
+    expect(saveDraft.mock.calls[0]![0]).toMatchObject({
+      draft: {
+        sections: [{
+          questions: [
+            { type: "DATE", earliest: "2026-01-01", latest: "2026-12-31" },
+            { type: "TIME" },
+          ],
+        }],
+      },
+    });
+
+    // Clearing a bound removes it rather than sending an empty string the
+    // backend would refuse as a malformed date.
+    fireEvent.change(screen.getByLabelText(/Earliest date allowed/i), { target: { value: "" } });
+    fireEvent.click(screen.getByRole("button", { name: "Save draft" }));
+    await waitFor(() => expect(saveDraft).toHaveBeenCalledTimes(2));
+    const cleared = saveDraft.mock.calls[1]![0].draft.sections[0]!.questions[0]!;
+    expect(cleared).not.toHaveProperty("earliest");
+    expect(cleared).toMatchObject({ type: "DATE", latest: "2026-12-31" });
+  });
+
+  test("a date question reads as words, never as its discriminator", () => {
+    const { container } = renderEditor();
+    fireEvent.change(screen.getAllByLabelText("Answer type")[0]!, { target: { value: "DATE" } });
+    expect(QUESTION_TYPE_LABEL.DATE).toBe("Date");
+    expect(screen.getAllByText(QUESTION_TYPE_LABEL.DATE).length).toBeGreaterThan(0);
+    expect(container.textContent ?? "").not.toMatch(FORBIDDEN_TOKENS);
+    expect(container.textContent ?? "").not.toMatch(FORBIDDEN_WORDS);
   });
 });
 
@@ -964,11 +1040,19 @@ describe("phone preview", () => {
     // vanished the next time they opened the draft.
     { questionId: "t5", wording: "Number test question", required: true, type: "NUMBER" },
     { questionId: "t6", wording: "Time test question", required: true, type: "TIME" },
+    {
+      questionId: "t7",
+      wording: "Date test question",
+      required: true,
+      type: "DATE",
+      earliest: "2026-01-01",
+      latest: "2026-12-31",
+    },
   ];
 
   test("one question is shown at a time, with a written progress count", () => {
     render(<TemplatePreviewFlow templateName="Staging test template" questions={EVERY_TYPE} />);
-    expect(screen.getByText("Question 1 of 6")).toBeTruthy();
+    expect(screen.getByText("Question 1 of 7")).toBeTruthy();
     expect(screen.getByText("Yes or no test question")).toBeTruthy();
     expect(screen.queryByText("Choose one test question")).toBeNull();
   });
@@ -1009,6 +1093,33 @@ describe("phone preview", () => {
     // Time of day.
     const time = screen.getByLabelText("Time test question") as HTMLInputElement;
     expect(time.type).toBe("time");
+    fireEvent.change(time, { target: { value: "09:30" } });
+    fireEvent.click(screen.getByRole("button", { name: "Next" }));
+
+    // Date — a calendar picker, carrying the window the author set so the
+    // preview refuses an out-of-range day exactly where the real form would.
+    const date = screen.getByLabelText("Date test question") as HTMLInputElement;
+    expect(date.type).toBe("date");
+    expect(date.min).toBe("2026-01-01");
+    expect(date.max).toBe("2026-12-31");
+    fireEvent.change(date, { target: { value: "2026-06-15" } });
+    expect(date.value).toBe("2026-06-15");
+  });
+
+  test("an unbounded date question carries no window at all", () => {
+    render(
+      <TemplatePreviewFlow
+        templateName="Staging test template"
+        questions={[
+          { questionId: "d1", wording: "Unbounded date test question", required: true, type: "DATE" },
+        ]}
+      />,
+    );
+    const date = screen.getByLabelText("Unbounded date test question") as HTMLInputElement;
+    // Absent, not a plausible default: an author who set no bound has not
+    // said the answer must fall after today, or after any other day.
+    expect(date.min).toBe("");
+    expect(date.max).toBe("");
   });
 
   test("a required question holds the flow; an optional one does not", () => {

@@ -262,6 +262,7 @@ function questionFromRow(row: QuestionRow): OperationalTemplateQuestion {
         ...(typeof configuration.maximum === "number" ? { maximum: configuration.maximum } : {}),
       };
     case "time":
+    case "date":
       return {
         ...base,
         type: row.question_type,
@@ -306,6 +307,7 @@ function questionAsInput(question: OperationalTemplateQuestion): OperationalQues
         ...(question.maximum !== undefined ? { maximum: question.maximum } : {}),
       };
     case "time":
+    case "date":
       return {
         ...base,
         type: question.type,
@@ -337,6 +339,7 @@ function configurationForQuestion(question: OperationalQuestionInput): Record<st
         ...(question.maximum !== undefined ? { maximum: question.maximum } : {}),
       };
     case "time":
+    case "date":
       return {
         ...(question.earliest ? { earliest: question.earliest } : {}),
         ...(question.latest ? { latest: question.latest } : {}),
