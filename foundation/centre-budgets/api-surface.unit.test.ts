@@ -94,11 +94,97 @@ describe("Centre Budgets governed-data boundary", () => {
     expect(executable).not.toMatch(/[<>]=?\s*(?:70|75|80|85|90|95|100|110)\b/u);
   });
 
-  test("seeds no threshold policy or band in any migration", () => {
+  /**
+   * The domain migration creates the shape and states no governed value. The
+   * approved thresholds live in 029, which is where they can be reviewed as a
+   * deliberate act rather than found buried in a schema change.
+   */
+  test("seeds no threshold policy or band in the domain migration", () => {
     const migration = readMigration("027_centre_budget_domain.up.sql");
     expect(migration).toContain("CREATE TABLE budget_threshold_bands");
     expect(migration).not.toMatch(/INSERT\s+INTO\s+budget_threshold_(?:policies|bands)/giu);
     expect(migration).not.toMatch(/INSERT\s+INTO\s+budget_categories/giu);
+  });
+});
+
+/**
+ * The approved thresholds are data, and this migration is the only place they
+ * are stated. Like the reporting taxonomy, they cannot be read off an
+ * integration test alone, so the governed decision is asserted at its source,
+ * value by value.
+ */
+describe("Centre Budgets approved threshold rules", () => {
+  const migration = readMigration("029_centre_budget_threshold_rules.up.sql");
+  const executable = code(migration);
+  const flattened = executable.replace(/\s+/gu, " ");
+
+  test("seeds exactly one approved policy, effective from the month it was approved", () => {
+    expect(
+      [...executable.matchAll(/INSERT INTO canonical_budget_threshold_policies/gu)],
+    ).toHaveLength(1);
+    expect(flattened).toContain("'bsa_budget_expenses', 1,");
+    expect(flattened).toContain("'active', 'BSA_INTERNAL'");
+    // Effective from August 2026 with no end, so every earlier month stays
+    // ungoverned rather than being graded under a rule that postdates it.
+    expect(flattened).toContain("'2026-08-01'::date, NULL");
+  });
+
+  test("attributes the approval without inventing a principal", () => {
+    expect(flattened).toContain("'governed_document', NULL");
+    expect(flattened).toContain("'Bright Steps Product Owner'");
+    expect(flattened).toContain(
+      "'BSA Budget Expenses template supplied by Karen (Area Manager); approved organisation-wide 14 August 2026.'",
+    );
+    expect(flattened).toContain("'2026-08-14'::date");
+    // No principal identifier may be conjured for a migration to point at.
+    expect(executable).not.toMatch(
+      /[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}/iu,
+    );
+  });
+
+  test("seeds both approved rules, each over its own measure", () => {
+    expect(flattened).toContain("'BUDGET_USED', 'Budget used', 'percent_used', 1");
+    expect(flattened).toContain(
+      "'REMAINING_BUDGET', 'Remaining budget', 'remaining_amount', 2",
+    );
+  });
+
+  /**
+   * The bands verbatim. 100 is inclusive at the top of amber and red begins
+   * strictly above it, carried by the inclusivity flags rather than by a
+   * 100.01 standing in for "just over 100"; and Rule B's 10% is a proportion of
+   * the approved budget rather than a flat amount.
+   */
+  test("seeds the approved bounds with their approved inclusivity", () => {
+    for (const band of [
+      "'BUDGET_USED', 'RED', 'More than 100% of the approved budget used', 'measure_units', 100, FALSE, NULL, NULL, NULL, 1",
+      "'BUDGET_USED', 'AMBER', '85% to 100% of the approved budget used', 'measure_units', 85, TRUE, 'measure_units', 100, TRUE, 2",
+      "'BUDGET_USED', 'GREEN', 'Less than 85% of the approved budget used', NULL, NULL, NULL, 'measure_units', 85, FALSE, 3",
+      "'REMAINING_BUDGET', 'RED', 'Remaining budget is below zero', NULL, NULL, NULL, 'measure_units', 0, FALSE, 1",
+      "'REMAINING_BUDGET', 'AMBER', 'Less than 10% of the approved budget remaining', 'measure_units', 0, TRUE, 'percent_of_approved', 10, FALSE, 2",
+      "'REMAINING_BUDGET', 'GREEN', '10% or more of the approved budget remaining', 'percent_of_approved', 10, TRUE, NULL, NULL, NULL, 3",
+    ]) {
+      expect(flattened, band).toContain(band);
+    }
+  });
+
+  test("refuses to band a measure that could not be computed", () => {
+    // The single place absence is turned away, before any bound is considered.
+    expect(flattened).toContain("WHEN p_measured IS NULL THEN FALSE");
+    // A proportional bound is not treated as open ended when the budget it is a
+    // proportion of is unknown.
+    expect(flattened).toContain("WHEN p_minimum_value IS NOT NULL AND bound.minimum IS NULL THEN FALSE");
+    expect(flattened).toContain("WHEN p_maximum_value IS NOT NULL AND bound.maximum IS NULL THEN FALSE");
+  });
+
+  test("stores every bound as an exact numeric", () => {
+    expect(executable).not.toMatch(/\b(?:REAL|DOUBLE PRECISION|FLOAT\d*)\b/giu);
+    expect(executable).toContain("NUMERIC(14,4)");
+  });
+
+  test("reaches every organisation, including ones created later", () => {
+    expect(executable).toContain("SELECT provision_canonical_budget_threshold_policies(id)");
+    expect(executable).toContain("AFTER INSERT ON organisations");
   });
 });
 

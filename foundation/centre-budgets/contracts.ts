@@ -115,22 +115,60 @@ export interface RecordedActualAmount {
 }
 
 /**
- * The threshold band this position falls in.
- * `NOT_CONFIGURED` means the organisation has no approved threshold policy in
- * force for this month. BUDGET_ACCOUNTABILITY.md lists overspend severities as
- * "Candidate categories—not approved thresholds", so no band is seeded
- * anywhere in this system. `NOT_CONFIGURED` must never be presented as a
- * reassuring green: it means nobody has decided what good looks like yet.
- * `NOT_APPLICABLE` means a policy exists but this position cannot be judged
- * against it, because percent used is undefined.
+ * The quantity one threshold rule judges a position by.
+ * `percent_used`     the recorded actual as a percentage of the approved
+ *                    budget. Undefined when the approved budget is zero,
+ *                    because dividing by nothing has no answer.
+ * `remaining_amount` the approved budget less the recorded actual, an exact
+ *                    amount in the position's own currency. Defined even when
+ *                    the approved budget is zero.
+ * Both are known only once an approved budget and an actual both exist.
  */
-export interface BudgetThresholdOutcome {
-  state: "NOT_CONFIGURED" | "NOT_APPLICABLE" | "BANDED";
+export type BudgetThresholdMeasure = "percent_used" | "remaining_amount";
+
+/**
+ * What one governed threshold rule made of one position.
+ * A policy carries one of these per rule, and they are resolved separately
+ * against separate measures. Two rules may legitimately reach different
+ * conclusions about the same position — a month can be inside its percentage
+ * limit while almost nothing is left, and a month with no approved budget at
+ * all can be judged on what remains but not on what percentage was used — so
+ * neither is a summary of the other and neither may be dropped in favour of
+ * the other.
+ * `BANDED`         the rule's measure was known and one of its bands covers it.
+ * `NOT_APPLICABLE` the rule could not judge this position; `reason` says why.
+ * Absence is always `NOT_APPLICABLE`. A category with no actual recorded is
+ * never banded, however wide the approved bands are, because there is no
+ * measured value to fall into one.
+ */
+export interface BudgetThresholdRuleOutcome {
+  ruleCode: string;
+  ruleLabel: string;
+  measure: BudgetThresholdMeasure;
+  state: "BANDED" | "NOT_APPLICABLE";
   /** Explains `NOT_APPLICABLE` rather than leaving the consumer to guess. */
   reason?: string;
   /** The following are present only when `state` is `BANDED`. */
   bandCode?: string;
   bandLabel?: string;
+}
+
+/**
+ * How this position stands against the threshold policy governing its month.
+ * `NOT_CONFIGURED` means the organisation has no approved threshold policy in
+ * force for this month. It must never be presented as a reassuring green: it
+ * means nobody had decided what good looked like for that month.
+ * `GOVERNED` means a policy is in force, and `rules` carries what each of its
+ * rules made of this position. There is deliberately no single overall band
+ * here: with more than one approved rule, "the band" is a question with more
+ * than one correct answer, and picking one would merge rules the approval
+ * keeps separate.
+ */
+export interface BudgetThresholdOutcome {
+  state: "NOT_CONFIGURED" | "GOVERNED";
+  /** One entry per rule of the governing policy. Empty under `NOT_CONFIGURED`. */
+  rules: BudgetThresholdRuleOutcome[];
+  /** The following are present only when `state` is `GOVERNED`. */
   policyKey?: string;
   policyVersion?: number;
   /** The month from which the governing policy version took effect. */
@@ -204,7 +242,12 @@ export interface CentreBudgetMonthSummary {
   totalRecordedActual?: MoneyAmount;
   totalRemaining?: MoneyAmount;
   totalPercentUsed?: PercentValue;
-  /** Present only when `totalPercentUsed` is present and a policy governs the month. */
+  /**
+   * Present only under `complete` coverage, where a month-level total may be
+   * stated at all. Each governed rule judges the totals separately, so a rule
+   * whose measure is undefined across the month says so rather than being
+   * omitted.
+   */
   threshold?: BudgetThresholdOutcome;
 }
 
