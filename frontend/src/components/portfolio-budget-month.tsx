@@ -30,7 +30,7 @@ import {
   NOT_AVAILABLE,
   initialMonth,
   rememberMonth,
-  thresholdView,
+  thresholdViews,
 } from "./centre-budget-month";
 
 /**
@@ -170,7 +170,7 @@ function CentreBudgetCard({
 }: Readonly<{ centre: CentreCard; group: FocusGroup; month: string }>) {
   const { summary } = centre;
   const currency = summary.currency;
-  const threshold = summary.threshold ? thresholdView(summary.threshold) : undefined;
+  const thresholds = summary.threshold ? thresholdViews(summary.threshold) : [];
   // Only the gaps that exist are listed. A run of zeroes on a card that has
   // already said the month is fully recorded is noise, and the counts that do
   // appear are the ones an Area Manager can act on.
@@ -219,11 +219,11 @@ function CentreBudgetCard({
         </div>
       </dl>
 
-      {threshold ? (
-        <p className="budget-summary-threshold">
+      {thresholds.map((threshold) => (
+        <p className="budget-summary-threshold" key={threshold.key}>
           <StatusBadge tone={threshold.tone}>{threshold.label}</StatusBadge>
         </p>
-      ) : null}
+      ))}
 
       {summary.coverage === "complete" ? null : (
         <CoverageCaveat>

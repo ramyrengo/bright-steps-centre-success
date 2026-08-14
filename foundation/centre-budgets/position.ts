@@ -1,6 +1,8 @@
 import type {
   ApprovedBudgetAmount,
+  BudgetThresholdMeasure,
   BudgetThresholdOutcome,
+  BudgetThresholdRuleOutcome,
   CentreBudgetCategoryPosition,
   CentreBudgetMonthSummary,
   CurrencyCode,
@@ -33,12 +35,26 @@ export type CentreBudgetPositionFacts =
       remaining: MoneyAmount;
       /** Absent when the approved budget is exactly zero. */
       percentUsed?: PercentValue;
-      band?: ThresholdBandMatch;
+      /** At most one band per governed rule, resolved in PostgreSQL. */
+      bands?: readonly ThresholdBandMatch[];
     };
 
+/**
+ * The band one rule resolved to. `ruleCode` is part of the match because the
+ * rules of one policy are resolved independently and grade in the same three
+ * colours, so a band code alone does not say which rule reached it.
+ */
 export interface ThresholdBandMatch {
+  ruleCode: string;
   bandCode: string;
   bandLabel: string;
+}
+
+/** One governed rule of the policy in force, and the quantity it judges. */
+export interface ThresholdRuleDescriptor {
+  ruleCode: string;
+  ruleLabel: string;
+  measure: BudgetThresholdMeasure;
 }
 
 /** The governing threshold policy for a month, when one exists. */
@@ -46,6 +62,12 @@ export interface ThresholdPolicyContext {
   policyKey: string;
   version: number;
   effectiveFromMonth: string;
+  /**
+   * Every rule the policy defines, in its approved display order. This comes
+   * from the policy rather than from the position, so a rule still reports what
+   * it could not judge for a centre-month that holds no row at all.
+   */
+  rules: readonly ThresholdRuleDescriptor[];
 }
 
 export interface BudgetCategoryDescriptor {
@@ -77,7 +99,7 @@ export function buildPositionFacts(input: {
   actual?: RecordedActualAmount;
   remaining?: MoneyAmount;
   percentUsed?: PercentValue;
-  band?: ThresholdBandMatch;
+  bands?: readonly ThresholdBandMatch[];
 }): CentreBudgetPositionFacts {
   const { approvedBudget, actual } = input;
 
@@ -109,7 +131,70 @@ export function buildPositionFacts(input: {
     actual,
     remaining: input.remaining,
     ...(input.percentUsed !== undefined ? { percentUsed: input.percentUsed } : {}),
-    ...(input.band !== undefined ? { band: input.band } : {}),
+    ...(input.bands !== undefined ? { bands: input.bands } : {}),
+  };
+}
+
+/**
+ * One rule's view of one measured quantity.
+ *
+ * `value` absent is the whole point of this type: it is the state in which no
+ * band may be reached, and `unavailableReason` is what gets said instead of a
+ * colour. A rule is never given a substitute value to judge.
+ */
+interface ThresholdMeasurement {
+  value?: string;
+  unavailableReason: string;
+}
+
+function ruleOutcome(
+  rule: ThresholdRuleDescriptor,
+  measurement: ThresholdMeasurement,
+  bands: readonly ThresholdBandMatch[] | undefined,
+): BudgetThresholdRuleOutcome {
+  const base = {
+    ruleCode: rule.ruleCode,
+    ruleLabel: rule.ruleLabel,
+    measure: rule.measure,
+  };
+
+  // Nothing to judge. This is the branch an unrecorded month lands in, and it
+  // is reached before any band is consulted.
+  if (measurement.value === undefined) {
+    return { ...base, state: "NOT_APPLICABLE", reason: measurement.unavailableReason };
+  }
+
+  const band = bands?.find((candidate) => candidate.ruleCode === rule.ruleCode);
+  if (band === undefined) {
+    return {
+      ...base,
+      state: "NOT_APPLICABLE",
+      reason: "This rule defines no band covering the value measured here.",
+    };
+  }
+  return { ...base, state: "BANDED", bandCode: band.bandCode, bandLabel: band.bandLabel };
+}
+
+/**
+ * Resolves every rule of the governing policy against the same position.
+ *
+ * Each rule is answered from its own measure and its own bands. No rule's
+ * answer is derived from another's, and no answer is dropped because it
+ * disagrees with another: two rules of one approved policy are entitled to
+ * reach different conclusions, and hiding one of them would present a decision
+ * nobody approved.
+ */
+function governedOutcome(
+  policy: ThresholdPolicyContext,
+  measurements: Readonly<Record<BudgetThresholdMeasure, ThresholdMeasurement>>,
+  bands: readonly ThresholdBandMatch[] | undefined,
+): BudgetThresholdOutcome {
+  return {
+    state: "GOVERNED",
+    rules: policy.rules.map((rule) => ruleOutcome(rule, measurements[rule.measure], bands)),
+    policyKey: policy.policyKey,
+    policyVersion: policy.version,
+    policyEffectiveFromMonth: policy.effectiveFromMonth,
   };
 }
 
@@ -118,37 +203,41 @@ function thresholdOutcome(
   policy: ThresholdPolicyContext | undefined,
 ): BudgetThresholdOutcome {
   // No approved policy governs this month. This is not "within budget"; it
-  // means nobody has decided what the bands are. BUDGET_ACCOUNTABILITY.md
-  // lists overspend severities as candidates, not approved thresholds, so no
-  // percentage is hard-coded anywhere in this module.
-  if (policy === undefined) return { state: "NOT_CONFIGURED" };
+  // means nobody had decided what the bands were. No percentage and no band is
+  // hard-coded anywhere in this module: every one of them is governed data.
+  if (policy === undefined) return { state: "NOT_CONFIGURED", rules: [] };
+
+  const bothValuesNeeded =
+    "Both an approved budget and a recorded actual are needed before this can be judged.";
 
   if (facts.kind !== "budget_and_actual") {
-    return {
-      state: "NOT_APPLICABLE",
-      reason: "Percent used is unknown until both an approved budget and an actual exist.",
-    };
+    return governedOutcome(
+      policy,
+      {
+        percent_used: { unavailableReason: bothValuesNeeded },
+        remaining_amount: { unavailableReason: bothValuesNeeded },
+      },
+      undefined,
+    );
   }
-  if (facts.percentUsed === undefined) {
-    return {
-      state: "NOT_APPLICABLE",
-      reason: "The approved budget is zero, so percent used is undefined.",
-    };
-  }
-  if (facts.band === undefined) {
-    return {
-      state: "NOT_APPLICABLE",
-      reason: "The governing threshold policy defines no band covering this percentage.",
-    };
-  }
-  return {
-    state: "BANDED",
-    bandCode: facts.band.bandCode,
-    bandLabel: facts.band.bandLabel,
-    policyKey: policy.policyKey,
-    policyVersion: policy.version,
-    policyEffectiveFromMonth: policy.effectiveFromMonth,
-  };
+
+  return governedOutcome(
+    policy,
+    {
+      // The one case where the two rules part company on the same position:
+      // percent used has no answer against an approved budget of zero, while
+      // what remains is still a real amount.
+      percent_used: {
+        ...(facts.percentUsed !== undefined ? { value: facts.percentUsed } : {}),
+        unavailableReason: "The approved budget is zero, so percent used is undefined.",
+      },
+      remaining_amount: {
+        value: facts.remaining,
+        unavailableReason: bothValuesNeeded,
+      },
+    },
+    facts.bands,
+  );
 }
 
 /**
@@ -194,6 +283,9 @@ export function toCategoryPosition(
   }
 }
 
+const MONTH_TOTALS_UNAVAILABLE =
+  "Every category needs both an approved budget and a recorded actual before the month can be judged.";
+
 /** PostgreSQL-computed totals for one centre-month, before coverage gating. */
 export interface CentreBudgetTotals {
   totalApprovedBudget?: MoneyAmount;
@@ -201,7 +293,7 @@ export interface CentreBudgetTotals {
   totalRemaining?: MoneyAmount;
   totalPercentUsed?: PercentValue;
   currency?: CurrencyCode;
-  band?: ThresholdBandMatch;
+  bands?: readonly ThresholdBandMatch[];
 }
 
 /**
@@ -261,23 +353,34 @@ export function summariseCentreMonth(
   }
   if (totals.totalPercentUsed !== undefined) {
     summary.totalPercentUsed = totals.totalPercentUsed;
-    summary.threshold =
-      policy === undefined
-        ? { state: "NOT_CONFIGURED" }
-        : totals.band === undefined
-          ? {
-              state: "NOT_APPLICABLE",
-              reason: "The governing threshold policy defines no band covering this percentage.",
-            }
-          : {
-              state: "BANDED",
-              bandCode: totals.band.bandCode,
-              bandLabel: totals.band.bandLabel,
-              policyKey: policy.policyKey,
-              policyVersion: policy.version,
-              policyEffectiveFromMonth: policy.effectiveFromMonth,
-            };
   }
+
+  // The month-level roll-up is judged by the same rules, over the same measures,
+  // as a single category is. It is stated here and not under partial coverage,
+  // because a total summed across a gap understates spend, and grading an
+  // understated total would turn a missing figure into a reassuring colour.
+  summary.threshold =
+    policy === undefined
+      ? { state: "NOT_CONFIGURED", rules: [] }
+      : governedOutcome(
+          policy,
+          {
+            percent_used: {
+              ...(totals.totalPercentUsed !== undefined
+                ? { value: totals.totalPercentUsed }
+                : {}),
+              unavailableReason:
+                "The approved budget for this month totals zero, so percent used is undefined.",
+            },
+            remaining_amount: {
+              ...(totals.totalRemaining !== undefined
+                ? { value: totals.totalRemaining }
+                : {}),
+              unavailableReason: MONTH_TOTALS_UNAVAILABLE,
+            },
+          },
+          totals.bands,
+        );
 
   return summary;
 }

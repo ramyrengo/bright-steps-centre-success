@@ -13,6 +13,7 @@ import { centreSuccessDB } from "../db";
 import { inSerializableTransaction } from "../transactions";
 import type {
   ApprovedBudgetAmount,
+  BudgetThresholdMeasure,
   CentreBudgetCategoryPosition,
   CentreBudgetMonthResponse,
   CentreBudgetMonthSummary,
@@ -29,7 +30,9 @@ import {
   toCategoryPosition,
   type BudgetCategoryDescriptor,
   type CentreBudgetTotals,
+  type ThresholdBandMatch,
   type ThresholdPolicyContext,
+  type ThresholdRuleDescriptor,
 } from "./position";
 import {
   CentreBudgetError,
@@ -245,6 +248,62 @@ interface ThresholdPolicyRow {
   policy_key: string;
   version: number | string;
   effective_from_month: Date | string;
+  rules: string | null;
+}
+
+const THRESHOLD_MEASURES: readonly BudgetThresholdMeasure[] = [
+  "percent_used",
+  "remaining_amount",
+];
+
+function isThresholdMeasure(value: unknown): value is BudgetThresholdMeasure {
+  return THRESHOLD_MEASURES.some((measure) => measure === value);
+}
+
+function requireText(value: unknown): string {
+  if (typeof value !== "string" || value.length === 0) {
+    throw new CentreBudgetError("context_unavailable");
+  }
+  return value;
+}
+
+/**
+ * Reads the rules of the governing policy out of the aggregated JSON.
+ *
+ * A rule whose measure this build does not recognise fails the request closed
+ * rather than being skipped. Skipping it would silently drop an approved rule
+ * from a page that is meant to show every one of them, and a missing rule reads
+ * as an absent concern rather than as an unread one.
+ */
+function parseThresholdRules(encoded: string | null): ThresholdRuleDescriptor[] {
+  if (encoded === null) return [];
+  const parsed: unknown = JSON.parse(encoded);
+  if (!Array.isArray(parsed)) throw new CentreBudgetError("context_unavailable");
+  return parsed.map((entry) => {
+    const rule = entry as Record<string, unknown>;
+    const measure = rule.measure;
+    if (!isThresholdMeasure(measure)) throw new CentreBudgetError("context_unavailable");
+    return {
+      ruleCode: requireText(rule.ruleCode),
+      ruleLabel: requireText(rule.ruleLabel),
+      measure,
+    };
+  });
+}
+
+/** At most one band per rule, already resolved in PostgreSQL. */
+function parseBandMatches(encoded: string | null): ThresholdBandMatch[] | undefined {
+  if (encoded === null) return undefined;
+  const parsed: unknown = JSON.parse(encoded);
+  if (!Array.isArray(parsed)) throw new CentreBudgetError("context_unavailable");
+  return parsed.map((entry) => {
+    const band = entry as Record<string, unknown>;
+    return {
+      ruleCode: requireText(band.ruleCode),
+      bandCode: requireText(band.bandCode),
+      bandLabel: requireText(band.bandLabel),
+    };
+  });
 }
 
 /**
@@ -252,10 +311,11 @@ interface ThresholdPolicyRow {
  * in force today, so a historical month stays interpretable under the bands
  * that applied when it was recorded.
  *
- * No policy is seeded by any migration. BUDGET_ACCOUNTABILITY.md describes
- * overspend severities as "Candidate categories—not approved thresholds", so
- * the bands are an owner decision and this returns `undefined` until one is
- * governed into existence.
+ * The policy's rules are loaded with it, in the same query, because a rule has
+ * to be able to report what it could not judge for a centre-month that holds no
+ * row at all. Reading them from the matched bands instead would make a rule
+ * disappear exactly when it has nothing to say, which is the moment a reader
+ * most needs to be told that nothing was measured.
  */
 async function loadGoverningThresholdPolicy(
   executor: BudgetQueryExecutor,
@@ -263,13 +323,30 @@ async function loadGoverningThresholdPolicy(
   monthKey: string,
 ): Promise<{ id: string; context: ThresholdPolicyContext } | undefined> {
   const row = await executor.queryRow<ThresholdPolicyRow>`
-    SELECT id, policy_key, version, effective_from_month
-    FROM budget_threshold_policies
-    WHERE organisation_id = ${organisationId}
-      AND status = 'active'
-      AND effective_from_month <= ${monthKey}::date
-      AND (effective_to_month IS NULL OR effective_to_month > ${monthKey}::date)
-    ORDER BY effective_from_month DESC, version DESC
+    SELECT
+      policy.id,
+      policy.policy_key,
+      policy.version,
+      policy.effective_from_month,
+      governed_rule.rules
+    FROM budget_threshold_policies AS policy
+    LEFT JOIN LATERAL (
+      SELECT json_agg(
+               json_build_object(
+                 'ruleCode', threshold_rule.rule_code,
+                 'ruleLabel', threshold_rule.label,
+                 'measure', threshold_rule.measure
+               )
+               ORDER BY threshold_rule.sort_order
+             )::text AS rules
+      FROM budget_threshold_rules AS threshold_rule
+      WHERE threshold_rule.threshold_policy_id = policy.id
+    ) AS governed_rule ON TRUE
+    WHERE policy.organisation_id = ${organisationId}
+      AND policy.status = 'active'
+      AND policy.effective_from_month <= ${monthKey}::date
+      AND (policy.effective_to_month IS NULL OR policy.effective_to_month > ${monthKey}::date)
+    ORDER BY policy.effective_from_month DESC, policy.version DESC
     LIMIT 1
   `;
   if (!row) return undefined;
@@ -283,6 +360,7 @@ async function loadGoverningThresholdPolicy(
       policyKey: row.policy_key,
       version: Number(row.version),
       effectiveFromMonth: effectiveFrom,
+      rules: parseThresholdRules(row.rules),
     },
   };
 }
@@ -316,8 +394,7 @@ interface PositionRow {
   actual_confirmed_by: string | null;
   remaining: string | null;
   percent_used: string | null;
-  band_code: string | null;
-  band_label: string | null;
+  threshold_bands: string | null;
 }
 
 async function loadPositionRows(
@@ -383,7 +460,19 @@ async function loadPositionRows(
            AND line.currency_code = actual.currency_code
            AND line.amount <> 0
           THEN round(actual.amount * 100 / line.amount, 2)
-        END AS percent_used_numeric
+        END AS percent_used_numeric,
+        -- The same ratio, unrounded, and used only to resolve a band. The
+        -- displayed figure is quantised to two places; the judgement is not,
+        -- because a cent over the approved budget is over the approved budget
+        -- whatever the display does with it. Rounding first is how a threshold
+        -- ends up decided by the presentation layer.
+        CASE
+          WHEN line.id IS NOT NULL
+           AND actual.id IS NOT NULL
+           AND line.currency_code = actual.currency_code
+           AND line.amount <> 0
+          THEN actual.amount * 100 / line.amount
+        END AS percent_used_exact_numeric
       FROM current_lines AS line
       FULL OUTER JOIN current_actuals AS actual
         ON actual.centre_id = line.centre_id
@@ -413,22 +502,48 @@ async function loadPositionRows(
       combined.actual_confirmed_by,
       combined.remaining_numeric::text AS remaining,
       combined.percent_used_numeric::text AS percent_used,
-      band.band_code,
-      band.label AS band_label
+      threshold.bands AS threshold_bands
     FROM combined
     LEFT JOIN LATERAL (
-      SELECT threshold_band.band_code, threshold_band.label
-      FROM budget_threshold_bands AS threshold_band
-      WHERE threshold_band.threshold_policy_id = ${thresholdPolicyId}::uuid
-        AND combined.percent_used_numeric IS NOT NULL
-        AND combined.percent_used_numeric >= threshold_band.minimum_percent_used
-        AND (
-          threshold_band.maximum_percent_used IS NULL
-          OR combined.percent_used_numeric < threshold_band.maximum_percent_used
-        )
-      ORDER BY threshold_band.priority
-      LIMIT 1
-    ) AS band ON TRUE
+      SELECT json_agg(
+               json_build_object(
+                 'ruleCode', matched.rule_code,
+                 'bandCode', matched.band_code,
+                 'bandLabel', matched.band_label
+               )
+               ORDER BY matched.sort_order
+             )::text AS bands
+      FROM (
+        SELECT DISTINCT ON (threshold_rule.id)
+          threshold_rule.rule_code,
+          threshold_rule.sort_order,
+          threshold_band.band_code,
+          threshold_band.label AS band_label
+        FROM budget_threshold_rules AS threshold_rule
+        JOIN budget_threshold_bands AS threshold_band
+          ON threshold_band.threshold_rule_id = threshold_rule.id
+        WHERE threshold_rule.threshold_policy_id = ${thresholdPolicyId}::uuid
+          AND budget_threshold_band_matches(
+                budget_threshold_measured_value(
+                  threshold_rule.measure,
+                  combined.percent_used_exact_numeric,
+                  combined.remaining_numeric
+                ),
+                combined.budget_amount_numeric,
+                threshold_band.minimum_basis,
+                threshold_band.minimum_value,
+                threshold_band.minimum_inclusive,
+                threshold_band.maximum_basis,
+                threshold_band.maximum_value,
+                threshold_band.maximum_inclusive
+              )
+        -- One band per rule. Bands of one rule do not overlap, so priority only
+        -- decides where a future version left a gap or a double cover, and it
+        -- decides it towards the more serious band. It never resolves between
+        -- rules: those are answered separately and both answers are returned.
+        ORDER BY threshold_rule.id, threshold_band.priority
+      ) AS matched
+    ) AS threshold ON TRUE
   `;
 }
 
@@ -440,8 +555,7 @@ interface TotalsRow {
   total_percent_used: string | null;
   currency_count: number | string;
   currency: string | null;
-  band_code: string | null;
-  band_label: string | null;
+  threshold_bands: string | null;
 }
 
 /**
@@ -500,6 +614,12 @@ async function loadTotals(
           WHEN sum(budget_amount) IS NOT NULL AND sum(budget_amount) <> 0
           THEN round(sum(actual_amount) * 100 / sum(budget_amount), 2)
         END AS total_percent_used_numeric,
+        -- Unrounded, and used only to resolve a band, for the reason the
+        -- position query gives.
+        CASE
+          WHEN sum(budget_amount) IS NOT NULL AND sum(budget_amount) <> 0
+          THEN sum(actual_amount) * 100 / sum(budget_amount)
+        END AS total_percent_used_exact_numeric,
         count(DISTINCT currency_code) AS currency_count,
         min(currency_code) AS currency
       FROM combined
@@ -513,22 +633,44 @@ async function loadTotals(
       aggregated.total_percent_used_numeric::text AS total_percent_used,
       aggregated.currency_count,
       aggregated.currency,
-      band.band_code,
-      band.label AS band_label
+      threshold.bands AS threshold_bands
     FROM aggregated
     LEFT JOIN LATERAL (
-      SELECT threshold_band.band_code, threshold_band.label
-      FROM budget_threshold_bands AS threshold_band
-      WHERE threshold_band.threshold_policy_id = ${thresholdPolicyId}::uuid
-        AND aggregated.total_percent_used_numeric IS NOT NULL
-        AND aggregated.total_percent_used_numeric >= threshold_band.minimum_percent_used
-        AND (
-          threshold_band.maximum_percent_used IS NULL
-          OR aggregated.total_percent_used_numeric < threshold_band.maximum_percent_used
-        )
-      ORDER BY threshold_band.priority
-      LIMIT 1
-    ) AS band ON TRUE
+      SELECT json_agg(
+               json_build_object(
+                 'ruleCode', matched.rule_code,
+                 'bandCode', matched.band_code,
+                 'bandLabel', matched.band_label
+               )
+               ORDER BY matched.sort_order
+             )::text AS bands
+      FROM (
+        SELECT DISTINCT ON (threshold_rule.id)
+          threshold_rule.rule_code,
+          threshold_rule.sort_order,
+          threshold_band.band_code,
+          threshold_band.label AS band_label
+        FROM budget_threshold_rules AS threshold_rule
+        JOIN budget_threshold_bands AS threshold_band
+          ON threshold_band.threshold_rule_id = threshold_rule.id
+        WHERE threshold_rule.threshold_policy_id = ${thresholdPolicyId}::uuid
+          AND budget_threshold_band_matches(
+                budget_threshold_measured_value(
+                  threshold_rule.measure,
+                  aggregated.total_percent_used_exact_numeric,
+                  aggregated.total_remaining_numeric
+                ),
+                aggregated.total_budget_numeric,
+                threshold_band.minimum_basis,
+                threshold_band.minimum_value,
+                threshold_band.minimum_inclusive,
+                threshold_band.maximum_basis,
+                threshold_band.maximum_value,
+                threshold_band.maximum_inclusive
+              )
+        ORDER BY threshold_rule.id, threshold_band.priority
+      ) AS matched
+    ) AS threshold ON TRUE
   `;
 }
 
@@ -610,14 +752,13 @@ function positionFor(
     // rendered as spend of zero, so it carries no amount at all.
     return toCategoryPosition(category, { kind: "nothing_recorded" }, policy);
   }
+  const bands = parseBandMatches(row.threshold_bands);
   const facts = buildPositionFacts({
     approvedBudget: approvedBudgetFrom(row),
     actual: recordedActualFrom(row),
     ...(row.remaining !== null ? { remaining: row.remaining } : {}),
     ...(row.percent_used !== null ? { percentUsed: row.percent_used } : {}),
-    ...(row.band_code !== null && row.band_label !== null
-      ? { band: { bandCode: row.band_code, bandLabel: row.band_label } }
-      : {}),
+    ...(bands !== undefined ? { bands } : {}),
   });
   return toCategoryPosition(category, facts, policy);
 }
@@ -625,6 +766,7 @@ function positionFor(
 function totalsFor(row: TotalsRow | undefined): CentreBudgetTotals {
   if (row === undefined) return {};
   const singleCurrency = Number(row.currency_count) === 1 && row.currency !== null;
+  const bands = parseBandMatches(row.threshold_bands);
   return {
     ...(row.total_budget !== null ? { totalApprovedBudget: row.total_budget } : {}),
     ...(row.total_actual !== null ? { totalRecordedActual: row.total_actual } : {}),
@@ -633,9 +775,7 @@ function totalsFor(row: TotalsRow | undefined): CentreBudgetTotals {
       ? { totalPercentUsed: row.total_percent_used }
       : {}),
     ...(singleCurrency ? { currency: row.currency as string } : {}),
-    ...(row.band_code !== null && row.band_label !== null
-      ? { band: { bandCode: row.band_code, bandLabel: row.band_label } }
-      : {}),
+    ...(bands !== undefined ? { bands } : {}),
   };
 }
 

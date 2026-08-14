@@ -17,11 +17,40 @@ const CATEGORY: BudgetCategoryDescriptor = {
   sortOrder: 1,
 };
 
+/**
+ * Two rules over two measures, which is the shape the approved configuration
+ * takes. The codes and labels are synthetic and are not a proposed Bright Steps
+ * threshold; what matters here is that the rules are resolved independently.
+ */
+const PERCENT_RULE = {
+  ruleCode: "SYNTHETIC_PERCENT_RULE",
+  ruleLabel: "Synthetic percent rule",
+  measure: "percent_used",
+} as const;
+
+const REMAINING_RULE = {
+  ruleCode: "SYNTHETIC_REMAINING_RULE",
+  ruleLabel: "Synthetic remaining rule",
+  measure: "remaining_amount",
+} as const;
+
 const POLICY: ThresholdPolicyContext = {
   policyKey: "synthetic_test_policy",
   version: 1,
   effectiveFromMonth: "2036-01",
+  rules: [PERCENT_RULE, REMAINING_RULE],
 };
+
+const GOVERNED = {
+  state: "GOVERNED",
+  policyKey: "synthetic_test_policy",
+  policyVersion: 1,
+  policyEffectiveFromMonth: "2036-01",
+} as const;
+
+const NO_BAND_REASON = "This rule defines no band covering the value measured here.";
+const BOTH_VALUES_REASON =
+  "Both an approved budget and a recorded actual are needed before this can be judged.";
 
 function budget(amount: string): ApprovedBudgetAmount {
   return {
@@ -157,9 +186,60 @@ describe("unknown is not zero", () => {
     expect(position.state).toBe("BUDGET_AND_ACTUAL");
     expect(position.remaining).toBe("-125.00");
     expect(position).not.toHaveProperty("percentUsed");
+    // The percentage rule cannot judge this and says so. The remaining-balance
+    // rule is a separate question with its own answer, and it is asked anyway.
     expect(position.threshold).toEqual({
-      state: "NOT_APPLICABLE",
-      reason: "The approved budget is zero, so percent used is undefined.",
+      ...GOVERNED,
+      rules: [
+        {
+          ...PERCENT_RULE,
+          state: "NOT_APPLICABLE",
+          reason: "The approved budget is zero, so percent used is undefined.",
+        },
+        { ...REMAINING_RULE, state: "NOT_APPLICABLE", reason: NO_BAND_REASON },
+      ],
+    });
+  });
+
+  /**
+   * The two rules are not restatements of one another, which is the reason they
+   * are stored and resolved separately. An approved budget of zero is the case
+   * that proves it: there is no percentage to judge, and there is still a real
+   * balance to judge.
+   */
+  test("a rule over the remaining balance still judges a position a percentage cannot", () => {
+    const position = toCategoryPosition(
+      CATEGORY,
+      buildPositionFacts({
+        approvedBudget: budget("0.00"),
+        actual: actual("125.00"),
+        remaining: "-125.00",
+        bands: [
+          {
+            ruleCode: REMAINING_RULE.ruleCode,
+            bandCode: "SYNTHETIC_OVERSPENT",
+            bandLabel: "Synthetic overspent band",
+          },
+        ],
+      }),
+      POLICY,
+    );
+
+    expect(position.threshold).toEqual({
+      ...GOVERNED,
+      rules: [
+        {
+          ...PERCENT_RULE,
+          state: "NOT_APPLICABLE",
+          reason: "The approved budget is zero, so percent used is undefined.",
+        },
+        {
+          ...REMAINING_RULE,
+          state: "BANDED",
+          bandCode: "SYNTHETIC_OVERSPENT",
+          bandLabel: "Synthetic overspent band",
+        },
+      ],
     });
   });
 
@@ -176,7 +256,7 @@ describe("unknown is not zero", () => {
 
     // Without an approved policy the honest answer is that nobody has decided
     // the bands, not that this particular position could not be judged.
-    expect(position.threshold).toEqual({ state: "NOT_CONFIGURED" });
+    expect(position.threshold).toEqual({ state: "NOT_CONFIGURED", rules: [] });
   });
 
   test("both values present without a computed remaining fails closed", () => {
@@ -222,8 +302,8 @@ describe("threshold bands are governed configuration", () => {
     );
 
     // 200% of budget with no policy must not be presented as within a band.
-    expect(position.threshold).toEqual({ state: "NOT_CONFIGURED" });
-    expect(position.threshold.bandCode).toBeUndefined();
+    expect(position.threshold).toEqual({ state: "NOT_CONFIGURED", rules: [] });
+    expect(position.threshold.rules).toHaveLength(0);
   });
 
   test("a governed band carries the exact policy version that judged it", () => {
@@ -234,30 +314,91 @@ describe("threshold bands are governed configuration", () => {
         actual: actual("500.00"),
         remaining: "500.00",
         percentUsed: "50.00",
-        band: { bandCode: "SYNTHETIC_LOW", bandLabel: "Synthetic test band" },
+        bands: [
+          {
+            ruleCode: PERCENT_RULE.ruleCode,
+            bandCode: "SYNTHETIC_LOW",
+            bandLabel: "Synthetic test band",
+          },
+          {
+            ruleCode: REMAINING_RULE.ruleCode,
+            bandCode: "SYNTHETIC_HEALTHY",
+            bandLabel: "Synthetic remaining band",
+          },
+        ],
       }),
       POLICY,
     );
 
     expect(position.threshold).toEqual({
-      state: "BANDED",
-      bandCode: "SYNTHETIC_LOW",
-      bandLabel: "Synthetic test band",
-      policyKey: "synthetic_test_policy",
-      policyVersion: 1,
-      policyEffectiveFromMonth: "2036-01",
+      ...GOVERNED,
+      rules: [
+        {
+          ...PERCENT_RULE,
+          state: "BANDED",
+          bandCode: "SYNTHETIC_LOW",
+          bandLabel: "Synthetic test band",
+        },
+        {
+          ...REMAINING_RULE,
+          state: "BANDED",
+          bandCode: "SYNTHETIC_HEALTHY",
+          bandLabel: "Synthetic remaining band",
+        },
+      ],
     });
   });
 
-  test("a position without a percentage is not banded even under a policy", () => {
+  /**
+   * Two rules of one policy answer separately, so a band that belongs to one of
+   * them can never be read as the other's answer.
+   */
+  test("a band resolved for one rule is never borrowed by another", () => {
+    const position = toCategoryPosition(
+      CATEGORY,
+      buildPositionFacts({
+        approvedBudget: budget("1000.00"),
+        actual: actual("500.00"),
+        remaining: "500.00",
+        percentUsed: "50.00",
+        bands: [
+          {
+            ruleCode: PERCENT_RULE.ruleCode,
+            bandCode: "SYNTHETIC_LOW",
+            bandLabel: "Synthetic test band",
+          },
+        ],
+      }),
+      POLICY,
+    );
+
+    expect(position.threshold.rules).toEqual([
+      {
+        ...PERCENT_RULE,
+        state: "BANDED",
+        bandCode: "SYNTHETIC_LOW",
+        bandLabel: "Synthetic test band",
+      },
+      { ...REMAINING_RULE, state: "NOT_APPLICABLE", reason: NO_BAND_REASON },
+    ]);
+  });
+
+  test("a position with no actual is not banded by any rule, even under a policy", () => {
     const position = toCategoryPosition(
       CATEGORY,
       buildPositionFacts({ approvedBudget: budget("1000.00") }),
       POLICY,
     );
 
-    expect(position.threshold.state).toBe("NOT_APPLICABLE");
-    expect(position.threshold.bandCode).toBeUndefined();
+    expect(position.threshold.state).toBe("GOVERNED");
+    expect(position.threshold.rules).toEqual([
+      { ...PERCENT_RULE, state: "NOT_APPLICABLE", reason: BOTH_VALUES_REASON },
+      { ...REMAINING_RULE, state: "NOT_APPLICABLE", reason: BOTH_VALUES_REASON },
+    ]);
+    for (const rule of position.threshold.rules) {
+      expect(rule.bandCode).toBeUndefined();
+      expect(rule.bandLabel).toBeUndefined();
+    }
   });
 });
 
@@ -356,7 +497,7 @@ describe("summary totals under partial coverage", () => {
     expect(summary.totalRecordedActual).toBe("500.00");
     expect(summary.totalRemaining).toBe("1000.00");
     expect(summary.totalPercentUsed).toBe("33.33");
-    expect(summary.threshold).toEqual({ state: "NOT_CONFIGURED" });
+    expect(summary.threshold).toEqual({ state: "NOT_CONFIGURED", rules: [] });
   });
 
   test("withholds every sum when the month mixes currencies", () => {

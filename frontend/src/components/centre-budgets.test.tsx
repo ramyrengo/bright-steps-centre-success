@@ -64,10 +64,69 @@ const INTERNAL_TOKENS = [
   "manual_entry",
   "finance_system_import",
   "AMBER_OVER_90",
+  "AMBER_UNDER_10",
+  "GOVERNED",
+  "BUDGET_USED",
+  "REMAINING_BUDGET",
+  "percent_used",
+  "remaining_amount",
   "overspend-severity-policy",
   "budget-line-food",
   "actual-cleaning-01",
 ] as const;
+
+/**
+ * A governing policy with two rules, which is the shape an approved policy
+ * takes. Both are asked of every position and they are entitled to disagree, so
+ * every fixture below states an outcome for both. The codes and labels are
+ * synthetic and are not a Bright Steps threshold.
+ */
+const GOVERNING_POLICY = {
+  state: "GOVERNED",
+  policyKey: "overspend-severity-policy",
+  policyVersion: 3,
+  policyEffectiveFromMonth: "2026-07",
+} as const;
+
+const PERCENT_RULE = {
+  ruleCode: "BUDGET_USED",
+  ruleLabel: "Budget used",
+  measure: "percent_used",
+} as const;
+
+const REMAINING_RULE = {
+  ruleCode: "REMAINING_BUDGET",
+  ruleLabel: "Remaining budget",
+  measure: "remaining_amount",
+} as const;
+
+function banded(usedLabel: string, remainingLabel: string) {
+  return {
+    ...GOVERNING_POLICY,
+    rules: [
+      { ...PERCENT_RULE, state: "BANDED", bandCode: "AMBER_OVER_90", bandLabel: usedLabel },
+      {
+        ...REMAINING_RULE,
+        state: "BANDED",
+        bandCode: "AMBER_UNDER_10",
+        bandLabel: remainingLabel,
+      },
+    ],
+  };
+}
+
+/** A policy is in force and neither rule has anything to measure. */
+function unjudgeable() {
+  const reason =
+    "Both an approved budget and a recorded actual are needed before this can be judged.";
+  return {
+    ...GOVERNING_POLICY,
+    rules: [
+      { ...PERCENT_RULE, state: "NOT_APPLICABLE", reason },
+      { ...REMAINING_RULE, state: "NOT_APPLICABLE", reason },
+    ],
+  };
+}
 
 /** A category with an approved budget and no actual. The state this exists for. */
 function awaitingActual() {
@@ -87,10 +146,7 @@ function awaitingActual() {
       sourceKind: "manual_entry",
       recordedAt: "2026-07-28T02:00:00.000Z",
     },
-    threshold: {
-      state: "NOT_APPLICABLE",
-      reason: "Percent used is unknown until both an approved budget and an actual exist.",
-    },
+    threshold: unjudgeable(),
   };
 }
 
@@ -122,14 +178,10 @@ function recordedZero() {
     },
     remaining: "900.00",
     percentUsed: "0.00",
-    threshold: {
-      state: "BANDED",
-      bandCode: "AMBER_OVER_90",
-      bandLabel: "Comfortably inside the approved limit",
-      policyKey: "overspend-severity-policy",
-      policyVersion: 3,
-      policyEffectiveFromMonth: "2026-07",
-    },
+    threshold: banded(
+      "Comfortably inside the approved limit",
+      "All of the approved budget remaining",
+    ),
   };
 }
 
@@ -158,14 +210,7 @@ function overBudget() {
     },
     remaining: "-2500.00",
     percentUsed: "125.00",
-    threshold: {
-      state: "BANDED",
-      bandCode: "AMBER_OVER_90",
-      bandLabel: "Above the approved limit",
-      policyKey: "overspend-severity-policy",
-      policyVersion: 3,
-      policyEffectiveFromMonth: "2026-07",
-    },
+    threshold: banded("Above the approved limit", "Nothing of the approved budget remaining"),
   };
 }
 
@@ -177,10 +222,7 @@ function nothingRecorded() {
     categoryStatus: "active",
     sortOrder: 4,
     state: "NOTHING_RECORDED",
-    threshold: {
-      state: "NOT_APPLICABLE",
-      reason: "Percent used is unknown until both an approved budget and an actual exist.",
-    },
+    threshold: unjudgeable(),
   };
 }
 
@@ -407,13 +449,57 @@ describe("a partly recorded month withholds its totals", () => {
     expect(screen.queryByText("This month is not a complete picture.")).toBeNull();
   });
 
+  /**
+   * A policy may hold more than one approved rule, and two rules can reach
+   * different conclusions about the same category. Both have to reach the page,
+   * each saying which rule it came from, because dropping either would present a
+   * single verdict the organisation never approved.
+   */
+  test("shows every approved rule, including two that disagree", async () => {
+    clientMocks.getCentreBudgetMonth.mockResolvedValue(
+      monthResponse({
+        categories: [
+          {
+            ...recordedZero(),
+            threshold: banded(
+              "85% to 100% of the approved budget used",
+              "10% or more of the approved budget remaining",
+            ),
+          },
+        ],
+      }),
+    );
+    render(<CentreBudgetMonth centreId={CENTRE_A} />);
+
+    const row = await rowFor(/Cleaning and hygiene/u);
+    expect(within(row).getByText("85% to 100% of the approved budget used")).toBeTruthy();
+    expect(within(row).getByText("10% or more of the approved budget remaining")).toBeTruthy();
+    expect(within(row).getByText(/^Budget used, judged against/u)).toBeTruthy();
+    expect(within(row).getByText(/^Remaining budget, judged against/u)).toBeTruthy();
+  });
+
+  test("names the rule that could not judge a category, for every rule", async () => {
+    clientMocks.getCentreBudgetMonth.mockResolvedValue(monthResponse());
+    render(<CentreBudgetMonth centreId={CENTRE_A} />);
+
+    const row = await rowFor(/Food and catering/u);
+    const badges = within(row).getAllByText("Cannot be judged");
+    expect(badges).toHaveLength(2);
+    for (const badge of badges) {
+      expect(badge.getAttribute("data-tone")).toBe("neutral");
+      expect(badge.getAttribute("data-tone")).not.toBe("positive");
+    }
+    expect(within(row).getByText(/^Budget used\./u)).toBeTruthy();
+    expect(within(row).getByText(/^Remaining budget\./u)).toBeTruthy();
+  });
+
   test("an unset threshold is never dressed up as being inside one", async () => {
     clientMocks.getCentreBudgetMonth.mockResolvedValue(
       monthResponse({
         thresholdPolicyConfigured: false,
         categories: [
-          { ...awaitingActual(), threshold: { state: "NOT_CONFIGURED" } },
-          { ...nothingRecorded(), threshold: { state: "NOT_CONFIGURED" } },
+          { ...awaitingActual(), threshold: { state: "NOT_CONFIGURED", rules: [] } },
+          { ...nothingRecorded(), threshold: { state: "NOT_CONFIGURED", rules: [] } },
         ],
         summary: {
           coverage: "partial",

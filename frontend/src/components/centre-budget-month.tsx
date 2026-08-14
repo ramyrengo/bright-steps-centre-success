@@ -129,39 +129,67 @@ export function positionStateView(position: Position): StateView {
   }
 }
 
+/** A threshold view, keyed by the rule that produced it. */
+export interface ThresholdRuleView extends StateView {
+  key: string;
+}
+
 /**
- * Describes the threshold position.
+ * Describes the threshold position, one view per approved rule.
  *
- * No band value is seeded anywhere in this product, so this renders the band
- * label the organisation itself approved and nothing else. "No threshold set"
- * is deliberately neutral rather than positive: it means nobody has decided
- * what good looks like yet, which is not the same as being inside a limit.
+ * A governing policy may hold more than one rule, and two rules are entitled to
+ * disagree about the same category: a month can be inside its percentage limit
+ * with almost nothing left. So every rule gets its own badge and its own
+ * sentence, and none of them is collapsed into a single verdict the
+ * organisation never approved.
+ *
+ * No band value is decided here. The badge carries the label the organisation
+ * itself approved, and the tone is the same for every band, because grading one
+ * band as more serious than another would be a judgement nobody asked for.
+ * "No threshold set" is deliberately neutral rather than positive: it means
+ * nobody has decided what good looks like yet, which is not the same as being
+ * inside a limit.
  */
-export function thresholdView(threshold: Threshold): StateView {
-  switch (threshold.state) {
-    case "BANDED":
-      return {
-        tone: "informational",
-        label: threshold.bandLabel ?? "Threshold band applies",
-        detail: "Judged against the spending threshold your organisation approved for this month.",
-      };
-    case "NOT_APPLICABLE":
-      return {
-        tone: "neutral",
-        label: "Cannot be judged",
-        detail:
-          threshold.reason ??
-          "There is not enough recorded here to judge this against a threshold.",
-      };
-    case "NOT_CONFIGURED":
-    default:
-      return {
+export function thresholdViews(threshold: Threshold): ThresholdRuleView[] {
+  if (threshold.state === "NOT_CONFIGURED") {
+    return [
+      {
+        key: "not-configured",
         tone: "neutral",
         label: "No threshold set",
         detail:
           "No approved spending threshold covers this month, so nothing here is being judged against one.",
-      };
+      },
+    ];
   }
+  if (threshold.rules.length === 0) {
+    return [
+      {
+        key: "no-rules",
+        tone: "neutral",
+        label: "Cannot be judged",
+        detail:
+          "The spending threshold covering this month sets out no rule to judge this against.",
+      },
+    ];
+  }
+  return threshold.rules.map((rule) =>
+    rule.state === "BANDED"
+      ? {
+          key: rule.ruleCode,
+          tone: "informational",
+          label: rule.bandLabel ?? "Threshold band applies",
+          detail: `${rule.ruleLabel}, judged against the spending threshold your organisation approved for this month.`,
+        }
+      : {
+          key: rule.ruleCode,
+          tone: "neutral",
+          label: "Cannot be judged",
+          detail: `${rule.ruleLabel}. ${
+            rule.reason ?? "There is not enough recorded here to judge this against a threshold."
+          }`,
+        },
+  );
 }
 
 /**
@@ -474,7 +502,7 @@ function CategoryRow({
   onRecord: (position: Position) => void;
 }>) {
   const state = positionStateView(position);
-  const threshold = thresholdView(position.threshold);
+  const thresholds = thresholdViews(position.threshold);
   const budget = position.approvedBudget;
   const actual = position.actual;
 
@@ -524,8 +552,14 @@ function CategoryRow({
         )}
       </td>
       <td>
-        <StatusBadge tone={threshold.tone}>{threshold.label}</StatusBadge>
-        <span className="budget-row__note">{threshold.detail}</span>
+        <span className="budget-row__head">
+          {thresholds.map((threshold) => (
+            <span className="budget-row__head" key={threshold.key}>
+              <StatusBadge tone={threshold.tone}>{threshold.label}</StatusBadge>
+              <span className="budget-row__note">{threshold.detail}</span>
+            </span>
+          ))}
+        </span>
       </td>
       {canEnterActual ? (
         <td>
@@ -563,7 +597,7 @@ export function CentreBudgetMonthView({
   const { summary } = response;
   const monthLabel = formatMonthLabel(response.month || month);
   const partial = summary.coverage !== "complete";
-  const summaryThreshold = summary.threshold ? thresholdView(summary.threshold) : undefined;
+  const summaryThresholds = summary.threshold ? thresholdViews(summary.threshold) : [];
 
   return (
     <>
@@ -609,12 +643,12 @@ export function CentreBudgetMonthView({
       >
         <div className="card">
           <MonthTotals summary={summary} />
-          {summaryThreshold ? (
-            <p className="budget-summary-threshold">
+          {summaryThresholds.map((summaryThreshold) => (
+            <p className="budget-summary-threshold" key={summaryThreshold.key}>
               <StatusBadge tone={summaryThreshold.tone}>{summaryThreshold.label}</StatusBadge>
               <span className="metric__note">{summaryThreshold.detail}</span>
             </p>
-          ) : null}
+          ))}
           {partial ? (
             <CoverageCaveat>
               {` ${summary.recordedActualCount} of ${summary.categoryCount} categories have an actual recorded for ${monthLabel}, so this month's totals are withheld rather than understated.`}

@@ -874,29 +874,168 @@ describe("database-level guarantees", () => {
 });
 
 describe("threshold bands are governed configuration", () => {
-  test("no policy is seeded, so every position reports NOT_CONFIGURED", async () => {
-    const seeded = await centreSuccessDB.queryRow<{ count: number | string }>`
-      SELECT count(*) AS count FROM budget_threshold_policies
-      WHERE source_classification = 'BSA_INTERNAL'
-    `;
-    // The bands Bright Steps will actually use are an owner decision. Nothing
-    // in this repository invents them.
-    expect(Number(seeded?.count)).toBe(0);
-
-    const bands = await centreSuccessDB.queryRow<{ count: number | string }>`
-      SELECT count(*) AS count FROM budget_threshold_bands
-    `;
-    expect(Number(bands?.count)).toBeGreaterThanOrEqual(0);
-
+  test("provisions exactly the approved policy, and only it, to every organisation", async () => {
     const local = await createBudgetFixture(1);
+
+    // One approved policy, organisation-wide. Any second `BSA_INTERNAL` policy
+    // would be a threshold nobody in this repository is entitled to invent.
+    const internal = await centreSuccessDB.queryAll<{ policy_key: string }>`
+      SELECT DISTINCT policy_key FROM budget_threshold_policies
+      WHERE source_classification = 'BSA_INTERNAL'
+      ORDER BY policy_key
+    `;
+    expect(internal.map((row) => row.policy_key)).toEqual(["bsa_budget_expenses"]);
+
+    // Every organisation holds it exactly once, including one created long
+    // after the migration ran, because provisioning is a trigger and not a
+    // one-off pass over whichever organisations happened to exist.
+    const reach = await centreSuccessDB.queryRow<{
+      organisations: number | string;
+      policies: number | string;
+    }>`
+      SELECT
+        (SELECT count(*) FROM organisations) AS organisations,
+        (SELECT count(*) FROM budget_threshold_policies
+         WHERE policy_key = 'bsa_budget_expenses' AND version = 1) AS policies
+    `;
+    expect(Number(reach?.policies)).toBe(Number(reach?.organisations));
+
+    const policy = await centreSuccessDB.queryRow<{
+      status: string;
+      source_classification: string;
+      effective_from_month: Date | string;
+      effective_to_month: Date | string | null;
+      approval_source_type: string;
+      approved_by_principal_id: string | null;
+      approved_by_name: string | null;
+      approval_reference: string | null;
+      approved_on: Date | string;
+    }>`
+      SELECT status, source_classification, effective_from_month, effective_to_month,
+             approval_source_type, approved_by_principal_id, approved_by_name,
+             approval_reference, approved_on
+      FROM budget_threshold_policies
+      WHERE organisation_id = ${local.organisationId} AND policy_key = 'bsa_budget_expenses'
+    `;
+    expect(policy?.status).toBe("active");
+    expect(policy?.source_classification).toBe("BSA_INTERNAL");
+    expect(String(policy?.effective_from_month).slice(0, 10)).toBe("2026-08-01");
+    expect(policy?.effective_to_month).toBeNull();
+    // The approval happened outside this system, so it names the document and
+    // the approver rather than pointing at an invented principal row.
+    expect(policy?.approval_source_type).toBe("governed_document");
+    expect(policy?.approved_by_principal_id).toBeNull();
+    expect(policy?.approved_by_name).toBe("Bright Steps Product Owner");
+    expect(policy?.approval_reference).toBe(
+      "BSA Budget Expenses template supplied by Karen (Area Manager); approved organisation-wide 14 August 2026.",
+    );
+    expect(String(policy?.approved_on).slice(0, 10)).toBe("2026-08-14");
+  });
+
+  test("stores both approved rules with their exact bounds and inclusivity", async () => {
+    const local = await createBudgetFixture(1);
+
+    const bands = await centreSuccessDB.queryAll<{
+      rule_code: string;
+      measure: string;
+      band_code: string;
+      minimum_basis: string | null;
+      minimum_value: string | null;
+      minimum_inclusive: boolean | null;
+      maximum_basis: string | null;
+      maximum_value: string | null;
+      maximum_inclusive: boolean | null;
+    }>`
+      SELECT threshold_rule.rule_code, threshold_rule.measure, band.band_code,
+             band.minimum_basis, band.minimum_value::text AS minimum_value,
+             band.minimum_inclusive,
+             band.maximum_basis, band.maximum_value::text AS maximum_value,
+             band.maximum_inclusive
+      FROM budget_threshold_rules AS threshold_rule
+      JOIN budget_threshold_bands AS band
+        ON band.threshold_rule_id = threshold_rule.id
+      WHERE threshold_rule.organisation_id = ${local.organisationId}
+      ORDER BY threshold_rule.sort_order, band.priority
+    `;
+
+    // The approved rules, verbatim. 100 is inclusive at the top of amber and
+    // red begins strictly above it, stated by the inclusivity flags rather than
+    // by a 100.01 standing in for "just over 100".
+    expect(
+      bands.map((band) => [
+        band.rule_code,
+        band.measure,
+        band.band_code,
+        band.minimum_basis,
+        band.minimum_value,
+        band.minimum_inclusive,
+        band.maximum_basis,
+        band.maximum_value,
+        band.maximum_inclusive,
+      ]),
+    ).toEqual([
+      ["BUDGET_USED", "percent_used", "RED", "measure_units", "100.0000", false, null, null, null],
+      [
+        "BUDGET_USED",
+        "percent_used",
+        "AMBER",
+        "measure_units",
+        "85.0000",
+        true,
+        "measure_units",
+        "100.0000",
+        true,
+      ],
+      ["BUDGET_USED", "percent_used", "GREEN", null, null, null, "measure_units", "85.0000", false],
+      [
+        "REMAINING_BUDGET",
+        "remaining_amount",
+        "RED",
+        null,
+        null,
+        null,
+        "measure_units",
+        "0.0000",
+        false,
+      ],
+      [
+        "REMAINING_BUDGET",
+        "remaining_amount",
+        "AMBER",
+        "measure_units",
+        "0.0000",
+        true,
+        "percent_of_approved",
+        "10.0000",
+        false,
+      ],
+      [
+        "REMAINING_BUDGET",
+        "remaining_amount",
+        "GREEN",
+        "percent_of_approved",
+        "10.0000",
+        true,
+        null,
+        null,
+        null,
+      ],
+    ]);
+  });
+
+  test("judges no month before the approval took effect", async () => {
+    const local = await createBudgetFixture(1);
+    // July 2026 predates the approval, so nobody had decided what good looked
+    // like for it. That has to keep reporting NOT_CONFIGURED rather than being
+    // graded retrospectively under a rule that did not exist at the time.
     const result = await buildCentreBudgetMonth(
-      { principalId: local.centreDirectorId, centreId: local.centreIds[0], month: MONTH },
+      { principalId: local.centreDirectorId, centreId: local.centreIds[0], month: "2026-07" },
       { now },
     );
     expect(result.response.thresholdPolicyConfigured).toBe(false);
     for (const position of result.response.categories) {
       expect(position.threshold.state).toBe("NOT_CONFIGURED");
-      expect(position.threshold.bandCode).toBeUndefined();
+      expect(position.threshold.rules).toEqual([]);
     }
   });
 
@@ -905,34 +1044,47 @@ describe("threshold bands are governed configuration", () => {
     // Synthetic bands, explicitly classified as development/test data. These
     // exercise the mechanism and are not a proposed Bright Steps threshold.
     const policyId = randomUUID();
+    const ruleId = randomUUID();
     await centreSuccessDB.exec`
       INSERT INTO budget_threshold_policies (
         id, organisation_id, policy_key, version, name, status,
-        source_classification, effective_from_month,
+        source_classification, effective_from_month, approval_source_type,
         approved_by_principal_id, approval_reference
       ) VALUES (
         ${policyId}, ${local.organisationId}, 'synthetic_test_policy', 1,
         'Synthetic test threshold policy', 'active',
-        'BSA_DEVELOPMENT_TEST', '2036-01-01'::date,
+        'BSA_DEVELOPMENT_TEST', '2036-01-01'::date, 'principal',
         ${local.centreDirectorId}, 'SYNTHETIC-FIXTURE'
       )
     `;
     await centreSuccessDB.exec`
-      INSERT INTO budget_threshold_bands (
-        id, organisation_id, threshold_policy_id, band_code, label,
-        minimum_percent_used, maximum_percent_used, priority
+      INSERT INTO budget_threshold_rules (
+        id, organisation_id, threshold_policy_id, rule_code, label, measure, sort_order
       ) VALUES (
-        ${randomUUID()}, ${local.organisationId}, ${policyId},
-        'SYNTHETIC_LOWER', 'Synthetic lower band', 0, 60, 1
+        ${ruleId}, ${local.organisationId}, ${policyId},
+        'SYNTHETIC_RULE', 'Synthetic rule', 'percent_used', 1
       )
     `;
     await centreSuccessDB.exec`
       INSERT INTO budget_threshold_bands (
-        id, organisation_id, threshold_policy_id, band_code, label,
-        minimum_percent_used, maximum_percent_used, priority
+        id, organisation_id, threshold_policy_id, threshold_rule_id, band_code, label,
+        minimum_basis, minimum_value, minimum_inclusive,
+        maximum_basis, maximum_value, maximum_inclusive, priority
       ) VALUES (
-        ${randomUUID()}, ${local.organisationId}, ${policyId},
-        'SYNTHETIC_UPPER', 'Synthetic upper band', 60, NULL, 2
+        ${randomUUID()}, ${local.organisationId}, ${policyId}, ${ruleId},
+        'SYNTHETIC_LOWER', 'Synthetic lower band',
+        'measure_units', 0, TRUE, 'measure_units', 60, FALSE, 1
+      )
+    `;
+    await centreSuccessDB.exec`
+      INSERT INTO budget_threshold_bands (
+        id, organisation_id, threshold_policy_id, threshold_rule_id, band_code, label,
+        minimum_basis, minimum_value, minimum_inclusive,
+        maximum_basis, maximum_value, maximum_inclusive, priority
+      ) VALUES (
+        ${randomUUID()}, ${local.organisationId}, ${policyId}, ${ruleId},
+        'SYNTHETIC_UPPER', 'Synthetic upper band',
+        'measure_units', 60, TRUE, NULL, NULL, NULL, 2
       )
     `;
 
@@ -960,21 +1112,39 @@ describe("threshold bands are governed configuration", () => {
 
     expect(result.response.thresholdPolicyConfigured).toBe(true);
     expect(banded?.percentUsed).toBe("80.00");
+    // The later-effective policy governs the month, so the approved policy does
+    // not judge it and none of its bands appear.
     expect(banded?.threshold).toEqual({
-      state: "BANDED",
-      bandCode: "SYNTHETIC_UPPER",
-      bandLabel: "Synthetic upper band",
+      state: "GOVERNED",
       policyKey: "synthetic_test_policy",
       policyVersion: 1,
       policyEffectiveFromMonth: "2036-01",
+      rules: [
+        {
+          ruleCode: "SYNTHETIC_RULE",
+          ruleLabel: "Synthetic rule",
+          measure: "percent_used",
+          state: "BANDED",
+          bandCode: "SYNTHETIC_UPPER",
+          bandLabel: "Synthetic upper band",
+        },
+      ],
     });
 
-    // A month before the policy took effect is not judged under it.
+    // A month before this policy took effect is judged by whichever version was
+    // in force then, which here is the approved one, not this synthetic one.
     const earlier = await buildCentreBudgetMonth(
       { principalId: local.centreDirectorId, centreId: local.centreIds[0], month: "2035-12" },
       { now },
     );
-    expect(earlier.response.thresholdPolicyConfigured).toBe(false);
+    expect(earlier.response.thresholdPolicyConfigured).toBe(true);
+    for (const position of earlier.response.categories) {
+      expect(position.threshold.policyKey).toBe("bsa_budget_expenses");
+      expect(position.threshold.rules.map((rule) => rule.ruleCode)).toEqual([
+        "BUDGET_USED",
+        "REMAINING_BUDGET",
+      ]);
+    }
   });
 });
 
@@ -1096,24 +1266,41 @@ async function installCoveringPolicy(local: BudgetFixture): Promise<string> {
   await centreSuccessDB.exec`
     INSERT INTO budget_threshold_policies (
       id, organisation_id, policy_key, version, name, status,
-      source_classification, effective_from_month,
+      source_classification, effective_from_month, approval_source_type,
       approved_by_principal_id, approval_reference
     ) VALUES (
       ${policyId}, ${local.organisationId}, 'synthetic_covering_policy', 1,
-      'Synthetic policy whose band covers every percentage', 'active',
-      'BSA_DEVELOPMENT_TEST', '2036-01-01'::date,
+      'Synthetic policy whose band covers every value', 'active',
+      'BSA_DEVELOPMENT_TEST', '2036-01-01'::date, 'principal',
       ${local.centreDirectorId}, 'SYNTHETIC-FIXTURE'
     )
   `;
-  await centreSuccessDB.exec`
-    INSERT INTO budget_threshold_bands (
-      id, organisation_id, threshold_policy_id, band_code, label,
-      minimum_percent_used, maximum_percent_used, priority
-    ) VALUES (
-      ${randomUUID()}, ${local.organisationId}, ${policyId},
-      'SYNTHETIC_EVERYTHING', 'Synthetic band covering every percentage', 0, NULL, 1
-    )
-  `;
+  // One rule per measure, each with a single unbounded band. Every value of
+  // every measure falls inside it, so anything a lookup returns at all is a
+  // colour, which is exactly the failure these tests are watching for.
+  for (const [index, measure] of ["percent_used", "remaining_amount"].entries()) {
+    const ruleId = randomUUID();
+    await centreSuccessDB.exec`
+      INSERT INTO budget_threshold_rules (
+        id, organisation_id, threshold_policy_id, rule_code, label, measure, sort_order
+      ) VALUES (
+        ${ruleId}, ${local.organisationId}, ${policyId},
+        ${`SYNTHETIC_RULE_${index}`}, ${`Synthetic covering rule ${index}`},
+        ${measure}, ${index + 1}
+      )
+    `;
+    await centreSuccessDB.exec`
+      INSERT INTO budget_threshold_bands (
+        id, organisation_id, threshold_policy_id, threshold_rule_id, band_code, label,
+        minimum_basis, minimum_value, minimum_inclusive,
+        maximum_basis, maximum_value, maximum_inclusive, priority
+      ) VALUES (
+        ${randomUUID()}, ${local.organisationId}, ${policyId}, ${ruleId},
+        'SYNTHETIC_EVERYTHING', 'Synthetic band covering every value',
+        NULL, NULL, NULL, NULL, NULL, NULL, 1
+      )
+    `;
+  }
   return policyId;
 }
 
@@ -1133,9 +1320,15 @@ describe("a seeded band never turns an absent actual into a colour", () => {
     expect(result.response.categories.length).toBeGreaterThan(0);
     for (const position of result.response.categories) {
       expect(position.state).toBe("AWAITING_ACTUAL");
-      expect(position.threshold.state).toBe("NOT_APPLICABLE");
-      expect(position.threshold.bandCode).toBeUndefined();
-      expect(position.threshold.bandLabel).toBeUndefined();
+      expect(position.threshold.state).toBe("GOVERNED");
+      // Both rules were asked, and neither could answer. Not one of them
+      // returned the band that covers everything.
+      expect(position.threshold.rules).toHaveLength(2);
+      for (const rule of position.threshold.rules) {
+        expect(rule.state).toBe("NOT_APPLICABLE");
+        expect(rule.bandCode).toBeUndefined();
+        expect(rule.bandLabel).toBeUndefined();
+      }
       expect(position.actual).toBeUndefined();
       expect(position.remaining).toBeUndefined();
       expect(position.percentUsed).toBeUndefined();
@@ -1167,8 +1360,12 @@ describe("a seeded band never turns an absent actual into a colour", () => {
     expect(result.response.categories.length).toBeGreaterThan(0);
     for (const position of result.response.categories) {
       expect(position.state).toBe("NOTHING_RECORDED");
-      expect(position.threshold.state).toBe("NOT_APPLICABLE");
-      expect(position.threshold.bandCode).toBeUndefined();
+      expect(position.threshold.state).toBe("GOVERNED");
+      expect(position.threshold.rules).toHaveLength(2);
+      for (const rule of position.threshold.rules) {
+        expect(rule.state).toBe("NOT_APPLICABLE");
+        expect(rule.bandCode).toBeUndefined();
+      }
       expect(position.approvedBudget).toBeUndefined();
       expect(position.actual).toBeUndefined();
     }
@@ -1209,15 +1406,248 @@ describe("a seeded band never turns an absent actual into a colour", () => {
       (position) => position.categoryId === local.categoryIds[0],
     );
     expect(entered?.state).toBe("BUDGET_AND_ACTUAL");
-    expect(entered?.threshold.state).toBe("BANDED");
-    expect(entered?.threshold.bandCode).toBe("SYNTHETIC_EVERYTHING");
+    expect(entered?.threshold.state).toBe("GOVERNED");
+    // Both rules had something to measure, so both returned the covering band.
+    // Without this the two assertions above could pass because no band ever
+    // resolves, rather than because absence is respected.
+    expect(entered?.threshold.rules.map((rule) => [rule.state, rule.bandCode])).toEqual([
+      ["BANDED", "SYNTHETIC_EVERYTHING"],
+      ["BANDED", "SYNTHETIC_EVERYTHING"],
+    ]);
 
     for (const position of result.response.categories) {
       if (position.categoryId === local.categoryIds[0]) continue;
       expect(position.state).toBe("AWAITING_ACTUAL");
-      expect(position.threshold.state).toBe("NOT_APPLICABLE");
-      expect(position.threshold.bandCode).toBeUndefined();
+      expect(position.threshold.state).toBe("GOVERNED");
+      for (const rule of position.threshold.rules) {
+        expect(rule.state).toBe("NOT_APPLICABLE");
+        expect(rule.bandCode).toBeUndefined();
+      }
     }
+  });
+});
+
+/**
+ * The same risk, now against the bands that were actually approved rather than
+ * a synthetic stand-in. Both approved rules band every value their measure can
+ * take: Rule A covers every percentage and Rule B covers every amount, with no
+ * gap between them. So from the moment they are seeded, any lookup that ran
+ * where nothing was recorded would come back with a colour.
+ */
+describe("the approved bands never turn an absent actual into a colour", () => {
+  function ruleStates(position: {
+    threshold: { rules: readonly { ruleCode: string; state: string; bandCode?: string }[] };
+  }): [string, string, string | undefined][] {
+    return position.threshold.rules.map((rule) => [rule.ruleCode, rule.state, rule.bandCode]);
+  }
+
+  test("an approved budget with no actual is unbanded by both approved rules", async () => {
+    const local = await createBudgetFixture(1);
+    const result = await buildCentreBudgetMonth(
+      { principalId: local.centreDirectorId, centreId: local.centreIds[0], month: MONTH },
+      { now },
+    );
+
+    // The approved policy is in force, so a band lookup really did run for
+    // every category, against bands that cover every value, and returned none.
+    expect(result.response.thresholdPolicyConfigured).toBe(true);
+    expect(result.response.categories.length).toBeGreaterThan(0);
+    for (const position of result.response.categories) {
+      expect(position.state).toBe("AWAITING_ACTUAL");
+      expect(position.threshold.policyKey).toBe("bsa_budget_expenses");
+      expect(ruleStates(position)).toEqual([
+        ["BUDGET_USED", "NOT_APPLICABLE", undefined],
+        ["REMAINING_BUDGET", "NOT_APPLICABLE", undefined],
+      ]);
+    }
+    expect(result.response.summary.threshold).toBeUndefined();
+    // Nothing absent may have been rendered as a spend of zero on the way out.
+    expect(JSON.stringify(result.response)).not.toMatch(
+      /"(?:actual|remaining|percentUsed)":\s*"?0/u,
+    );
+  });
+
+  test("a category with nothing recorded at all is unbanded by both approved rules", async () => {
+    const local = await createBudgetFixture(1, { seedApprovedBudget: false });
+    const result = await buildCentreBudgetMonth(
+      { principalId: local.centreDirectorId, centreId: local.centreIds[0], month: MONTH },
+      { now },
+    );
+
+    expect(result.response.thresholdPolicyConfigured).toBe(true);
+    expect(result.response.categories.length).toBeGreaterThan(0);
+    for (const position of result.response.categories) {
+      expect(position.state).toBe("NOTHING_RECORDED");
+      expect(ruleStates(position)).toEqual([
+        ["BUDGET_USED", "NOT_APPLICABLE", undefined],
+        ["REMAINING_BUDGET", "NOT_APPLICABLE", undefined],
+      ]);
+    }
+  });
+
+  /**
+   * The control for both assertions above, and the boundary table for the
+   * approved rules. Without it the two could pass because the approved bands
+   * never resolve at all, rather than because absence is respected.
+   *
+   * Every centre-month here has an approved budget of 1000.00 in one category.
+   */
+  test("bands every recorded actual exactly as the approval states", async () => {
+    const local = await createBudgetFixture(1);
+    const cases = [
+      // Rule A's lower boundary: 85 is amber, just under it is green.
+      { actual: "840.00", percentUsed: "84.00", remaining: "160.00", bands: ["GREEN", "GREEN"] },
+      { actual: "850.00", percentUsed: "85.00", remaining: "150.00", bands: ["AMBER", "GREEN"] },
+      // Rule B's boundary: exactly 10% of the approved budget is still green.
+      { actual: "900.00", percentUsed: "90.00", remaining: "100.00", bands: ["AMBER", "GREEN"] },
+      { actual: "901.00", percentUsed: "90.10", remaining: "99.00", bands: ["AMBER", "AMBER"] },
+      // Rule A's upper boundary: 100 is inclusive, so it is still amber, and
+      // nothing is left, so Rule B is amber too.
+      { actual: "1000.00", percentUsed: "100.00", remaining: "0.00", bands: ["AMBER", "AMBER"] },
+      // A cent over. Red begins strictly above 100, and the judgement is made
+      // on the exact ratio, so it is red even though the percentage displayed
+      // beside it has rounded back down to 100.00.
+      { actual: "1000.01", percentUsed: "100.00", remaining: "-0.01", bands: ["RED", "RED"] },
+      { actual: "1100.00", percentUsed: "110.00", remaining: "-100.00", bands: ["RED", "RED"] },
+    ];
+
+    for (const expected of cases) {
+      await recordCentreBudgetActual(
+        {
+          principalId: local.centreDirectorId,
+          request: {
+            centreId: local.centreIds[0],
+            month: MONTH,
+            categoryId: local.categoryIds[0],
+            amount: expected.actual,
+            currency: CURRENCY,
+          },
+        },
+        { now },
+      );
+
+      const result = await buildCentreBudgetMonth(
+        { principalId: local.centreDirectorId, centreId: local.centreIds[0], month: MONTH },
+        { now },
+      );
+      const banded = result.response.categories.find(
+        (position) => position.categoryId === local.categoryIds[0],
+      );
+
+      expect(banded?.percentUsed, expected.actual).toBe(expected.percentUsed);
+      expect(banded?.remaining, expected.actual).toBe(expected.remaining);
+      expect(ruleStates(banded!), expected.actual).toEqual([
+        ["BUDGET_USED", "BANDED", expected.bands[0]],
+        ["REMAINING_BUDGET", "BANDED", expected.bands[1]],
+      ]);
+
+      // The category nobody entered stays unbanded throughout, in the same
+      // response, under the same bands that just graded its neighbour.
+      const untouched = result.response.categories.find(
+        (position) => position.categoryId === local.categoryIds[1],
+      );
+      expect(untouched?.state, expected.actual).toBe("AWAITING_ACTUAL");
+      expect(ruleStates(untouched!), expected.actual).toEqual([
+        ["BUDGET_USED", "NOT_APPLICABLE", undefined],
+        ["REMAINING_BUDGET", "NOT_APPLICABLE", undefined],
+      ]);
+    }
+  });
+
+  /**
+   * The reason the two rules are stored and resolved separately rather than one
+   * being derived from the other. Against an approved budget of zero there is
+   * no percentage to judge, and there is still a real balance to judge, so the
+   * rules do not agree and neither may stand in for the other.
+   */
+  test("judges an overspent zero budget on what remains, with no percentage to judge", async () => {
+    const local = await createBudgetFixture(1, { seedApprovedBudget: false });
+    await budgetLine(
+      local.organisationId,
+      local.centreIds[0],
+      local.categoryIds[0],
+      "0.00",
+      local.centreDirectorId,
+    );
+    await recordCentreBudgetActual(
+      {
+        principalId: local.centreDirectorId,
+        request: {
+          centreId: local.centreIds[0],
+          month: MONTH,
+          categoryId: local.categoryIds[0],
+          amount: "125.00",
+          currency: CURRENCY,
+        },
+      },
+      { now },
+    );
+
+    const result = await buildCentreBudgetMonth(
+      { principalId: local.centreDirectorId, centreId: local.centreIds[0], month: MONTH },
+      { now },
+    );
+    const position = result.response.categories.find(
+      (candidate) => candidate.categoryId === local.categoryIds[0],
+    );
+
+    expect(position?.remaining).toBe("-125.00");
+    expect(position?.percentUsed).toBeUndefined();
+    expect(position?.threshold.rules).toEqual([
+      {
+        ruleCode: "BUDGET_USED",
+        ruleLabel: "Budget used",
+        measure: "percent_used",
+        state: "NOT_APPLICABLE",
+        reason: "The approved budget is zero, so percent used is undefined.",
+      },
+      {
+        ruleCode: "REMAINING_BUDGET",
+        ruleLabel: "Remaining budget",
+        measure: "remaining_amount",
+        state: "BANDED",
+        bandCode: "RED",
+        bandLabel: "Remaining budget is below zero",
+      },
+    ]);
+  });
+
+  test("judges the month total by both rules once every category is recorded", async () => {
+    const local = await createBudgetFixture(1);
+    for (const categoryId of local.categoryIds) {
+      await recordCentreBudgetActual(
+        {
+          principalId: local.centreDirectorId,
+          request: {
+            centreId: local.centreIds[0],
+            month: MONTH,
+            categoryId,
+            amount: "850.00",
+            currency: CURRENCY,
+          },
+        },
+        { now },
+      );
+    }
+
+    const result = await buildCentreBudgetMonth(
+      { principalId: local.centreDirectorId, centreId: local.centreIds[0], month: MONTH },
+      { now },
+    );
+    const summary = result.response.summary;
+
+    expect(summary.coverage).toBe("complete");
+    expect(summary.totalApprovedBudget).toBe("2000.00");
+    expect(summary.totalRemaining).toBe("300.00");
+    expect(summary.totalPercentUsed).toBe("85.00");
+    // 85% used is amber, and 300.00 of a 2000.00 budget is 15% remaining, which
+    // is green. Both are true at once and both are reported.
+    expect(
+      summary.threshold?.rules.map((rule) => [rule.ruleCode, rule.state, rule.bandCode]),
+    ).toEqual([
+      ["BUDGET_USED", "BANDED", "AMBER"],
+      ["REMAINING_BUDGET", "BANDED", "GREEN"],
+    ]);
   });
 });
 
